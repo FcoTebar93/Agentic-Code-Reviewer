@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "meta_planner"
+    static_configs:
+      - targets: ["meta_planner:8000"]
+    metrics_path: /metrics
+
+  - job_name: "dev_service"
+    static_configs:
+      - targets: ["dev_service:8000"]
+    metrics_path: /metrics
+
+  - job_name: "github_service"
+    static_configs:
+      - targets: ["github_service:8000"]
+    metrics_path: /metrics
+
+  - job_name: "memory_service"
+    static_configs:
+      - targets: ["memory_service:8000"]
+    metrics_path: /metrics
