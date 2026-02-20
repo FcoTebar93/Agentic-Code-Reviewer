@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.example
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.vscode
+.idea
+*.md
+.dockerignore
+infrastructure/prometheus
+infrastructure/grafana
