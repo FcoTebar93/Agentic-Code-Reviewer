@@ -21,6 +21,7 @@ COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.
 COPY --from=deps /usr/local/bin /usr/local/bin
 
 COPY shared/ ./shared/
+COPY services/__init__.py ./services/__init__.py
 COPY services/github_service/ ./services/github_service/
 
 ENV PYTHONPATH=/app
