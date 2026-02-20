@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 
 class EventType(str, Enum):
+    # Phase 1
     PLAN_REQUESTED = "plan.requested"
     PLAN_CREATED = "plan.created"
     TASK_ASSIGNED = "task.assigned"
@@ -25,6 +26,11 @@ class EventType(str, Enum):
     PR_CREATED = "pr.created"
     MEMORY_STORE = "memory.store"
     MEMORY_QUERY = "memory.query"
+    # Phase 2
+    QA_PASSED = "qa.passed"
+    QA_FAILED = "qa.failed"
+    SECURITY_APPROVED = "security.approved"
+    SECURITY_BLOCKED = "security.blocked"
 
 
 class BaseEvent(BaseModel):
@@ -53,12 +59,6 @@ class BaseEvent(BaseModel):
             raw = f"{self.event_type.value}:{_stable_hash(self.payload)}"
             self.idempotency_key = hashlib.sha256(raw.encode()).hexdigest()
 
-
-# ---------------------------------------------------------------------------
-# Phase 1 pipeline payloads
-# ---------------------------------------------------------------------------
-
-
 class PlanRequestedPayload(BaseModel):
     user_prompt: str
     project_name: str
@@ -81,6 +81,7 @@ class PlanCreatedPayload(BaseModel):
 class TaskAssignedPayload(BaseModel):
     plan_id: str
     task: TaskSpec
+    qa_feedback: str = ""
 
 
 class CodeGeneratedPayload(BaseModel):
@@ -89,6 +90,7 @@ class CodeGeneratedPayload(BaseModel):
     file_path: str
     code: str
     language: str = "python"
+    qa_attempt: int = 0
 
 
 class PRRequestedPayload(BaseModel):
@@ -97,6 +99,7 @@ class PRRequestedPayload(BaseModel):
     branch_name: str
     files: list[CodeGeneratedPayload]
     commit_message: str
+    security_approved: bool = False
 
 
 class PRCreatedPayload(BaseModel):
@@ -105,15 +108,29 @@ class PRCreatedPayload(BaseModel):
     pr_number: int
     branch_name: str
 
+class QAResultPayload(BaseModel):
+    """Produced by qa_service after analysing generated code."""
 
-# ---------------------------------------------------------------------------
-# Typed event constructors (factory helpers)
-# ---------------------------------------------------------------------------
+    plan_id: str
+    task_id: str
+    passed: bool
+    issues: list[str]
+    code: str
+    file_path: str
+    qa_attempt: int
 
 
-def plan_requested(
-    producer: str, payload: PlanRequestedPayload
-) -> BaseEvent:
+class SecurityResultPayload(BaseModel):
+    """Produced by security_service after scanning the aggregated PR code."""
+
+    plan_id: str
+    branch_name: str
+    approved: bool
+    violations: list[str]
+    files_scanned: int
+    pr_context: dict[str, Any] = Field(default_factory=dict)
+
+def plan_requested(producer: str, payload: PlanRequestedPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.PLAN_REQUESTED,
         producer=producer,
@@ -137,9 +154,7 @@ def task_assigned(producer: str, payload: TaskAssignedPayload) -> BaseEvent:
     )
 
 
-def code_generated(
-    producer: str, payload: CodeGeneratedPayload
-) -> BaseEvent:
+def code_generated(producer: str, payload: CodeGeneratedPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.CODE_GENERATED,
         producer=producer,
@@ -163,9 +178,36 @@ def pr_created(producer: str, payload: PRCreatedPayload) -> BaseEvent:
     )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def qa_passed(producer: str, payload: QAResultPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.QA_PASSED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def qa_failed(producer: str, payload: QAResultPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.QA_FAILED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def security_approved(producer: str, payload: SecurityResultPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.SECURITY_APPROVED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def security_blocked(producer: str, payload: SecurityResultPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.SECURITY_BLOCKED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
 
 def _stable_hash(data: dict[str, Any]) -> str:
     """Produce a deterministic hash of a dict by sorting keys recursively."""
