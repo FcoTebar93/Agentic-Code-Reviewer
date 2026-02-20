@@ -1,6 +1,6 @@
 # =============================================================================
 # ADMADC - Autonomous Deterministic Multi-Agent Dev Company
-# Phase 1 Infrastructure
+# Phase 2 Infrastructure (QA + Security services added)
 # =============================================================================
 
 networks:
@@ -167,6 +167,7 @@ services:
       MEMORY_SERVICE_URL: ${MEMORY_SERVICE_URL}
       LLM_PROVIDER: ${LLM_PROVIDER}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      REDIS_URL: ${REDIS_URL}
       LOG_LEVEL: ${LOG_LEVEL}
     ports:
       - "8002:8000"
@@ -175,6 +176,63 @@ services:
         condition: service_healthy
       memory_service:
         condition: service_healthy
+    networks:
+      - admadc_net
+
+  qa_service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/qa_service/Dockerfile
+    container_name: admadc_qa_service
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      MEMORY_SERVICE_URL: ${MEMORY_SERVICE_URL}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      REDIS_URL: ${REDIS_URL}
+      MAX_QA_RETRIES: ${MAX_QA_RETRIES:-2}
+      LOG_LEVEL: ${LOG_LEVEL}
+    ports:
+      - "8005:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      memory_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - admadc_net
+
+  security_service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/security_service/Dockerfile
+    container_name: admadc_security_service
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      MEMORY_SERVICE_URL: ${MEMORY_SERVICE_URL}
+      REDIS_URL: ${REDIS_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+    ports:
+      - "8006:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      memory_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - admadc_net
 

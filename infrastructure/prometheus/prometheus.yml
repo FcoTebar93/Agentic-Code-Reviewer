@@ -13,6 +13,16 @@ scrape_configs:
       - targets: ["dev_service:8000"]
     metrics_path: /metrics
 
+  - job_name: "qa_service"
+    static_configs:
+      - targets: ["qa_service:8000"]
+    metrics_path: /metrics
+
+  - job_name: "security_service"
+    static_configs:
+      - targets: ["security_service:8000"]
+    metrics_path: /metrics
+
   - job_name: "github_service"
     static_configs:
       - targets: ["github_service:8000"]
