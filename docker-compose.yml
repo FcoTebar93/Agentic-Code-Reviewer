@@ -1,8 +1,3 @@
-# =============================================================================
-# ADMADC - Autonomous Deterministic Multi-Agent Dev Company
-# Phase 2 Infrastructure (QA + Security services added)
-# =============================================================================
-
 networks:
   admadc_net:
     driver: bridge
@@ -17,11 +12,6 @@ volumes:
   grafana_data:
 
 services:
-
-  # ===========================================================================
-  # INFRASTRUCTURE LAYER
-  # ===========================================================================
-
   postgres:
     image: postgres:16-alpine
     container_name: admadc_postgres
@@ -99,10 +89,6 @@ services:
       start_period: 5s
     networks:
       - admadc_net
-
-  # ===========================================================================
-  # APPLICATION LAYER
-  # ===========================================================================
 
   memory_service:
     build:
@@ -255,10 +241,6 @@ services:
         condition: service_healthy
     networks:
       - admadc_net
-
-  # ===========================================================================
-  # OBSERVABILITY LAYER
-  # ===========================================================================
 
   prometheus:
     image: prom/prometheus:v2.53.0
