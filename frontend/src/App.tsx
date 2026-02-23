@@ -2,8 +2,10 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
 import { PlanForm } from "./components/PlanForm";
+import { ApprovalQueue } from "./components/ApprovalQueue";
 
 const WS_URL = import.meta.env.VITE_GATEWAY_WS_URL ?? "ws://localhost:8080/ws";
+const HTTP_BASE = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
 
 const STATUS_DOT: Record<string, string> = {
   connected: "bg-green-400",
@@ -11,8 +13,22 @@ const STATUS_DOT: Record<string, string> = {
   disconnected: "bg-red-500 animate-pulse",
 };
 
+async function callApprovalEndpoint(
+  approvalId: string,
+  action: "approve" | "reject"
+) {
+  const resp = await fetch(
+    `${HTTP_BASE}/api/approvals/${approvalId}/${action}`,
+    { method: "POST" }
+  );
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`${resp.status}: ${body}`);
+  }
+}
+
 export default function App() {
-  const { events, status } = useWebSocket(WS_URL);
+  const { events, pendingApprovals, status } = useWebSocket(WS_URL);
   const latestEvent = events[0] ?? null;
 
   return (
@@ -27,9 +43,16 @@ export default function App() {
             Autonomous Deterministic Multi-Agent Dev Company
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${STATUS_DOT[status]}`} />
-          <span className="text-xs font-mono text-slate-500">{status}</span>
+        <div className="flex items-center gap-3">
+          {pendingApprovals.length > 0 && (
+            <span className="bg-orange-500 text-white text-xs font-mono rounded-full px-2.5 py-0.5 animate-pulse">
+              {pendingApprovals.length} approval{pendingApprovals.length !== 1 ? "s" : ""} pending
+            </span>
+          )}
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${STATUS_DOT[status]}`} />
+            <span className="text-xs font-mono text-slate-500">{status}</span>
+          </div>
         </div>
       </header>
 
@@ -44,8 +67,15 @@ export default function App() {
         </div>
 
         {/* Right column */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 overflow-y-auto">
           <PlanForm />
+
+          {/* HITL Approval Queue */}
+          <ApprovalQueue
+            approvals={pendingApprovals}
+            onApprove={(id) => callApprovalEndpoint(id, "approve")}
+            onReject={(id) => callApprovalEndpoint(id, "reject")}
+          />
 
           {/* Stats card */}
           <div className="bg-slate-900 rounded-xl border border-slate-700 p-4">
@@ -56,6 +86,20 @@ export default function App() {
               <div className="flex justify-between">
                 <dt className="text-slate-500 text-xs font-mono">Total events</dt>
                 <dd className="text-slate-200 text-xs font-mono">{events.length}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500 text-xs font-mono">Pending approvals</dt>
+                <dd className="text-xs font-mono">
+                  <span
+                    className={
+                      pendingApprovals.length > 0
+                        ? "text-orange-400"
+                        : "text-slate-200"
+                    }
+                  >
+                    {pendingApprovals.length}
+                  </span>
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-500 text-xs font-mono">Last event</dt>
@@ -83,6 +127,7 @@ export default function App() {
                 { label: "Prometheus", url: "http://localhost:9090" },
                 { label: "RabbitMQ UI", url: "http://localhost:15672" },
                 { label: "Gateway API", url: "http://localhost:8080/docs" },
+                { label: "Pending Approvals API", url: "http://localhost:8080/api/approvals" },
               ].map(({ label, url }) => (
                 <a
                   key={label}

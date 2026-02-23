@@ -11,6 +11,7 @@ interface PlanResult {
 export function PlanForm() {
   const [prompt, setPrompt] = useState("");
   const [projectName, setProjectName] = useState("my-project");
+  const [repoUrl, setRepoUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,10 +25,18 @@ export function PlanForm() {
     setError(null);
 
     try {
+      const body: Record<string, string> = {
+        prompt: prompt.trim(),
+        project_name: projectName,
+      };
+      if (repoUrl.trim()) {
+        body.repo_url = repoUrl.trim();
+      }
+
       const resp = await fetch(`${HTTP_URL}/api/plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), project_name: projectName }),
+        body: JSON.stringify(body),
       });
 
       if (!resp.ok) {
@@ -74,6 +83,29 @@ export function PlanForm() {
             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-indigo-500 resize-none"
             placeholder="Create a Python REST API with FastAPI..."
           />
+        </div>
+
+        <div>
+          <label className="block text-slate-500 text-xs font-mono mb-1">
+            GitHub repo URL{" "}
+            <span className="text-slate-600">(optional — required for real PR)</span>
+          </label>
+          <input
+            type="url"
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-indigo-500"
+            placeholder="https://github.com/your-org/your-repo"
+          />
+          {repoUrl.trim() ? (
+            <p className="text-green-500 text-xs font-mono mt-1">
+              ✓ PR will be created on GitHub after human approval
+            </p>
+          ) : (
+            <p className="text-slate-600 text-xs font-mono mt-1">
+              Without a repo URL, files are written locally in the container
+            </p>
+          )}
         </div>
 
         <button
