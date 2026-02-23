@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, DateTime, Integer
+from sqlalchemy import String, Text, DateTime, Integer, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -46,6 +46,7 @@ class TaskState(Base):
     file_path: Mapped[str] = mapped_column(String(512), default="")
     code: Mapped[str] = mapped_column(Text, default="")
     repo_url: Mapped[str] = mapped_column(String(1024), default="")
+    qa_attempt: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -64,6 +65,11 @@ async def init_db(database_url: str) -> None:
 
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with _engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE task_state ADD COLUMN IF NOT EXISTS qa_attempt INTEGER DEFAULT 0"))
+    except Exception:
+        pass
 
 
 async def close_db() -> None:

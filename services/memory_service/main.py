@@ -102,6 +102,7 @@ class UpdateTaskRequest(BaseModel):
     file_path: str = ""
     code: str = ""
     repo_url: str = ""
+    qa_attempt: int | None = None
 
 
 @app.post("/tasks")
@@ -114,6 +115,7 @@ async def update_task(req: UpdateTaskRequest):
         file_path=req.file_path,
         code=req.code,
         repo_url=req.repo_url,
+        qa_attempt=req.qa_attempt,
     )
     return {"updated": True, "task_id": req.task_id}
 

@@ -103,6 +103,7 @@ class MemoryStore:
         file_path: str = "",
         code: str = "",
         repo_url: str = "",
+        qa_attempt: int | None = None,
     ) -> None:
         async with get_session() as session:
             existing = await session.get(TaskState, task_id)
@@ -111,6 +112,8 @@ class MemoryStore:
                 existing.file_path = file_path or existing.file_path
                 existing.code = code or existing.code
                 existing.repo_url = repo_url or existing.repo_url
+                if qa_attempt is not None:
+                    existing.qa_attempt = qa_attempt
                 existing.updated_at = datetime.now(timezone.utc)
             else:
                 session.add(
@@ -121,6 +124,7 @@ class MemoryStore:
                         file_path=file_path,
                         code=code,
                         repo_url=repo_url,
+                        qa_attempt=qa_attempt if qa_attempt is not None else 0,
                     )
                 )
             await session.commit()
@@ -139,6 +143,7 @@ class MemoryStore:
                     "file_path": r.file_path,
                     "code": r.code,
                     "repo_url": r.repo_url,
+                    "qa_attempt": getattr(r, "qa_attempt", 0),
                 }
                 for r in rows
             ]
