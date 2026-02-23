@@ -1,1 +1,1 @@
-# Service-specific deps (aio-pika and httpx come from shared)
+redis[hiredis]>=5.2.0,<6.0.0
