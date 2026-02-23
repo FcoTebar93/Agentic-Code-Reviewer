@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { BaseEvent, WsMessage } from "../types/events";
+import type { BaseEvent, PrApproval, WsMessage } from "../types/events";
 
 const MAX_EVENTS = 100;
 const RECONNECT_DELAY_MS = 3000;
@@ -8,6 +8,7 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 export function useWebSocket(url: string) {
   const [events, setEvents] = useState<BaseEvent[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PrApproval[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -36,13 +37,21 @@ export function useWebSocket(url: string) {
             return next.slice(0, MAX_EVENTS);
           });
         } else if (parsed.type === "history") {
-          // History events arrive individually at connection time
           setEvents((prev) => {
             const evt = parsed.event as unknown as BaseEvent;
-            // Avoid duplicates from history
             if (prev.some((e) => e.event_id === evt.event_id)) return prev;
             return [...prev, evt];
           });
+        } else if (parsed.type === "approval") {
+          setPendingApprovals((prev) => {
+            if (prev.some((a) => a.approval_id === parsed.approval.approval_id))
+              return prev;
+            return [parsed.approval, ...prev];
+          });
+        } else if (parsed.type === "approval_decided") {
+          setPendingApprovals((prev) =>
+            prev.filter((a) => a.approval_id !== parsed.approval.approval_id)
+          );
         }
       } catch {
         // Ignore malformed messages
@@ -57,7 +66,6 @@ export function useWebSocket(url: string) {
       if (!mountedRef.current) return;
       setStatus("disconnected");
       wsRef.current = null;
-      // Auto-reconnect
       reconnectTimer.current = setTimeout(connect, RECONNECT_DELAY_MS);
     };
   }, [url]);
@@ -73,5 +81,5 @@ export function useWebSocket(url: string) {
     };
   }, [connect]);
 
-  return { events, status };
+  return { events, pendingApprovals, status };
 }
