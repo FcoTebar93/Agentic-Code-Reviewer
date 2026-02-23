@@ -86,7 +86,7 @@ class TaskAssignedPayload(BaseModel):
     task: TaskSpec
     qa_feedback: str = ""
     repo_url: str = ""
-    plan_reasoning: str = ""  # Planner's reasoning passed to dev_service
+    plan_reasoning: str = ""
 
 
 class CodeGeneratedPayload(BaseModel):

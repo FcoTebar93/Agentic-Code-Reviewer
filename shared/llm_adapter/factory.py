@@ -33,7 +33,6 @@ from shared.llm_adapter.mock_provider import MockProvider
 
 logger = logging.getLogger(__name__)
 
-# Providers backed by the OpenAI-compatible adapter
 _OPENAI_COMPATIBLE = {"openai", "groq", "gemini", "openrouter"}
 
 _PROVIDERS: dict[str, type] = {
@@ -50,7 +49,7 @@ def _register_openai_compatible(name: str) -> None:
     def _factory() -> OpenAIProvider:
         return OpenAIProvider(provider_name=name)
 
-    _PROVIDERS[name] = _factory  # type: ignore[assignment]
+    _PROVIDERS[name] = _factory
 
 
 def get_llm_provider(

@@ -18,7 +18,6 @@ import os
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
 
-# Default base URLs per provider name
 _BASE_URLS: dict[str, str] = {
     "openai":     "https://api.openai.com/v1",
     "groq":       "https://api.groq.com/openai/v1",
@@ -26,7 +25,6 @@ _BASE_URLS: dict[str, str] = {
     "openrouter": "https://openrouter.ai/api/v1",
 }
 
-# Sensible default models per provider (overridable via LLM_MODEL env var)
 _DEFAULT_MODELS: dict[str, str] = {
     "openai":     "gpt-4o-mini",
     "groq":       "llama-3.3-70b-versatile",
@@ -54,7 +52,6 @@ class OpenAIProvider(LLMProvider):
     ) -> None:
         self._provider_name = provider_name
 
-        # Resolve API key: explicit > LLM_API_KEY > OPENAI_API_KEY
         self._api_key = (
             api_key
             or os.environ.get("LLM_API_KEY", "")
@@ -66,14 +63,12 @@ class OpenAIProvider(LLMProvider):
                 "Set LLM_API_KEY (or OPENAI_API_KEY) in your environment."
             )
 
-        # Resolve base URL
         self._base_url = (
             base_url
             or os.environ.get("LLM_BASE_URL", "")
             or _BASE_URLS.get(provider_name, _BASE_URLS["openai"])
         )
 
-        # Resolve model: explicit > LLM_MODEL env > provider default
         self._model = (
             model
             or os.environ.get("LLM_MODEL", "")
@@ -95,7 +90,6 @@ class OpenAIProvider(LLMProvider):
     async def generate(self, request: LLMRequest) -> LLMResponse:
         prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
 
-        # Use provider default model unless the request specifies one explicitly
         model = self._model if request.model in ("", "gpt-4o") else request.model
 
         response = await self._client.chat.completions.create(
