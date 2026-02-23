@@ -138,7 +138,6 @@ async def _handle_pr_request(payload: PRRequestedPayload) -> None:
         files_data = [f.model_dump() for f in payload.files]
 
         if payload.repo_url and cfg.github_token:
-            # --- Real GitHub flow ---
             repo_path = await clone_repo(
                 payload.repo_url, cfg.workspace_dir, cfg.github_token,
                 author_name=cfg.git_author_name,
@@ -178,7 +177,6 @@ async def _handle_pr_request(payload: PRRequestedPayload) -> None:
             )
 
         else:
-            # --- Local workspace fallback (no token / no repo_url) ---
             import os
             local_dir = os.path.join(cfg.workspace_dir, f"plan-{plan_id[:8]}")
             os.makedirs(local_dir, exist_ok=True)
