@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field
 
 
 class EventType(str, Enum):
-    # Phase 1
     PLAN_REQUESTED = "plan.requested"
     PLAN_CREATED = "plan.created"
     TASK_ASSIGNED = "task.assigned"
@@ -26,7 +25,6 @@ class EventType(str, Enum):
     PR_CREATED = "pr.created"
     MEMORY_STORE = "memory.store"
     MEMORY_QUERY = "memory.query"
-    # Phase 2
     QA_PASSED = "qa.passed"
     QA_FAILED = "qa.failed"
     SECURITY_APPROVED = "security.approved"

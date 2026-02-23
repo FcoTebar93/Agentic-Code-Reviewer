@@ -60,7 +60,6 @@ def setup_logging(service_name: str) -> logging.Logger:
     root.addHandler(handler)
     root.setLevel(level)
 
-    # Silence noisy third-party loggers
     for noisy in ("uvicorn.access", "aio_pika", "aiormq"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 

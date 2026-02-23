@@ -35,7 +35,7 @@ CONNECT_MAX_RETRIES = 10
 CONNECT_INITIAL_BACKOFF = 1.0
 
 DEFAULT_MSG_MAX_RETRIES = 3
-DEFAULT_RETRY_DELAY_BASE = 1.0  # seconds; actual delay = base * 2^attempt, capped at 32s
+DEFAULT_RETRY_DELAY_BASE = 1.0
 
 
 class IdempotencyStore:
@@ -91,8 +91,6 @@ class EventBus:
         self._exchange: AbstractExchange | None = None
         self._dlx_exchange: AbstractExchange | None = None
 
-    # -- lifecycle -----------------------------------------------------------
-
     async def connect(self) -> None:
         backoff = CONNECT_INITIAL_BACKOFF
         for attempt in range(1, CONNECT_MAX_RETRIES + 1):
@@ -129,8 +127,6 @@ class EventBus:
             await self._connection.close()
             logger.info("RabbitMQ connection closed")
 
-    # -- publish -------------------------------------------------------------
-
     async def publish(self, event: BaseEvent) -> None:
         if not self._exchange:
             raise RuntimeError("EventBus not connected. Call connect() first.")
@@ -149,8 +145,6 @@ class EventBus:
         routing_key = event.event_type.value
         await self._exchange.publish(message, routing_key=routing_key)
         logger.debug("Published %s [%s]", routing_key, event.event_id[:8])
-
-    # -- consume -------------------------------------------------------------
 
     async def subscribe(
         self,
@@ -188,7 +182,6 @@ class EventBus:
             await queue.bind(self._exchange, routing_key=rk)
             logger.info("Queue %s bound to routing key %s", queue_name, rk)
 
-        # Capture exchange references for use in closure
         main_exchange = self._exchange
         dlx_exchange = self._dlx_exchange
 
