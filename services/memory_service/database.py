@@ -45,6 +45,7 @@ class TaskState(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending")
     file_path: Mapped[str] = mapped_column(String(512), default="")
     code: Mapped[str] = mapped_column(Text, default="")
+    repo_url: Mapped[str] = mapped_column(String(1024), default="")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

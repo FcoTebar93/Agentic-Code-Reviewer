@@ -135,7 +135,10 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         await event_bus.publish(cg_event)
         await _store_event(cg_event)
 
-        await _update_task_state(task.task_id, plan_id, "completed", task.file_path, code_result.code)
+        await _update_task_state(
+            task.task_id, plan_id, "completed",
+            task.file_path, code_result.code, payload.repo_url,
+        )
         tasks_completed.labels(service=SERVICE_NAME).inc()
 
     logger.info("Task %s code generated, forwarded to qa_service", task.task_id[:8])
@@ -158,7 +161,7 @@ async def _store_event(event: BaseEvent) -> None:
 
 async def _update_task_state(
     task_id: str, plan_id: str, status: str,
-    file_path: str = "", code: str = "",
+    file_path: str = "", code: str = "", repo_url: str = "",
 ) -> None:
     try:
         await http_client.post(
@@ -169,6 +172,7 @@ async def _update_task_state(
                 "status": status,
                 "file_path": file_path,
                 "code": code,
+                "repo_url": repo_url,
             },
         )
     except Exception:

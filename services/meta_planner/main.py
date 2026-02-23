@@ -116,7 +116,7 @@ async def _execute_plan(
         await _store_event(plan_event)
 
         for spec in task_specs:
-            ta_payload = TaskAssignedPayload(plan_id=plan_id, task=spec)
+            ta_payload = TaskAssignedPayload(plan_id=plan_id, task=spec, repo_url=repo_url)
             ta_event = task_assigned(SERVICE_NAME, ta_payload)
             await event_bus.publish(ta_event)
             await _store_event(ta_event)

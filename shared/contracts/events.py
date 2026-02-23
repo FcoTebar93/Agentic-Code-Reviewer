@@ -84,6 +84,7 @@ class TaskAssignedPayload(BaseModel):
     plan_id: str
     task: TaskSpec
     qa_feedback: str = ""
+    repo_url: str = ""
 
 
 class CodeGeneratedPayload(BaseModel):

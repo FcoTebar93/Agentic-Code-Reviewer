@@ -101,6 +101,7 @@ class UpdateTaskRequest(BaseModel):
     status: str = "pending"
     file_path: str = ""
     code: str = ""
+    repo_url: str = ""
 
 
 @app.post("/tasks")
@@ -112,6 +113,7 @@ async def update_task(req: UpdateTaskRequest):
         status=req.status,
         file_path=req.file_path,
         code=req.code,
+        repo_url=req.repo_url,
     )
     return {"updated": True, "task_id": req.task_id}
 

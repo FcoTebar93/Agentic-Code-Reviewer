@@ -102,6 +102,7 @@ class MemoryStore:
         status: str = "pending",
         file_path: str = "",
         code: str = "",
+        repo_url: str = "",
     ) -> None:
         async with get_session() as session:
             existing = await session.get(TaskState, task_id)
@@ -109,6 +110,7 @@ class MemoryStore:
                 existing.status = status
                 existing.file_path = file_path or existing.file_path
                 existing.code = code or existing.code
+                existing.repo_url = repo_url or existing.repo_url
                 existing.updated_at = datetime.now(timezone.utc)
             else:
                 session.add(
@@ -118,6 +120,7 @@ class MemoryStore:
                         status=status,
                         file_path=file_path,
                         code=code,
+                        repo_url=repo_url,
                     )
                 )
             await session.commit()
@@ -135,6 +138,7 @@ class MemoryStore:
                     "status": r.status,
                     "file_path": r.file_path,
                     "code": r.code,
+                    "repo_url": r.repo_url,
                 }
                 for r in rows
             ]

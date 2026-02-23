@@ -216,9 +216,10 @@ async def _check_plan_ready_for_pr(plan_id: str) -> None:
                 )
                 for t in all_tasks
             ]
+            repo_url = next((t.get("repo_url", "") for t in all_tasks), "")
             pr_payload = PRRequestedPayload(
                 plan_id=plan_id,
-                repo_url="",
+                repo_url=repo_url,
                 branch_name=f"admadc/plan-{plan_id[:8]}",
                 files=files,
                 commit_message=f"feat: implement plan {plan_id[:8]} (QA approved)",

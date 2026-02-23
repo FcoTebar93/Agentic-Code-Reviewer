@@ -231,6 +231,8 @@ services:
     environment:
       RABBITMQ_URL: ${RABBITMQ_URL}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-ADMADC Bot}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-admadc@localhost}
       LOG_LEVEL: ${LOG_LEVEL}
     ports:
       - "8003:8000"
@@ -264,8 +266,8 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
+      retries: 10
+      start_period: 120s
     networks:
       - admadc_net
 
