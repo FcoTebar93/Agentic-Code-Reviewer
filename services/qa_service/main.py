@@ -1,0 +1,268 @@
+"""
+QA Service -- code quality gate between dev_service and github_service.
+
+Pipeline role:
+  dev_service -> [code.generated] -> qa_service -> [pr.requested] -> security_service
+
+On QA pass: aggregates all tasks for the plan and publishes pr.requested.
+On QA fail (retries remaining): re-enqueues task.assigned with feedback for dev_service.
+On QA fail (retries exhausted): publishes qa.failed and logs to memory_service.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+import httpx
+from fastapi import FastAPI
+
+from shared.logging.logger import setup_logging
+from shared.observability.metrics import metrics_response, agent_execution_time, tasks_completed
+from shared.contracts.events import (
+    BaseEvent,
+    EventType,
+    CodeGeneratedPayload,
+    PRRequestedPayload,
+    TaskAssignedPayload,
+    QAResultPayload,
+    TaskSpec,
+    code_generated,
+    pr_requested,
+    task_assigned,
+    qa_passed,
+    qa_failed,
+)
+from shared.llm_adapter import get_llm_provider
+from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from services.qa_service.config import QAConfig
+from services.qa_service.reviewer import review_code
+
+SERVICE_NAME = "qa_service"
+event_bus: EventBus | None = None
+http_client: httpx.AsyncClient | None = None
+cfg: QAConfig | None = None
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    global event_bus, http_client, cfg
+    logger = setup_logging(SERVICE_NAME)
+
+    cfg = QAConfig.from_env()
+    http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+
+    event_bus = EventBus(cfg.rabbitmq_url)
+    await event_bus.connect()
+
+    asyncio.create_task(_consume_code_generated())
+    logger.info("QA Service ready (max_qa_retries=%d)", cfg.max_qa_retries)
+    yield
+
+    logger.info("Shutting down")
+    if event_bus:
+        await event_bus.close()
+    if http_client:
+        await http_client.aclose()
+
+
+app = FastAPI(
+    title="ADMADC - QA Service",
+    version="0.1.0",
+    description="Quality gate: reviews generated code before PR creation",
+    lifespan=lifespan,
+)
+logger = logging.getLogger(SERVICE_NAME)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": SERVICE_NAME}
+
+
+@app.get("/metrics")
+async def metrics():
+    return metrics_response()
+
+async def _consume_code_generated() -> None:
+    idem_store = IdempotencyStore(redis_url=cfg.redis_url)
+
+    async def handler(event: BaseEvent) -> None:
+        payload = CodeGeneratedPayload.model_validate(event.payload)
+        await _handle_code_review(payload)
+
+    await event_bus.subscribe(
+        queue_name="qa_service.code_review",
+        routing_keys=[EventType.CODE_GENERATED.value],
+        handler=handler,
+        idempotency_store=idem_store,
+        max_retries=3,
+    )
+
+
+async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
+    plan_id = payload.plan_id
+    task_id = payload.task_id
+    logger.info(
+        "Reviewing code for task %s (plan %s, qa_attempt=%d)",
+        task_id[:8],
+        plan_id[:8],
+        payload.qa_attempt,
+    )
+
+    with agent_execution_time.labels(service=SERVICE_NAME, operation="code_review").time():
+        llm = get_llm_provider()
+        result = await review_code(
+            llm=llm,
+            code=payload.code,
+            file_path=payload.file_path,
+            language=payload.language,
+            task_description=f"Generate {payload.language} code for {payload.file_path}",
+        )
+
+    qa_payload = QAResultPayload(
+        plan_id=plan_id,
+        task_id=task_id,
+        passed=result.passed,
+        issues=result.issues,
+        code=payload.code,
+        file_path=payload.file_path,
+        qa_attempt=payload.qa_attempt,
+    )
+
+    if result.passed:
+        logger.info("QA PASSED for task %s", task_id[:8])
+        tasks_completed.labels(service=SERVICE_NAME).inc()
+
+        qa_event = qa_passed(SERVICE_NAME, qa_payload)
+        await event_bus.publish(qa_event)
+        await _store_event(qa_event)
+
+        await _update_task_state(task_id, plan_id, "qa_passed")
+        await _check_plan_ready_for_pr(plan_id)
+    else:
+        logger.warning(
+            "QA FAILED for task %s (attempt %d): %s",
+            task_id[:8],
+            payload.qa_attempt,
+            result.issues,
+        )
+        if payload.qa_attempt < cfg.max_qa_retries:
+            await _retry_task(payload, result.issues)
+        else:
+            logger.error(
+                "QA exhausted retries for task %s -> marking qa.failed",
+                task_id[:8],
+            )
+            fail_event = qa_failed(SERVICE_NAME, qa_payload)
+            await event_bus.publish(fail_event)
+            await _store_event(fail_event)
+            await _update_task_state(task_id, plan_id, "qa_failed")
+
+
+async def _retry_task(
+    original: CodeGeneratedPayload, issues: list[str]
+) -> None:
+    """Re-enqueue the task to dev_service with QA feedback embedded."""
+    feedback = "Previous QA issues to fix:\n" + "\n".join(f"- {i}" for i in issues)
+    retry_spec = TaskSpec(
+        task_id=original.task_id,
+        description=f"Fix the following issues in {original.file_path}:\n{feedback}",
+        file_path=original.file_path,
+        language=original.language,
+    )
+    retry_payload = TaskAssignedPayload(
+        plan_id=original.plan_id,
+        task=retry_spec,
+        qa_feedback=feedback,
+    )
+    retry_event = task_assigned(SERVICE_NAME, retry_payload)
+    await event_bus.publish(retry_event)
+    await _store_event(retry_event)
+
+    await _update_task_state(
+        original.task_id,
+        original.plan_id,
+        "qa_retry",
+    )
+    logger.info(
+        "Re-enqueued task %s to dev_service (qa_attempt=%d)",
+        original.task_id[:8],
+        original.qa_attempt + 1,
+    )
+
+
+async def _check_plan_ready_for_pr(plan_id: str) -> None:
+    """
+    Check if all tasks in the plan have passed QA.
+    If so, aggregate files and publish pr.requested to security_service.
+    """
+    try:
+        resp = await http_client.get(f"/tasks/{plan_id}")
+        resp.raise_for_status()
+        all_tasks = resp.json()
+
+        if not all_tasks:
+            return
+
+        if all(t["status"] == "qa_passed" for t in all_tasks):
+            files = [
+                CodeGeneratedPayload(
+                    plan_id=plan_id,
+                    task_id=t["task_id"],
+                    file_path=t["file_path"],
+                    code=t["code"],
+                )
+                for t in all_tasks
+            ]
+            pr_payload = PRRequestedPayload(
+                plan_id=plan_id,
+                repo_url="",
+                branch_name=f"admadc/plan-{plan_id[:8]}",
+                files=files,
+                commit_message=f"feat: implement plan {plan_id[:8]} (QA approved)",
+                security_approved=False,
+            )
+            pr_event = pr_requested(SERVICE_NAME, pr_payload)
+            await event_bus.publish(pr_event)
+            await _store_event(pr_event)
+            logger.info(
+                "All tasks QA-passed for plan %s, pr.requested published to security_service",
+                plan_id[:8],
+            )
+    except Exception:
+        logger.exception("Error checking plan QA completion for %s", plan_id[:8])
+
+async def _store_event(event: BaseEvent) -> None:
+    try:
+        await http_client.post(
+            "/events",
+            json={
+                "event_id": event.event_id,
+                "event_type": event.event_type.value,
+                "producer": event.producer,
+                "idempotency_key": event.idempotency_key,
+                "payload": event.payload,
+            },
+        )
+    except Exception:
+        logger.exception("Failed to store event %s", event.event_id[:8])
+
+async def _update_task_state(
+    task_id: str,
+    plan_id: str,
+    status: str,
+) -> None:
+    try:
+        await http_client.post(
+            "/tasks",
+            json={
+                "task_id": task_id,
+                "plan_id": plan_id,
+                "status": status,
+                "file_path": "",
+                "code": "",
+            },
+        )
+    except Exception:
+        logger.exception("Failed to update task state %s", task_id[:8])
