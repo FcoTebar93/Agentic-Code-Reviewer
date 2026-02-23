@@ -32,6 +32,7 @@ class EventType(str, Enum):
     QA_FAILED = "qa.failed"
     SECURITY_APPROVED = "security.approved"
     SECURITY_BLOCKED = "security.blocked"
+    PIPELINE_CONCLUSION = "pipeline.conclusion"
 
 
 class BaseEvent(BaseModel):
@@ -85,6 +86,7 @@ class TaskAssignedPayload(BaseModel):
     task: TaskSpec
     qa_feedback: str = ""
     repo_url: str = ""
+    plan_reasoning: str = ""  # Planner's reasoning passed to dev_service
 
 
 class CodeGeneratedPayload(BaseModel):
@@ -152,6 +154,21 @@ class PrApprovalPayload(BaseModel):
     pr_context: dict[str, Any] = Field(default_factory=dict)
     decision: str = ""
     reviewer: str = "human"
+
+
+class PipelineConclusionPayload(BaseModel):
+    """
+    Dedicated event emitted by the gateway when the agent pipeline reaches
+    a conclusion (after security.approved). Summarises the full chain and
+    the list of changes for the feed.
+    """
+
+    plan_id: str
+    branch_name: str = ""
+    conclusion_text: str = ""
+    files_changed: list[str] = Field(default_factory=list)
+    approved: bool = True
+
 
 def plan_requested(producer: str, payload: PlanRequestedPayload) -> BaseEvent:
     return BaseEvent(
@@ -252,6 +269,14 @@ def security_approved(producer: str, payload: SecurityResultPayload) -> BaseEven
 def security_blocked(producer: str, payload: SecurityResultPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.SECURITY_BLOCKED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def pipeline_conclusion(producer: str, payload: PipelineConclusionPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.PIPELINE_CONCLUSION,
         producer=producer,
         payload=payload.model_dump(),
     )
