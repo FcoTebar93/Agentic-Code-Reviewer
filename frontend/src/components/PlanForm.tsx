@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 const HTTP_URL = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
 
@@ -15,11 +15,13 @@ export function PlanForm() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!prompt.trim()) return;
-
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setResult(null);
     setError(null);
@@ -49,6 +51,7 @@ export function PlanForm() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   }
 

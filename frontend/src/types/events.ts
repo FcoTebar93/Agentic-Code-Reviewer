@@ -16,7 +16,8 @@ export type EventType =
   | "qa.passed"
   | "qa.failed"
   | "security.approved"
-  | "security.blocked";
+  | "security.blocked"
+  | "pipeline.conclusion";
 
 export interface BaseEvent {
   event_id: string;
@@ -63,6 +64,7 @@ export const PRODUCER_FOR_EVENT: Record<EventType, string> = {
   "qa.failed": "qa_service",
   "security.approved": "security_service",
   "security.blocked": "security_service",
+  "pipeline.conclusion": "gateway_service",
 };
 
 export const EVENT_COLORS: Record<EventType, string> = {
@@ -81,6 +83,7 @@ export const EVENT_COLORS: Record<EventType, string> = {
   "qa.failed": "#ef4444",
   "security.approved": "#10b981",
   "security.blocked": "#ef4444",
+  "pipeline.conclusion": "#6366f1",
 };
 
 export const EVENT_LABELS: Record<EventType, string> = {
@@ -99,4 +102,5 @@ export const EVENT_LABELS: Record<EventType, string> = {
   "qa.failed": "QA Failed",
   "security.approved": "Security Approved",
   "security.blocked": "Security Blocked",
+  "pipeline.conclusion": "Pipeline Conclusion",
 };
