@@ -7,12 +7,19 @@ and publishes events for the dev_service to consume.
 Entry points:
 - HTTP POST /plan  (user-facing)
 - RabbitMQ consumer for plan.requested events
+
+Idempotency: identical request (prompt + project_name + repo_url) within
+IDEM_TTL_SECONDS returns the same plan without re-running the pipeline,
+avoiding duplicate task.assigned and duplicate files.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import os
+import time
 from contextlib import asynccontextmanager
 
 import httpx
@@ -40,6 +47,8 @@ event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: PlannerConfig | None = None
 
+_IDEM_TTL_SECONDS = int(os.environ.get("PLAN_IDEM_TTL_SECONDS", "30"))
+_plan_idem_cache: dict[str, tuple[str, dict, float]] = {}
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -94,7 +103,25 @@ class PlanResponse(BaseModel):
 
 @app.post("/plan", response_model=PlanResponse)
 async def create_plan(req: PlanRequest):
-    return await _execute_plan(req.prompt, req.project_name, req.repo_url)
+    key = hashlib.sha256(
+        f"{req.prompt}|{req.project_name}|{req.repo_url}".encode()
+    ).hexdigest()
+    now = time.monotonic()
+    if key in _plan_idem_cache:
+        cached_plan_id, cached_resp, cached_at = _plan_idem_cache[key]
+        if now - cached_at < _IDEM_TTL_SECONDS:
+            logger.info(
+                "Idempotent plan request (same key within %ds), returning cached plan %s",
+                _IDEM_TTL_SECONDS,
+                cached_plan_id[:8],
+            )
+            return cached_resp
+        else:
+            del _plan_idem_cache[key]
+
+    result = await _execute_plan(req.prompt, req.project_name, req.repo_url)
+    _plan_idem_cache[key] = (result["plan_id"], result, now)
+    return result
 
 async def _execute_plan(
     prompt: str, project_name: str, repo_url: str
@@ -116,7 +143,12 @@ async def _execute_plan(
         await _store_event(plan_event)
 
         for spec in task_specs:
-            ta_payload = TaskAssignedPayload(plan_id=plan_id, task=spec, repo_url=repo_url)
+            ta_payload = TaskAssignedPayload(
+                plan_id=plan_id,
+                task=spec,
+                repo_url=repo_url,
+                plan_reasoning=plan_result.reasoning,
+            )
             ta_event = task_assigned(SERVICE_NAME, ta_payload)
             await event_bus.publish(ta_event)
             await _store_event(ta_event)
@@ -137,6 +169,10 @@ async def _consume_plan_requests() -> None:
     """Listen for plan.requested events from the bus."""
 
     async def handler(event: BaseEvent) -> None:
+        delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
+        if delay_sec > 0:
+            logger.info("Agent delay: waiting %ds before processing", delay_sec)
+            await asyncio.sleep(delay_sec)
         payload = PlanRequestedPayload.model_validate(event.payload)
         await _execute_plan(payload.user_prompt, payload.project_name, payload.repo_url)
 
