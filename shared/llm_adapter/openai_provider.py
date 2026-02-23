@@ -82,9 +82,11 @@ class OpenAIProvider(LLMProvider):
                 "openai package is required. Install it with: pip install openai"
             ) from exc
 
+        timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT", "120"))
         self._client = AsyncOpenAI(
             api_key=self._api_key,
             base_url=self._base_url,
+            timeout=timeout,
         )
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
