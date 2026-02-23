@@ -242,6 +242,50 @@ services:
     networks:
       - admadc_net
 
+  gateway_service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/gateway_service/Dockerfile
+    container_name: admadc_gateway_service
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      MEMORY_SERVICE_URL: ${MEMORY_SERVICE_URL}
+      META_PLANNER_URL: ${META_PLANNER_URL:-http://meta_planner:8000}
+      LOG_LEVEL: ${LOG_LEVEL}
+    ports:
+      - "8080:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      memory_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - admadc_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/frontend/Dockerfile
+      args:
+        VITE_GATEWAY_WS_URL: ${VITE_GATEWAY_WS_URL:-ws://localhost:8080/ws}
+        VITE_GATEWAY_HTTP_URL: ${VITE_GATEWAY_HTTP_URL:-http://localhost:8080}
+    container_name: admadc_frontend
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      gateway_service:
+        condition: service_healthy
+    networks:
+      - admadc_net
+
   prometheus:
     image: prom/prometheus:v2.53.0
     container_name: admadc_prometheus
