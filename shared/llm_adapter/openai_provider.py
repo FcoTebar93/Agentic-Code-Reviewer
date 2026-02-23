@@ -21,7 +21,7 @@ from shared.llm_adapter.models import LLMRequest, LLMResponse
 _BASE_URLS: dict[str, str] = {
     "openai":     "https://api.openai.com/v1",
     "groq":       "https://api.groq.com/openai/v1",
-    "gemini":     "https://generativelanguage.googleapis.com/v1beta/openai",
+    "gemini":     "https://generativelanguage.googleapis.com/v1beta/openai/",
     "openrouter": "https://openrouter.ai/api/v1",
 }
 

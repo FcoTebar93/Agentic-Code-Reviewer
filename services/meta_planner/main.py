@@ -24,6 +24,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from shared.logging.logger import setup_logging
@@ -119,9 +120,20 @@ async def create_plan(req: PlanRequest):
         else:
             del _plan_idem_cache[key]
 
-    result = await _execute_plan(req.prompt, req.project_name, req.repo_url)
-    _plan_idem_cache[key] = (result["plan_id"], result, now)
-    return result
+    try:
+        result = await _execute_plan(req.prompt, req.project_name, req.repo_url)
+        _plan_idem_cache[key] = (result["plan_id"], result, now)
+        return result
+    except Exception as e:
+        logger.exception("Plan execution failed")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Plan execution failed",
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
 
 async def _execute_plan(
     prompt: str, project_name: str, repo_url: str

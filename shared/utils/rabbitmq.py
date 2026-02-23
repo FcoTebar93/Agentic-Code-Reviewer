@@ -217,16 +217,21 @@ class EventBus:
                 async with message.process(requeue=False, ignore_processed=True):
                     data = json.loads(message.body.decode())
                     event = BaseEvent.model_validate(data)
-
-                    if await idempotency_store.is_seen(event.idempotency_key):
+                    # Use retry-scoped key so republished retries are not skipped as duplicates
+                    effective_key = (
+                        event.idempotency_key
+                        if retry_count == 0
+                        else f"{event.idempotency_key}:retry:{retry_count}"
+                    )
+                    if await idempotency_store.is_seen(effective_key):
                         logger.info(
                             "Skipping duplicate event %s [idem=%s]",
                             event.event_id[:8],
-                            event.idempotency_key[:12],
+                            effective_key[:20],
                         )
                         return
 
-                    await idempotency_store.mark_seen(event.idempotency_key)
+                    await idempotency_store.mark_seen(effective_key)
                     await handler(event)
 
             except Exception:
