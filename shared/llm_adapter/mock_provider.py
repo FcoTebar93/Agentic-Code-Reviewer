@@ -1,21 +1,188 @@
 """
 Deterministic mock LLM provider for testing and development.
 
-Always returns the same output for the same prompt hash,
-making the entire pipeline reproducible without network calls.
+Simulates real LLM behaviour by parsing the actual prompt content and
+generating contextual reasoning based on what was asked. The output is
+always deterministic (same prompt → same response) but reflects the
+real content of each request, not hardcoded placeholders.
+
+To switch to a real model, set in .env:
+    LLM_PROVIDER=openai
+    OPENAI_API_KEY=sk-...
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
 
-_MOCK_PREFIX = "[MOCK] "
+# ---------------------------------------------------------------------------
+# Prompt type detection
+# ---------------------------------------------------------------------------
 
+_PLANNING_MARKERS = ("decompose it into a list", "software architect", "user request:")
+_CODEGEN_MARKERS = ("production-quality code", "write", "code should be written for file")
+_QA_MARKERS = ("quality assurance", "strict senior code reviewer", "verdict: pass or fail")
+
+
+def _detect_prompt_type(prompt: str) -> str:
+    lower = prompt.lower()
+    if any(m in lower for m in _PLANNING_MARKERS):
+        return "planning"
+    if any(m in lower for m in _CODEGEN_MARKERS):
+        return "codegen"
+    if any(m in lower for m in _QA_MARKERS):
+        return "qa"
+    return "generic"
+
+
+# ---------------------------------------------------------------------------
+# Content extractors — pull real data out of the structured prompts
+# ---------------------------------------------------------------------------
+
+def _extract_user_request(prompt: str) -> str:
+    """Extract the user's original request from a planning prompt."""
+    marker = "User request:"
+    idx = prompt.find(marker)
+    if idx != -1:
+        return prompt[idx + len(marker):].strip()[:200]
+    return prompt[-200:].strip()
+
+
+def _extract_codegen_context(prompt: str) -> tuple[str, str, str]:
+    """Return (description, file_path, language) from a code-gen prompt."""
+    desc, file_path, language = "", "src/main.py", "python"
+
+    # Language appears in "expert {language} developer"
+    lang_match = re.search(r"expert (\w+) developer", prompt, re.I)
+    if lang_match:
+        language = lang_match.group(1).lower()
+
+    # Description follows "the following task:\n"
+    task_match = re.search(r"the following task:\s*\n(.+?)(?:\n\n|The code should)", prompt, re.S)
+    if task_match:
+        desc = task_match.group(1).strip()[:200]
+
+    # File path follows "written for file:"
+    file_match = re.search(r"written for file:\s*(.+)", prompt)
+    if file_match:
+        file_path = file_match.group(1).strip()
+
+    return desc, file_path, language
+
+
+def _extract_qa_context(prompt: str) -> tuple[str, str, int]:
+    """Return (file_path, language, code_lines) from a QA review prompt."""
+    file_path, language, code_lines = "unknown", "python", 0
+
+    # Language in "following {language} code"
+    lang_match = re.search(r"following (\w+) code", prompt, re.I)
+    if lang_match:
+        language = lang_match.group(1).lower()
+
+    # File path in "intended for file `{path}`"
+    file_match = re.search(r"intended for file `([^`]+)`", prompt)
+    if file_match:
+        file_path = file_match.group(1)
+
+    # Count code lines (between ``` fences)
+    code_block = re.search(r"```\w*\n(.*?)```", prompt, re.S)
+    if code_block:
+        code_lines = len([l for l in code_block.group(1).split("\n") if l.strip()])
+
+    return file_path, language, code_lines
+
+
+# ---------------------------------------------------------------------------
+# Response generators — produce contextual REASONING + structured output
+# ---------------------------------------------------------------------------
+
+def _plan_response(prompt: str) -> str:
+    user_request = _extract_user_request(prompt)
+    # Extract key nouns/verbs for reasoning (first 60 chars of the request)
+    summary = user_request[:80].rstrip()
+
+    reasoning = (
+        f"Analysed request: '{summary}'. "
+        "Determined a single self-contained module is sufficient given the scope. "
+        "Chose `src/main.py` as entry point to keep the structure minimal and testable."
+    )
+    task_json = (
+        '[{"description": "Implement: ' + _safe_json_str(user_request[:120]) + '", '
+        '"file_path": "src/main.py", "language": "python"}]'
+    )
+    return f"REASONING: {reasoning}\nTASKS: {task_json}"
+
+
+def _codegen_response(prompt: str) -> str:
+    desc, file_path, language = _extract_codegen_context(prompt)
+    fname = file_path.split("/")[-1].replace(".py", "")
+    summary = desc[:80].rstrip() if desc else file_path
+
+    reasoning = (
+        f"Task: '{summary}'. "
+        f"Chose a functional approach for `{file_path}` with explicit type annotations "
+        f"and a docstring. No external dependencies — stdlib only for portability."
+    )
+    code = (
+        f"# Auto-generated by ADMADC mock for: {desc[:60]}\n"
+        f"from __future__ import annotations\n\n\n"
+        f"def {_to_func_name(fname)}() -> None:\n"
+        f'    """Implements: {desc[:80]}"""\n'
+        f"    pass\n\n\n"
+        f'if __name__ == "__main__":\n'
+        f"    {_to_func_name(fname)}()\n"
+    )
+    return f"REASONING: {reasoning}\nCODE:\n{code}"
+
+
+def _qa_response(prompt: str) -> str:
+    file_path, language, code_lines = _extract_qa_context(prompt)
+
+    reasoning = (
+        f"Reviewed `{file_path}` ({code_lines} non-empty lines, {language}). "
+        "Static pass: no dangerous patterns (eval/exec/shell injection) detected. "
+        "Semantic pass: structure matches task description, type annotations present, "
+        "no undefined variables or obvious logic errors found."
+    )
+    return f"REASONING: {reasoning}\nVERDICT: PASS\nISSUES: none"
+
+
+def _generic_response(prompt: str, prompt_hash: str, call_count: int) -> str:
+    summary = prompt[:60].replace("\n", " ").strip()
+    return (
+        f"REASONING: Processed request '{summary}...' (hash {prompt_hash[:8]}, "
+        f"call #{call_count}). No specific handler matched; generic response produced.\n"
+        "OUTPUT: Task completed successfully."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _safe_json_str(s: str) -> str:
+    return s.replace('"', "'").replace("\\", "/")
+
+
+def _to_func_name(name: str) -> str:
+    clean = re.sub(r"[^a-zA-Z0-9_]", "_", name).lower()
+    return clean if clean and clean[0].isalpha() else f"run_{clean}"
+
+
+# ---------------------------------------------------------------------------
+# Provider
+# ---------------------------------------------------------------------------
 
 class MockProvider(LLMProvider):
+    """
+    Deterministic mock that generates contextual reasoning from real prompt content.
+    Same prompt always produces the same output (SHA-256 seeded), but the reasoning
+    reflects the actual task rather than a fixed template.
+    """
 
     def __init__(self) -> None:
         self._call_count = 0
@@ -23,18 +190,23 @@ class MockProvider(LLMProvider):
     async def generate(self, request: LLMRequest) -> LLMResponse:
         self._call_count += 1
         prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
+        prompt_type = _detect_prompt_type(request.prompt)
 
-        content = (
-            f"{_MOCK_PREFIX}Deterministic response for prompt hash "
-            f"{prompt_hash[:12]}. Call #{self._call_count}."
-        )
+        if prompt_type == "planning":
+            content = _plan_response(request.prompt)
+        elif prompt_type == "codegen":
+            content = _codegen_response(request.prompt)
+        elif prompt_type == "qa":
+            content = _qa_response(request.prompt)
+        else:
+            content = _generic_response(request.prompt, prompt_hash, self._call_count)
 
         fake_prompt_tokens = len(request.prompt.split())
         fake_completion_tokens = len(content.split())
 
         return LLMResponse(
             content=content,
-            model="mock-deterministic",
+            model="mock-contextual",
             prompt_tokens=fake_prompt_tokens,
             completion_tokens=fake_completion_tokens,
             total_tokens=fake_prompt_tokens + fake_completion_tokens,

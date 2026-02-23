@@ -22,6 +22,7 @@ class ScanResult:
     approved: bool
     violations: list[str]
     files_scanned: int
+    reasoning: str = ""
 
 
 def scan_files(files: list[dict]) -> ScanResult:
@@ -48,9 +49,21 @@ def scan_files(files: list[dict]) -> ScanResult:
         all_violations.extend(file_violations)
 
     approved = len(all_violations) == 0
+    rules_checked = len(SECURITY_RULES)
+
     if approved:
+        reasoning = (
+            f"Scanned {files_scanned} file(s) against {rules_checked} security rules "
+            "(hardcoded secrets, dangerous functions, path traversal, shell/SQL injection). "
+            "No violations found. Code is safe for repository publication."
+        )
         logger.info("Security scan PASSED (%d files scanned)", files_scanned)
     else:
+        reasoning = (
+            f"Scanned {files_scanned} file(s) against {rules_checked} security rules. "
+            f"Found {len(all_violations)} violation(s). "
+            "Publication blocked until violations are resolved."
+        )
         logger.warning(
             "Security scan FAILED (%d files, %d violations): %s",
             files_scanned,
@@ -62,6 +75,7 @@ def scan_files(files: list[dict]) -> ScanResult:
         approved=approved,
         violations=all_violations,
         files_scanned=files_scanned,
+        reasoning=reasoning,
     )
 
 

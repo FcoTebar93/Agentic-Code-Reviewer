@@ -101,11 +101,13 @@ async def _execute_plan(
 ) -> dict:
     with agent_execution_time.labels(service=SERVICE_NAME, operation="plan").time():
         llm = get_llm_provider()
-        task_specs = await decompose_tasks(llm, prompt)
+        plan_result = await decompose_tasks(llm, prompt)
+        task_specs = plan_result.tasks
 
         plan_payload = PlanCreatedPayload(
             original_prompt=prompt,
             tasks=task_specs,
+            reasoning=plan_result.reasoning,
         )
         plan_event = plan_created(SERVICE_NAME, plan_payload)
         plan_id = plan_payload.plan_id
@@ -120,7 +122,10 @@ async def _execute_plan(
             await _store_event(ta_event)
 
         tasks_completed.labels(service=SERVICE_NAME).inc()
-        logger.info("Plan %s created with %d tasks", plan_id[:8], len(task_specs))
+        logger.info(
+            "Plan %s created with %d tasks. Reasoning: %s",
+            plan_id[:8], len(task_specs), plan_result.reasoning[:60],
+        )
 
     return {
         "plan_id": plan_id,

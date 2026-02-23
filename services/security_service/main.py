@@ -112,6 +112,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         violations=result.violations,
         files_scanned=result.files_scanned,
         pr_context=payload.model_dump() if result.approved else {},
+        reasoning=result.reasoning,
     )
 
     if result.approved:

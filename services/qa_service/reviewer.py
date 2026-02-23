@@ -7,12 +7,15 @@ Pass 1 (static): immediate rejection for known dangerous patterns.
 Pass 2 (LLM): semantic review to catch logic errors, missing error handling,
          and code quality issues that static analysis cannot detect.
 Both passes must succeed for the code to be marked as QA_PASSED.
+
+The LLM is asked to provide a REASONING section explaining the review
+decision, which is propagated to the event payload for frontend visibility.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from shared.llm_adapter import LLMProvider
 from services.qa_service.config import DANGEROUS_PATTERNS
@@ -36,7 +39,11 @@ Your job:
 3. Check for security anti-patterns (hardcoded secrets, dangerous functions, SQL injection, etc.).
 4. Check code quality (readability, unnecessary complexity).
 
-Respond ONLY in the following format (no extra text):
+First provide your reasoning (what you checked and why you made your decision).
+Then give your structured verdict.
+
+Format your response EXACTLY as:
+REASONING: <your review reasoning in 2-3 sentences>
 VERDICT: PASS or FAIL
 ISSUES:
 - <issue 1 if any>
@@ -49,6 +56,7 @@ ISSUES:
 class ReviewResult:
     passed: bool
     issues: list[str]
+    reasoning: str = ""
 
 
 async def review_code(
@@ -61,15 +69,17 @@ async def review_code(
     """
     Run static checks then LLM review.
 
-    Returns ReviewResult(passed=True, issues=[]) on full approval.
-    Returns ReviewResult(passed=False, issues=[...]) on any failure.
+    Returns ReviewResult(passed=True, ...) on full approval.
+    Returns ReviewResult(passed=False, ...) on any failure.
     """
     static_issues = _static_check(code)
     if static_issues:
-        logger.warning(
-            "Static check FAILED for %s: %s", file_path, static_issues
+        reasoning = (
+            f"Static analysis detected {len(static_issues)} dangerous pattern(s) "
+            "before LLM review. Immediate rejection applied."
         )
-        return ReviewResult(passed=False, issues=static_issues)
+        logger.warning("Static check FAILED for %s: %s", file_path, static_issues)
+        return ReviewResult(passed=False, issues=static_issues, reasoning=reasoning)
 
     llm_result = await _llm_review(llm, code, file_path, language, task_description)
     return llm_result
@@ -102,25 +112,31 @@ async def _llm_review(
 
 
 def _parse_review_response(content: str) -> ReviewResult:
-    """Parse the structured LLM response into a ReviewResult."""
+    """Parse the structured LLM response into a ReviewResult with reasoning."""
     lines = content.strip().splitlines()
     passed = True
     issues: list[str] = []
+    reasoning = ""
 
     for line in lines:
-        upper = line.strip().upper()
-        if upper.startswith("VERDICT:"):
+        stripped = line.strip()
+        upper = stripped.upper()
+
+        if upper.startswith("REASONING:"):
+            reasoning = stripped[len("REASONING:"):].strip()
+        elif upper.startswith("VERDICT:"):
             verdict = upper.replace("VERDICT:", "").strip()
             passed = verdict == "PASS"
-        elif line.strip().startswith("- ") and not passed:
-            issue = line.strip().lstrip("- ").strip()
-            if issue.lower() != "none":
+        elif stripped.startswith("- ") and not passed:
+            issue = stripped.lstrip("- ").strip()
+            if issue.lower() not in ("none", ""):
                 issues.append(issue)
 
     if not passed and not issues:
         issues.append("LLM reviewer returned FAIL without specific issues")
 
     logger.info(
-        "LLM review result: %s, issues=%d", "PASS" if passed else "FAIL", len(issues)
+        "LLM review result: %s, issues=%d. Reasoning: %s",
+        "PASS" if passed else "FAIL", len(issues), reasoning[:60],
     )
-    return ReviewResult(passed=passed, issues=issues)
+    return ReviewResult(passed=passed, issues=issues, reasoning=reasoning)

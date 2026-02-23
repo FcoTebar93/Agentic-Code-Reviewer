@@ -1,12 +1,14 @@
 """
 GitHub Service -- materializes generated code into a repository.
 
-Phase 2 change: now consumes security.approved events instead of pr.requested.
-The security.approved event carries the full PR context (files, branch, etc.)
-inside SecurityResultPayload.pr_context, forwarded by security_service.
+Phase 3 HITL change: now consumes pr.human_approved events instead of
+security.approved. The gateway_service holds security.approved events
+until a human reviews and approves them via the frontend. Only after
+explicit human approval does pr.human_approved reach this service.
 
 Pipeline role:
-  security_service -> [security.approved] -> github_service -> [pr.created]
+  security_service -> [security.approved] -> gateway_service (HITL)
+  human approves -> [pr.human_approved] -> github_service -> [pr.created]
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from shared.contracts.events import (
     EventType,
     PRRequestedPayload,
     PRCreatedPayload,
-    SecurityResultPayload,
+    PrApprovalPayload,
     pr_created,
 )
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
@@ -52,8 +54,8 @@ async def lifespan(application: FastAPI):
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
 
-    asyncio.create_task(_consume_security_approved())
-    logger.info("GitHub Service ready (listening for security.approved)")
+    asyncio.create_task(_consume_human_approved())
+    logger.info("GitHub Service ready (listening for pr.human_approved)")
     yield
 
     logger.info("Shutting down")
@@ -88,23 +90,27 @@ async def workspace_info():
         contents = os.listdir(workspace)
     return {"workspace": workspace, "contents": contents}
 
-async def _consume_security_approved() -> None:
+async def _consume_human_approved() -> None:
+    """
+    Consume pr.human_approved events published by the gateway after
+    a human reviewer clicks Approve in the frontend.
+    """
     idem_store = IdempotencyStore()
 
     async def handler(event: BaseEvent) -> None:
-        sec_payload = SecurityResultPayload.model_validate(event.payload)
-        if not sec_payload.approved or not sec_payload.pr_context:
+        approval = PrApprovalPayload.model_validate(event.payload)
+        if approval.decision != "approved" or not approval.pr_context:
             logger.warning(
-                "Received security.approved with approved=False or empty pr_context for plan %s",
-                sec_payload.plan_id[:8],
+                "Received pr.human_approved with non-approved decision for plan %s",
+                approval.plan_id[:8],
             )
             return
-        pr_payload = PRRequestedPayload.model_validate(sec_payload.pr_context)
+        pr_payload = PRRequestedPayload.model_validate(approval.pr_context)
         await _handle_pr_request(pr_payload)
 
     await event_bus.subscribe(
-        queue_name="github_service.security_approved",
-        routing_keys=[EventType.SECURITY_APPROVED.value],
+        queue_name="github_service.human_approved",
+        routing_keys=[EventType.PR_HUMAN_APPROVED.value],
         handler=handler,
         idempotency_store=idem_store,
         max_retries=3,
@@ -149,10 +155,21 @@ async def _handle_pr_request(payload: PRRequestedPayload) -> None:
             import os
             local_dir = os.path.join(cfg.workspace_dir, f"plan-{plan_id[:8]}")
             os.makedirs(local_dir, exist_ok=True)
-            await write_files(local_dir, files_data)
+            written = await write_files(local_dir, files_data)
             logger.info(
-                "No repo_url or token. Files written locally to %s",
+                "No repo_url or token. %d file(s) written locally to %s",
+                written,
                 local_dir,
             )
+            # Publish pr.created with a local workspace URL so the event feed closes the loop
+            created_payload = PRCreatedPayload(
+                plan_id=plan_id,
+                pr_url=f"file://{local_dir}",
+                pr_number=0,
+                branch_name=payload.branch_name,
+            )
+            created_event = pr_created(SERVICE_NAME, created_payload)
+            await event_bus.publish(created_event)
+            logger.info("pr.created published (local workspace) for plan %s", plan_id[:8])
 
         tasks_completed.labels(service=SERVICE_NAME).inc()

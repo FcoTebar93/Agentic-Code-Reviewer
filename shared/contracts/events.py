@@ -23,6 +23,9 @@ class EventType(str, Enum):
     CODE_GENERATED = "code.generated"
     PR_REQUESTED = "pr.requested"
     PR_CREATED = "pr.created"
+    PR_PENDING_APPROVAL = "pr.pending_approval"
+    PR_HUMAN_APPROVED = "pr.human_approved"
+    PR_HUMAN_REJECTED = "pr.human_rejected"
     MEMORY_STORE = "memory.store"
     MEMORY_QUERY = "memory.query"
     QA_PASSED = "qa.passed"
@@ -74,6 +77,7 @@ class PlanCreatedPayload(BaseModel):
     plan_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     original_prompt: str
     tasks: list[TaskSpec]
+    reasoning: str = ""
 
 
 class TaskAssignedPayload(BaseModel):
@@ -89,6 +93,7 @@ class CodeGeneratedPayload(BaseModel):
     code: str
     language: str = "python"
     qa_attempt: int = 0
+    reasoning: str = ""
 
 
 class PRRequestedPayload(BaseModel):
@@ -106,6 +111,7 @@ class PRCreatedPayload(BaseModel):
     pr_number: int
     branch_name: str
 
+
 class QAResultPayload(BaseModel):
     """Produced by qa_service after analysing generated code."""
 
@@ -116,6 +122,7 @@ class QAResultPayload(BaseModel):
     code: str
     file_path: str
     qa_attempt: int
+    reasoning: str = ""
 
 
 class SecurityResultPayload(BaseModel):
@@ -127,6 +134,28 @@ class SecurityResultPayload(BaseModel):
     violations: list[str]
     files_scanned: int
     pr_context: dict[str, Any] = Field(default_factory=dict)
+    reasoning: str = ""
+
+
+class PrApprovalPayload(BaseModel):
+    """
+    Stored in the gateway pending human review.
+    Published as pr.pending_approval, pr.human_approved, or pr.human_rejected.
+    """
+
+    approval_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    plan_id: str
+    branch_name: str
+    files_count: int
+    security_reasoning: str = ""
+    pr_context: dict[str, Any] = Field(default_factory=dict)
+    decision: str = ""
+    reviewer: str = "human"
+
+
+# ---------------------------------------------------------------------------
+# Factory functions
+# ---------------------------------------------------------------------------
 
 def plan_requested(producer: str, payload: PlanRequestedPayload) -> BaseEvent:
     return BaseEvent(
@@ -176,6 +205,30 @@ def pr_created(producer: str, payload: PRCreatedPayload) -> BaseEvent:
     )
 
 
+def pr_pending_approval(producer: str, payload: PrApprovalPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.PR_PENDING_APPROVAL,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def pr_human_approved(producer: str, payload: PrApprovalPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.PR_HUMAN_APPROVED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def pr_human_rejected(producer: str, payload: PrApprovalPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.PR_HUMAN_REJECTED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
 def qa_passed(producer: str, payload: QAResultPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.QA_PASSED,
@@ -206,6 +259,7 @@ def security_blocked(producer: str, payload: SecurityResultPayload) -> BaseEvent
         producer=producer,
         payload=payload.model_dump(),
     )
+
 
 def _stable_hash(data: dict[str, Any]) -> str:
     """Produce a deterministic hash of a dict by sorting keys recursively."""

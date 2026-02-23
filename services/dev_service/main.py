@@ -108,7 +108,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         await _update_task_state(task.task_id, plan_id, "in_progress")
 
         llm = get_llm_provider()
-        code = await generate_code(llm, task)
+        code_result = await generate_code(llm, task)
 
         current_attempt = 0
         try:
@@ -126,15 +126,16 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             plan_id=plan_id,
             task_id=task.task_id,
             file_path=task.file_path,
-            code=code,
+            code=code_result.code,
             language=task.language,
             qa_attempt=current_attempt + (1 if qa_feedback else 0),
+            reasoning=code_result.reasoning,
         )
         cg_event = code_generated(SERVICE_NAME, cg_payload)
         await event_bus.publish(cg_event)
         await _store_event(cg_event)
 
-        await _update_task_state(task.task_id, plan_id, "completed", task.file_path, code)
+        await _update_task_state(task.task_id, plan_id, "completed", task.file_path, code_result.code)
         tasks_completed.labels(service=SERVICE_NAME).inc()
 
     logger.info("Task %s code generated, forwarded to qa_service", task.task_id[:8])

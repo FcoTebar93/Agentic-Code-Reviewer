@@ -7,9 +7,14 @@ Responsibilities:
 3. GET  /api/events -- proxy to memory_service
 4. GET  /api/tasks/{plan_id} -- proxy to memory_service
 5. GET  /api/status -- current pipeline state (connections + recent events)
+6. HITL approval endpoints:
+   GET  /api/approvals          -- list pending human approvals
+   POST /api/approvals/{id}/approve -- approve a PR (publishes pr.human_approved)
+   POST /api/approvals/{id}/reject  -- reject a PR (publishes pr.human_rejected)
 
-Design: the gateway never processes events, only forwards them.
-This keeps it stateless and easy to scale horizontally.
+Design: the gateway intercepts security.approved events and holds them for
+human review before forwarding to github_service via pr.human_approved.
+All other events are forwarded transparently.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -27,7 +33,15 @@ from fastapi.responses import JSONResponse
 
 from shared.logging.logger import setup_logging
 from shared.observability.metrics import metrics_response
-from shared.contracts.events import BaseEvent
+from shared.contracts.events import (
+    BaseEvent,
+    EventType,
+    SecurityResultPayload,
+    PrApprovalPayload,
+    pr_pending_approval,
+    pr_human_approved,
+    pr_human_rejected,
+)
 from shared.utils.rabbitmq import EventBus
 from services.gateway_service.config import GatewayConfig
 from services.gateway_service.ws_manager import ConnectionManager
@@ -37,6 +51,9 @@ event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: GatewayConfig | None = None
 manager = ConnectionManager()
+
+# In-memory store for pending human approvals: {approval_id: PrApprovalPayload}
+_pending_approvals: dict[str, PrApprovalPayload] = {}
 
 
 @asynccontextmanager
@@ -48,10 +65,17 @@ async def lifespan(application: FastAPI):
     http_client = httpx.AsyncClient(timeout=30.0)
 
     event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
 
-    asyncio.create_task(_consume_all_events())
-    logger.info("Gateway Service ready — WebSocket broadcast active")
+    # Connect in the background so the HTTP server (and healthcheck) starts
+    # immediately while RabbitMQ may still be initialising.
+    async def _connect_and_consume():
+        await event_bus.connect()
+        asyncio.create_task(_consume_all_events())
+        asyncio.create_task(_consume_security_approved())
+        logger.info("Gateway RabbitMQ consumers active")
+
+    asyncio.create_task(_connect_and_consume())
+    logger.info("Gateway Service ready — WebSocket broadcast + HITL approval active")
     yield
 
     logger.info("Shutting down")
@@ -63,8 +87,8 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(
     title="ADMADC - Gateway Service",
-    version="0.1.0",
-    description="WebSocket gateway and HTTP proxy for the React frontend",
+    version="0.2.0",
+    description="WebSocket gateway, HTTP proxy, and Human-in-the-Loop approval system",
     lifespan=lifespan,
 )
 
@@ -89,6 +113,7 @@ async def health():
         "status": "ok",
         "service": SERVICE_NAME,
         "ws_connections": manager.connection_count,
+        "pending_approvals": len(_pending_approvals),
     }
 
 
@@ -123,9 +148,14 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception:
                 logger.warning("Could not fetch history for new WebSocket client")
 
+        # Send current pending approvals so the client can show them immediately
+        for approval in _pending_approvals.values():
+            await websocket.send_text(
+                json.dumps({"type": "approval", "approval": approval.model_dump()})
+            )
+
         # Keep the connection alive; events arrive via broadcast() from _consume_all_events
         while True:
-            # Wait for any incoming message (ping/pong or client disconnect)
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -183,16 +213,102 @@ async def get_tasks(plan_id: str):
 async def get_status():
     return {
         "ws_connections": manager.connection_count,
+        "pending_approvals": len(_pending_approvals),
         "service": SERVICE_NAME,
     }
 
 
 # ---------------------------------------------------------------------------
-# RabbitMQ consumer — broadcast all events to WebSocket clients
+# HITL approval endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/approvals")
+async def list_approvals():
+    """Return all pending human approvals."""
+    return {
+        "pending": [a.model_dump() for a in _pending_approvals.values()],
+        "count": len(_pending_approvals),
+    }
+
+
+@app.post("/api/approvals/{approval_id}/approve")
+async def approve_pr(approval_id: str):
+    """
+    Human approves a PR.
+    Publishes pr.human_approved and forwards to github_service via RabbitMQ.
+    """
+    approval = _pending_approvals.get(approval_id)
+    if not approval:
+        return JSONResponse(
+            content={"error": f"Approval {approval_id} not found or already decided"},
+            status_code=404,
+        )
+
+    approval.decision = "approved"
+    _pending_approvals.pop(approval_id, None)
+
+    event = pr_human_approved(SERVICE_NAME, approval)
+    await event_bus.publish(event)
+
+    # Broadcast decision to all WebSocket clients
+    await manager.broadcast(
+        json.dumps({"type": "approval_decided", "approval": approval.model_dump()})
+    )
+    await manager.broadcast(
+        json.dumps({"type": "event", "event": json.loads(event.model_dump_json())})
+    )
+
+    logger.info(
+        "Human APPROVED PR for plan %s (approval %s)",
+        approval.plan_id[:8],
+        approval_id[:8],
+    )
+    return {"status": "approved", "plan_id": approval.plan_id}
+
+
+@app.post("/api/approvals/{approval_id}/reject")
+async def reject_pr(approval_id: str):
+    """
+    Human rejects a PR.
+    Publishes pr.human_rejected and removes the pending approval.
+    """
+    approval = _pending_approvals.get(approval_id)
+    if not approval:
+        return JSONResponse(
+            content={"error": f"Approval {approval_id} not found or already decided"},
+            status_code=404,
+        )
+
+    approval.decision = "rejected"
+    _pending_approvals.pop(approval_id, None)
+
+    event = pr_human_rejected(SERVICE_NAME, approval)
+    await event_bus.publish(event)
+
+    await manager.broadcast(
+        json.dumps({"type": "approval_decided", "approval": approval.model_dump()})
+    )
+    await manager.broadcast(
+        json.dumps({"type": "event", "event": json.loads(event.model_dump_json())})
+    )
+
+    logger.info(
+        "Human REJECTED PR for plan %s (approval %s)",
+        approval.plan_id[:8],
+        approval_id[:8],
+    )
+    return {"status": "rejected", "plan_id": approval.plan_id}
+
+
+# ---------------------------------------------------------------------------
+# RabbitMQ consumers
 # ---------------------------------------------------------------------------
 
 
 async def _consume_all_events() -> None:
+    """Broadcast every event on the bus to connected WebSocket clients."""
+
     async def handler(event: BaseEvent) -> None:
         payload = json.dumps({"type": "event", "event": json.loads(event.model_dump_json())})
         await manager.broadcast(payload)
@@ -205,6 +321,53 @@ async def _consume_all_events() -> None:
     await event_bus.subscribe(
         queue_name="gateway_service.broadcast",
         routing_keys=["#"],
+        handler=handler,
+        max_retries=1,
+    )
+
+
+async def _consume_security_approved() -> None:
+    """
+    Intercept security.approved events to create pending human approvals.
+
+    Instead of letting github_service react directly to security.approved,
+    the gateway holds the approval request until a human reviews it
+    via the frontend and clicks Approve or Reject.
+    """
+
+    async def handler(event: BaseEvent) -> None:
+        sec = SecurityResultPayload.model_validate(event.payload)
+        if not sec.approved or not sec.pr_context:
+            return
+
+        approval = PrApprovalPayload(
+            plan_id=sec.plan_id,
+            branch_name=sec.branch_name,
+            files_count=sec.files_scanned,
+            security_reasoning=sec.reasoning,
+            pr_context=sec.pr_context,
+        )
+        _pending_approvals[approval.approval_id] = approval
+
+        # Publish pr.pending_approval so the event feed shows it
+        pending_event = pr_pending_approval(SERVICE_NAME, approval)
+        await event_bus.publish(pending_event)
+
+        # Push the pending card to all connected clients immediately
+        await manager.broadcast(
+            json.dumps({"type": "approval", "approval": approval.model_dump()})
+        )
+
+        logger.info(
+            "PR approval pending for plan %s (approval_id %s). "
+            "Waiting for human decision.",
+            sec.plan_id[:8],
+            approval.approval_id[:8],
+        )
+
+    await event_bus.subscribe(
+        queue_name="gateway_service.hitl_approvals",
+        routing_keys=[EventType.SECURITY_APPROVED.value],
         handler=handler,
         max_retries=1,
     )

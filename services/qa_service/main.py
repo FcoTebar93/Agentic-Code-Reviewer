@@ -128,6 +128,7 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
         code=payload.code,
         file_path=payload.file_path,
         qa_attempt=payload.qa_attempt,
+        reasoning=result.reasoning,
     )
 
     if result.passed:
