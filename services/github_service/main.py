@@ -140,7 +140,9 @@ async def _handle_pr_request(payload: PRRequestedPayload) -> None:
         if payload.repo_url and cfg.github_token:
             # --- Real GitHub flow ---
             repo_path = await clone_repo(
-                payload.repo_url, cfg.workspace_dir, cfg.github_token
+                payload.repo_url, cfg.workspace_dir, cfg.github_token,
+                author_name=cfg.git_author_name,
+                author_email=cfg.git_author_email,
             )
             await create_branch(repo_path, payload.branch_name)
             written = await write_files(repo_path, files_data)

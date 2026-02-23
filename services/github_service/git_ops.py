@@ -54,23 +54,72 @@ async def configure_git_identity(
     )
 
 
-async def clone_repo(repo_url: str, workspace_dir: str, token: str = "") -> str:
-    """Clone a repo into workspace_dir. Returns the local path."""
+async def _is_repo_empty(repo_path: str) -> bool:
+    """Return True if the repo has no commits yet."""
+    try:
+        await run_git("rev-parse", "HEAD", cwd=repo_path)
+        return False
+    except RuntimeError:
+        return True
+
+
+async def _init_empty_repo(
+    repo_path: str,
+    auth_url: str,
+    author_name: str,
+    author_email: str,
+) -> None:
+    """
+    Push an initial commit to an empty remote so that a base branch ('main')
+    exists and PR creation has something to merge into.
+    """
+    logger.info("Repository is empty — creating initial commit on main")
+    await configure_git_identity(repo_path, author_name, author_email)
+    await run_git("checkout", "-b", "main", cwd=repo_path)
+
+    readme_path = os.path.join(repo_path, "README.md")
+    Path(readme_path).write_text(
+        "# Project\n\nInitialized by [ADMADC](https://github.com/FcoTebar93/Agentic-Project).\n",
+        encoding="utf-8",
+    )
+    await run_git("add", "README.md", cwd=repo_path)
+    await run_git("commit", "-m", "chore: initial commit", cwd=repo_path)
+    await run_git("push", "-u", auth_url, "main", cwd=repo_path)
+    logger.info("Initial commit pushed to main")
+
+
+async def clone_repo(
+    repo_url: str,
+    workspace_dir: str,
+    token: str = "",
+    author_name: str = "ADMADC Bot",
+    author_email: str = "admadc@localhost",
+) -> str:
+    """Clone a repo into workspace_dir. Returns the local path.
+
+    If the remote is empty (no commits), an initial commit is pushed to
+    'main' so that the agent's feature branch has a base to target.
+    """
     repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
     local_path = os.path.join(workspace_dir, repo_name)
-
-    if os.path.exists(local_path):
-        logger.info("Repo already cloned at %s, pulling latest", local_path)
-        await run_git("pull", "--ff-only", cwd=local_path)
-        return local_path
 
     auth_url = repo_url
     if token and "github.com" in repo_url:
         auth_url = repo_url.replace("https://", f"https://x-access-token:{token}@")
 
+    if os.path.exists(local_path):
+        logger.info("Repo already cloned at %s", local_path)
+        if not await _is_repo_empty(local_path):
+            await run_git("pull", "--ff-only", cwd=local_path)
+        return local_path
+
     os.makedirs(workspace_dir, exist_ok=True)
     await run_git("clone", auth_url, local_path, cwd=workspace_dir)
     logger.info("Cloned %s to %s", repo_url, local_path)
+
+    if await _is_repo_empty(local_path):
+        await _init_empty_repo(local_path, auth_url, author_name, author_email)
+
     return local_path
 
 
