@@ -30,7 +30,7 @@ from shared.contracts.events import BaseEvent
 logger = logging.getLogger(__name__)
 
 QDRANT_COLLECTION = "admadc_code_memory"
-EMBEDDING_DIM = 384  # placeholder dimension for Phase 1
+EMBEDDING_DIM = 384
 
 
 class MemoryStore:
@@ -54,8 +54,6 @@ class MemoryStore:
     async def close(self) -> None:
         await self._qdrant.close()
         await self._redis.close()
-
-    # -- PostgreSQL: event log -----------------------------------------------
 
     async def store_event(self, event: BaseEvent) -> bool:
         """Persist an event. Returns False if duplicate (idempotency)."""
@@ -96,8 +94,6 @@ class MemoryStore:
                 }
                 for r in rows
             ]
-
-    # -- PostgreSQL: task state ----------------------------------------------
 
     async def update_task(
         self,
@@ -143,8 +139,6 @@ class MemoryStore:
                 for r in rows
             ]
 
-    # -- Qdrant: semantic memory ---------------------------------------------
-
     async def store_embedding(
         self, point_id: str, vector: list[float], payload: dict[str, Any]
     ) -> None:
@@ -166,8 +160,6 @@ class MemoryStore:
             for r in results.points
         ]
 
-    # -- Redis: operational memory -------------------------------------------
-
     async def cache_set(self, key: str, value: str, ttl: int = 3600) -> None:
         await self._redis.set(key, value, ex=ttl)
 
@@ -179,4 +171,4 @@ class MemoryStore:
         result = await self._redis.set(
             f"idem:{key}", "1", nx=True, ex=86400
         )
-        return result is None  # None means key already existed
+        return result is None

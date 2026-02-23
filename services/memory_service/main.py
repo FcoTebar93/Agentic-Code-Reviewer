@@ -57,11 +57,6 @@ def _get_store() -> MemoryStore:
         raise HTTPException(status_code=503, detail="Store not initialized")
     return store
 
-
-# ---------------------------------------------------------------------------
-# Health & metrics
-# ---------------------------------------------------------------------------
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": SERVICE_NAME}
@@ -70,11 +65,6 @@ async def health():
 @app.get("/metrics")
 async def metrics():
     return metrics_response()
-
-
-# ---------------------------------------------------------------------------
-# Event log endpoints
-# ---------------------------------------------------------------------------
 
 class StoreEventRequest(BaseModel):
     event_id: str
@@ -105,11 +95,6 @@ async def list_events(event_type: str | None = None, limit: int = 50):
     s = _get_store()
     return await s.get_events(event_type=event_type, limit=limit)
 
-
-# ---------------------------------------------------------------------------
-# Task state endpoints
-# ---------------------------------------------------------------------------
-
 class UpdateTaskRequest(BaseModel):
     task_id: str
     plan_id: str
@@ -135,11 +120,6 @@ async def update_task(req: UpdateTaskRequest):
 async def get_tasks(plan_id: str):
     s = _get_store()
     return await s.get_tasks(plan_id)
-
-
-# ---------------------------------------------------------------------------
-# Cache endpoints (operational memory)
-# ---------------------------------------------------------------------------
 
 class CacheSetRequest(BaseModel):
     key: str
