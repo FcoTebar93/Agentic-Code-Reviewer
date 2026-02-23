@@ -65,12 +65,6 @@ app = FastAPI(
 )
 logger = logging.getLogger(SERVICE_NAME)
 
-
-# ---------------------------------------------------------------------------
-# Health & metrics
-# ---------------------------------------------------------------------------
-
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": SERVICE_NAME}
@@ -79,12 +73,6 @@ async def health():
 @app.get("/metrics")
 async def metrics():
     return metrics_response()
-
-
-# ---------------------------------------------------------------------------
-# RabbitMQ consumer
-# ---------------------------------------------------------------------------
-
 
 async def _consume_tasks() -> None:
     idem_store = IdempotencyStore(
@@ -122,7 +110,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         llm = get_llm_provider()
         code = await generate_code(llm, task)
 
-        # Increment qa_attempt counter so qa_service can track retry depth
         current_attempt = 0
         try:
             resp = await http_client.get(f"/tasks/{plan_id}")
@@ -151,12 +138,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         tasks_completed.labels(service=SERVICE_NAME).inc()
 
     logger.info("Task %s code generated, forwarded to qa_service", task.task_id[:8])
-
-
-# ---------------------------------------------------------------------------
-# Memory service helpers
-# ---------------------------------------------------------------------------
-
 
 async def _store_event(event: BaseEvent) -> None:
     try:

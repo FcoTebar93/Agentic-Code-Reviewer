@@ -1,0 +1,2 @@
+# Service-specific deps (aio-pika comes from shared)
+pygithub>=2.4.0,<3.0.0
