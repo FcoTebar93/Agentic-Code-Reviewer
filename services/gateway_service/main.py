@@ -38,9 +38,11 @@ from shared.contracts.events import (
     EventType,
     SecurityResultPayload,
     PrApprovalPayload,
+    PipelineConclusionPayload,
     pr_pending_approval,
     pr_human_approved,
     pr_human_rejected,
+    pipeline_conclusion,
 )
 from shared.utils.rabbitmq import EventBus
 from services.gateway_service.config import GatewayConfig
@@ -302,6 +304,30 @@ async def _consume_security_approved() -> None:
         sec = SecurityResultPayload.model_validate(event.payload)
         if not sec.approved or not sec.pr_context:
             return
+
+        files_changed: list[str] = []
+        pr_files = sec.pr_context.get("files")
+        if isinstance(pr_files, list):
+            for f in pr_files:
+                if isinstance(f, dict) and "file_path" in f:
+                    files_changed.append(str(f["file_path"]))
+
+        conclusion_payload = PipelineConclusionPayload(
+            plan_id=sec.plan_id,
+            branch_name=sec.branch_name,
+            conclusion_text=sec.reasoning,
+            files_changed=files_changed,
+            approved=sec.approved,
+        )
+        conclusion_event = pipeline_conclusion(SERVICE_NAME, conclusion_payload)
+        await event_bus.publish(conclusion_event)
+        try:
+            await http_client.post(
+                f"{cfg.memory_service_url}/events",
+                json=json.loads(conclusion_event.model_dump_json()),
+            )
+        except Exception:
+            logger.warning("Could not store pipeline.conclusion in memory_service")
 
         approval = PrApprovalPayload(
             plan_id=sec.plan_id,
