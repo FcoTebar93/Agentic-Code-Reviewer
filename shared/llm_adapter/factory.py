@@ -3,6 +3,23 @@ Provider factory -- single entry point for the entire system.
 
 Reads LLM_PROVIDER from env (default: 'mock') and returns a
 CachedLLMProvider wrapping the chosen backend.
+
+Supported providers:
+
+  mock        Built-in contextual mock, no API key needed (default)
+  openai      OpenAI API  -- needs OPENAI_API_KEY or LLM_API_KEY
+  groq        Groq API    -- free tier, needs LLM_API_KEY
+                            https://console.groq.com/keys
+                            Default model: llama-3.3-70b-versatile
+  gemini      Google AI   -- free tier, needs LLM_API_KEY
+                            https://aistudio.google.com/apikey
+                            Default model: gemini-2.0-flash
+  openrouter  OpenRouter  -- free models available, needs LLM_API_KEY
+                            https://openrouter.ai/keys
+                            Default model: meta-llama/llama-3.3-70b-instruct:free
+
+All providers enforce temperature=0 for determinism.
+Model can be overridden globally with the LLM_MODEL env var.
 """
 
 from __future__ import annotations
@@ -16,6 +33,9 @@ from shared.llm_adapter.mock_provider import MockProvider
 
 logger = logging.getLogger(__name__)
 
+# Providers backed by the OpenAI-compatible adapter
+_OPENAI_COMPATIBLE = {"openai", "groq", "gemini", "openrouter"}
+
 _PROVIDERS: dict[str, type] = {
     "mock": MockProvider,
 }
@@ -23,11 +43,14 @@ _PROVIDERS: dict[str, type] = {
 _instance: LLMProvider | None = None
 
 
-def _register_openai() -> None:
-    """Lazy-register OpenAI only when selected, avoiding hard dependency."""
+def _register_openai_compatible(name: str) -> None:
+    """Lazy-register any OpenAI-compatible provider."""
     from shared.llm_adapter.openai_provider import OpenAIProvider
 
-    _PROVIDERS["openai"] = OpenAIProvider
+    def _factory() -> OpenAIProvider:
+        return OpenAIProvider(provider_name=name)
+
+    _PROVIDERS[name] = _factory  # type: ignore[assignment]
 
 
 def get_llm_provider(
@@ -39,10 +62,7 @@ def get_llm_provider(
 
     Args:
         provider_name: Override for LLM_PROVIDER env var.
-        redis_url: If given, use Redis as the cache backend.
-
-    Returns:
-        A CachedLLMProvider wrapping the selected provider.
+        redis_url:     If given, use Redis as the cache backend.
     """
     global _instance
     if _instance is not None:
@@ -50,21 +70,26 @@ def get_llm_provider(
 
     name = (provider_name or os.environ.get("LLM_PROVIDER", "mock")).lower()
 
-    if name == "openai":
-        _register_openai()
+    if name in _OPENAI_COMPATIBLE and name not in _PROVIDERS:
+        _register_openai_compatible(name)
 
     provider_cls = _PROVIDERS.get(name)
     if provider_cls is None:
         raise ValueError(
             f"Unknown LLM provider '{name}'. "
-            f"Available: {list(_PROVIDERS.keys())}"
+            f"Available: mock, openai, groq, gemini, openrouter"
         )
 
     inner = provider_cls()
     cache_url = redis_url or os.environ.get("REDIS_URL")
 
     _instance = CachedLLMProvider(inner=inner, redis_url=cache_url)
-    logger.info("LLM provider initialized: %s (cached=%s)", name, bool(cache_url))
+    logger.info(
+        "LLM provider initialized: %s (model=%s, cached=%s)",
+        name,
+        os.environ.get("LLM_MODEL", "provider-default"),
+        bool(cache_url),
+    )
     return _instance
 
 

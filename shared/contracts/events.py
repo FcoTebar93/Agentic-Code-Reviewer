@@ -153,11 +153,6 @@ class PrApprovalPayload(BaseModel):
     decision: str = ""
     reviewer: str = "human"
 
-
-# ---------------------------------------------------------------------------
-# Factory functions
-# ---------------------------------------------------------------------------
-
 def plan_requested(producer: str, payload: PlanRequestedPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.PLAN_REQUESTED,

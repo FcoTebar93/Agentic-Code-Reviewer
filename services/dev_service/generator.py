@@ -74,7 +74,6 @@ def _parse_response(raw: str) -> CodeResult:
         reasoning = parts[1].strip() if len(parts) > 1 else ""
         code = ""
 
-    # Strip markdown fences if present
     if code.startswith("```"):
         lines = code.split("\n")
         code = "\n".join(lines[1:])

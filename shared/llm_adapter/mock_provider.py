@@ -19,10 +19,6 @@ import re
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
 
-# ---------------------------------------------------------------------------
-# Prompt type detection
-# ---------------------------------------------------------------------------
-
 _PLANNING_MARKERS = ("decompose it into a list", "software architect", "user request:")
 _CODEGEN_MARKERS = ("production-quality code", "write", "code should be written for file")
 _QA_MARKERS = ("quality assurance", "strict senior code reviewer", "verdict: pass or fail")
@@ -38,11 +34,6 @@ def _detect_prompt_type(prompt: str) -> str:
         return "qa"
     return "generic"
 
-
-# ---------------------------------------------------------------------------
-# Content extractors — pull real data out of the structured prompts
-# ---------------------------------------------------------------------------
-
 def _extract_user_request(prompt: str) -> str:
     """Extract the user's original request from a planning prompt."""
     marker = "User request:"
@@ -56,17 +47,14 @@ def _extract_codegen_context(prompt: str) -> tuple[str, str, str]:
     """Return (description, file_path, language) from a code-gen prompt."""
     desc, file_path, language = "", "src/main.py", "python"
 
-    # Language appears in "expert {language} developer"
     lang_match = re.search(r"expert (\w+) developer", prompt, re.I)
     if lang_match:
         language = lang_match.group(1).lower()
 
-    # Description follows "the following task:\n"
     task_match = re.search(r"the following task:\s*\n(.+?)(?:\n\n|The code should)", prompt, re.S)
     if task_match:
         desc = task_match.group(1).strip()[:200]
 
-    # File path follows "written for file:"
     file_match = re.search(r"written for file:\s*(.+)", prompt)
     if file_match:
         file_path = file_match.group(1).strip()
@@ -78,31 +66,22 @@ def _extract_qa_context(prompt: str) -> tuple[str, str, int]:
     """Return (file_path, language, code_lines) from a QA review prompt."""
     file_path, language, code_lines = "unknown", "python", 0
 
-    # Language in "following {language} code"
     lang_match = re.search(r"following (\w+) code", prompt, re.I)
     if lang_match:
         language = lang_match.group(1).lower()
 
-    # File path in "intended for file `{path}`"
     file_match = re.search(r"intended for file `([^`]+)`", prompt)
     if file_match:
         file_path = file_match.group(1)
 
-    # Count code lines (between ``` fences)
     code_block = re.search(r"```\w*\n(.*?)```", prompt, re.S)
     if code_block:
         code_lines = len([l for l in code_block.group(1).split("\n") if l.strip()])
 
     return file_path, language, code_lines
 
-
-# ---------------------------------------------------------------------------
-# Response generators — produce contextual REASONING + structured output
-# ---------------------------------------------------------------------------
-
 def _plan_response(prompt: str) -> str:
     user_request = _extract_user_request(prompt)
-    # Extract key nouns/verbs for reasoning (first 60 chars of the request)
     summary = user_request[:80].rstrip()
 
     reasoning = (
@@ -159,11 +138,6 @@ def _generic_response(prompt: str, prompt_hash: str, call_count: int) -> str:
         "OUTPUT: Task completed successfully."
     )
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _safe_json_str(s: str) -> str:
     return s.replace('"', "'").replace("\\", "/")
 
@@ -171,11 +145,6 @@ def _safe_json_str(s: str) -> str:
 def _to_func_name(name: str) -> str:
     clean = re.sub(r"[^a-zA-Z0-9_]", "_", name).lower()
     return clean if clean and clean[0].isalpha() else f"run_{clean}"
-
-
-# ---------------------------------------------------------------------------
-# Provider
-# ---------------------------------------------------------------------------
 
 class MockProvider(LLMProvider):
     """

@@ -52,7 +52,6 @@ http_client: httpx.AsyncClient | None = None
 cfg: GatewayConfig | None = None
 manager = ConnectionManager()
 
-# In-memory store for pending human approvals: {approval_id: PrApprovalPayload}
 _pending_approvals: dict[str, PrApprovalPayload] = {}
 
 
@@ -66,8 +65,6 @@ async def lifespan(application: FastAPI):
 
     event_bus = EventBus(cfg.rabbitmq_url)
 
-    # Connect in the background so the HTTP server (and healthcheck) starts
-    # immediately while RabbitMQ may still be initialising.
     async def _connect_and_consume():
         await event_bus.connect()
         asyncio.create_task(_consume_all_events())
@@ -101,12 +98,6 @@ app.add_middleware(
 
 logger = logging.getLogger(SERVICE_NAME)
 
-
-# ---------------------------------------------------------------------------
-# Health & metrics
-# ---------------------------------------------------------------------------
-
-
 @app.get("/health")
 async def health():
     return {
@@ -121,17 +112,10 @@ async def health():
 async def metrics():
     return metrics_response()
 
-
-# ---------------------------------------------------------------------------
-# WebSocket endpoint
-# ---------------------------------------------------------------------------
-
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Send last 20 events so the client has context on connect
         if http_client and cfg:
             try:
                 resp = await http_client.get(
@@ -148,13 +132,11 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception:
                 logger.warning("Could not fetch history for new WebSocket client")
 
-        # Send current pending approvals so the client can show them immediately
         for approval in _pending_approvals.values():
             await websocket.send_text(
                 json.dumps({"type": "approval", "approval": approval.model_dump()})
             )
 
-        # Keep the connection alive; events arrive via broadcast() from _consume_all_events
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
@@ -162,12 +144,6 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         logger.exception("WebSocket error")
         manager.disconnect(websocket)
-
-
-# ---------------------------------------------------------------------------
-# HTTP API proxy endpoints
-# ---------------------------------------------------------------------------
-
 
 @app.post("/api/plan")
 async def create_plan(request_body: dict[str, Any]):
@@ -217,12 +193,6 @@ async def get_status():
         "service": SERVICE_NAME,
     }
 
-
-# ---------------------------------------------------------------------------
-# HITL approval endpoints
-# ---------------------------------------------------------------------------
-
-
 @app.get("/api/approvals")
 async def list_approvals():
     """Return all pending human approvals."""
@@ -251,7 +221,6 @@ async def approve_pr(approval_id: str):
     event = pr_human_approved(SERVICE_NAME, approval)
     await event_bus.publish(event)
 
-    # Broadcast decision to all WebSocket clients
     await manager.broadcast(
         json.dumps({"type": "approval_decided", "approval": approval.model_dump()})
     )
@@ -300,12 +269,6 @@ async def reject_pr(approval_id: str):
     )
     return {"status": "rejected", "plan_id": approval.plan_id}
 
-
-# ---------------------------------------------------------------------------
-# RabbitMQ consumers
-# ---------------------------------------------------------------------------
-
-
 async def _consume_all_events() -> None:
     """Broadcast every event on the bus to connected WebSocket clients."""
 
@@ -349,11 +312,9 @@ async def _consume_security_approved() -> None:
         )
         _pending_approvals[approval.approval_id] = approval
 
-        # Publish pr.pending_approval so the event feed shows it
         pending_event = pr_pending_approval(SERVICE_NAME, approval)
         await event_bus.publish(pending_event)
 
-        # Push the pending card to all connected clients immediately
         await manager.broadcast(
             json.dumps({"type": "approval", "approval": approval.model_dump()})
         )
