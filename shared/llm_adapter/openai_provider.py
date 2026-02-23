@@ -22,7 +22,6 @@ class OpenAIProvider(LLMProvider):
             raise ValueError(
                 "OPENAI_API_KEY must be set when using OpenAIProvider"
             )
-        # Defer import so the mock path never needs openai installed
         try:
             from openai import AsyncOpenAI
         except ImportError as exc:
@@ -38,7 +37,7 @@ class OpenAIProvider(LLMProvider):
 
         response = await self._client.chat.completions.create(
             model=request.model,
-            temperature=0.0,  # DETERMINISM: always override to 0
+            temperature=0.0,
             max_tokens=request.max_tokens,
             messages=[{"role": "user", "content": request.prompt}],
         )

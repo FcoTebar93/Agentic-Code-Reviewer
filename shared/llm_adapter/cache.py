@@ -62,8 +62,6 @@ class CachedLLMProvider(LLMProvider):
         await self._set(cache_key, response.model_dump_json())
         return response
 
-    # -- cache key ----------------------------------------------------------
-
     @staticmethod
     def _make_key(request: LLMRequest) -> str:
         raw = json.dumps(
@@ -76,8 +74,6 @@ class CachedLLMProvider(LLMProvider):
         )
         return f"llm_cache:{hashlib.sha256(raw.encode()).hexdigest()}"
 
-    # -- backend abstraction ------------------------------------------------
-
     async def _get(self, key: str) -> str | None:
         if self._redis:
             return await self._redis.get(key)
@@ -85,6 +81,6 @@ class CachedLLMProvider(LLMProvider):
 
     async def _set(self, key: str, value: str) -> None:
         if self._redis:
-            await self._redis.set(key, value, ex=86400)  # 24h TTL
+            await self._redis.set(key, value, ex=86400)
         else:
             self._local_cache[key] = value
