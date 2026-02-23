@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import httpx
@@ -80,6 +81,10 @@ async def _consume_tasks() -> None:
     )
 
     async def handler(event: BaseEvent) -> None:
+        delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
+        if delay_sec > 0:
+            logger.info("Agent delay: waiting %ds before processing", delay_sec)
+            await asyncio.sleep(delay_sec)
         payload = TaskAssignedPayload.model_validate(event.payload)
         await _handle_task(payload)
 
@@ -108,7 +113,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         await _update_task_state(task.task_id, plan_id, "in_progress")
 
         llm = get_llm_provider()
-        code_result = await generate_code(llm, task)
+        code_result = await generate_code(llm, task, plan_reasoning=payload.plan_reasoning)
 
         current_attempt = 0
         try:
@@ -128,9 +133,14 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             file_path=task.file_path,
             code=code_result.code,
             language=task.language,
-            qa_attempt=current_attempt + (1 if qa_feedback else 0),
+            qa_attempt=current_attempt,
             reasoning=code_result.reasoning,
         )
+        step_delay = float(cfg.step_delay)
+        if step_delay > 0:
+            logger.info("Pausing %.1fs before publishing (AGENT_STEP_DELAY)", step_delay)
+            await asyncio.sleep(step_delay)
+
         cg_event = code_generated(SERVICE_NAME, cg_payload)
         await event_bus.publish(cg_event)
         await _store_event(cg_event)

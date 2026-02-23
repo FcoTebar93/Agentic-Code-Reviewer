@@ -11,6 +11,7 @@ class DevConfig:
     llm_provider: str
     log_level: str
     redis_url: str
+    step_delay: str
 
     @classmethod
     def from_env(cls) -> DevConfig:
@@ -20,4 +21,5 @@ class DevConfig:
             llm_provider=os.environ.get("LLM_PROVIDER", "mock"),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
             redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
+            step_delay=os.environ.get("AGENT_STEP_DELAY", "0"),
         )

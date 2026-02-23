@@ -1,9 +1,12 @@
 """
 Code generation logic using the LLM adapter.
 
-The LLM is asked to provide both a REASONING block (design decisions,
-approach chosen, libraries considered) and the actual CODE block.
-This makes the developer agent's thinking visible in the event feed.
+Each developer agent:
+1. Reads the planner's reasoning and explicitly responds to it.
+2. Implements the task with production-quality code.
+3. Returns both REASONING (referencing the planner) and the CODE.
+
+This creates a visible chain of inter-agent communication in the event feed.
 """
 
 from __future__ import annotations
@@ -16,7 +19,31 @@ from shared.llm_adapter import LLMProvider
 
 logger = logging.getLogger(__name__)
 
-CODE_GEN_PROMPT = """You are an expert {language} developer.
+CODE_GEN_PROMPT = """You are an expert {language} developer working inside a multi-agent pipeline.
+
+The planning agent has already analysed the project and provided the following reasoning:
+---
+PLANNER'S REASONING:
+{plan_reasoning}
+---
+
+Your task is:
+{description}
+
+Target file: {file_path}
+
+Instructions:
+1. Start your response by explicitly referencing and responding to the planner's reasoning above.
+2. Explain the implementation approach you chose and why, addressing any decisions the planner raised.
+3. Write complete, production-quality {language} code.
+
+Format your response EXACTLY as:
+REASONING: <2-4 sentences that (a) acknowledge the planner's analysis, (b) explain your implementation decisions>
+CODE:
+<the complete code, no markdown fences>
+"""
+
+CODE_GEN_PROMPT_NO_PRIOR = """You are an expert {language} developer.
 
 Write production-quality code for the following task:
 {description}
@@ -39,28 +66,43 @@ class CodeResult:
     reasoning: str
 
 
-async def generate_code(llm: LLMProvider, task: TaskSpec) -> CodeResult:
-    """Use the LLM to generate code for a single task, with reasoning."""
-    prompt = CODE_GEN_PROMPT.format(
-        language=task.language,
-        description=task.description,
-        file_path=task.file_path,
-    )
+async def generate_code(
+    llm: LLMProvider,
+    task: TaskSpec,
+    plan_reasoning: str = "",
+) -> CodeResult:
+    """Use the LLM to generate code for a single task.
+
+    If plan_reasoning is provided, the prompt instructs the developer agent
+    to explicitly respond to the planner's reasoning, creating a visible
+    inter-agent dialogue.
+    """
+    if plan_reasoning.strip():
+        prompt = CODE_GEN_PROMPT.format(
+            language=task.language,
+            plan_reasoning=plan_reasoning,
+            description=task.description,
+            file_path=task.file_path,
+        )
+    else:
+        prompt = CODE_GEN_PROMPT_NO_PRIOR.format(
+            language=task.language,
+            description=task.description,
+            file_path=task.file_path,
+        )
+
     response = await llm.generate_text(prompt)
     result = _parse_response(response.content)
 
     logger.info(
         "Generated %d chars of %s code for %s. Reasoning: %s",
-        len(result.code), task.language, task.file_path, result.reasoning[:60],
+        len(result.code), task.language, task.file_path, result.reasoning[:80],
     )
     return result
 
 
 def _parse_response(raw: str) -> CodeResult:
-    """
-    Parse REASONING/CODE sections from the LLM response.
-    Falls back gracefully if the format is not followed.
-    """
+    """Parse REASONING/CODE sections from the LLM response."""
     reasoning = ""
     code = raw.strip()
 
