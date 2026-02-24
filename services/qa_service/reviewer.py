@@ -1,15 +1,12 @@
 """
 QA review logic: static pattern analysis + LLM-based code review.
 
-Design: two-pass approach.
-Pass 1 (static): immediate rejection for known dangerous patterns.
-         This is deterministic, zero-LLM-cost, and catches obvious issues.
-Pass 2 (LLM): semantic review to catch logic errors, missing error handling,
-         and code quality issues that static analysis cannot detect.
-Both passes must succeed for the code to be marked as QA_PASSED.
+Each QA agent:
+1. Reads the developer's reasoning and explicitly responds to it.
+2. Performs static and semantic review of the code.
+3. Returns REASONING that references the developer's decisions.
 
-The LLM is asked to provide a REASONING section explaining the review
-decision, which is propagated to the event payload for frontend visibility.
+This creates a visible inter-agent dialogue: dev explains choices, QA responds.
 """
 
 from __future__ import annotations
@@ -23,6 +20,39 @@ from services.qa_service.config import DANGEROUS_PATTERNS
 logger = logging.getLogger(__name__)
 
 QA_REVIEW_PROMPT = """You are a strict senior code reviewer performing a quality assurance check.
+
+The developer agent that wrote this code provided the following reasoning:
+---
+DEVELOPER'S REASONING:
+{dev_reasoning}
+---
+
+Now review the following {language} code intended for file `{file_path}`:
+
+```{language}
+{code}
+```
+
+The original task description was:
+{description}
+
+Your job:
+1. Explicitly respond to the developer's reasoning above — do you agree with their approach? Are there concerns?
+2. Check that the code correctly implements the described task.
+3. Identify any logic errors, missing error handling, or undefined variables.
+4. Check for security anti-patterns (hardcoded secrets, dangerous functions, SQL injection, etc.).
+5. Check code quality (readability, unnecessary complexity).
+
+Format your response EXACTLY as:
+REASONING: <2-4 sentences that (a) respond to the developer's reasoning, (b) explain your review decision>
+VERDICT: PASS or FAIL
+ISSUES:
+- <issue 1 if any>
+- <issue 2 if any>
+(or "ISSUES: none" if PASS)
+"""
+
+QA_REVIEW_PROMPT_NO_PRIOR = """You are a strict senior code reviewer performing a quality assurance check.
 
 Analyse the following {language} code intended for file `{file_path}`:
 
@@ -39,15 +69,11 @@ Your job:
 3. Check for security anti-patterns (hardcoded secrets, dangerous functions, SQL injection, etc.).
 4. Check code quality (readability, unnecessary complexity).
 
-First provide your reasoning (what you checked and why you made your decision).
-Then give your structured verdict.
-
 Format your response EXACTLY as:
 REASONING: <your review reasoning in 2-3 sentences>
 VERDICT: PASS or FAIL
 ISSUES:
 - <issue 1 if any>
-- <issue 2 if any>
 (or "ISSUES: none" if PASS)
 """
 
@@ -55,7 +81,7 @@ ISSUES:
 @dataclass
 class ReviewResult:
     passed: bool
-    issues: list[str]
+    issues: list[str] = field(default_factory=list)
     reasoning: str = ""
 
 
@@ -65,23 +91,27 @@ async def review_code(
     file_path: str,
     language: str,
     task_description: str,
+    dev_reasoning: str = "",
 ) -> ReviewResult:
     """
     Run static checks then LLM review.
 
-    Returns ReviewResult(passed=True, ...) on full approval.
-    Returns ReviewResult(passed=False, ...) on any failure.
+    If dev_reasoning is provided, the QA agent is instructed to explicitly
+    respond to the developer's reasoning, creating a visible dialogue.
     """
     static_issues = _static_check(code)
     if static_issues:
         reasoning = (
             f"Static analysis detected {len(static_issues)} dangerous pattern(s) "
-            "before LLM review. Immediate rejection applied."
+            "before LLM review. Immediate rejection applied regardless of "
+            "developer's stated rationale."
         )
         logger.warning("Static check FAILED for %s: %s", file_path, static_issues)
         return ReviewResult(passed=False, issues=static_issues, reasoning=reasoning)
 
-    llm_result = await _llm_review(llm, code, file_path, language, task_description)
+    llm_result = await _llm_review(
+        llm, code, file_path, language, task_description, dev_reasoning
+    )
     return llm_result
 
 
@@ -100,13 +130,24 @@ async def _llm_review(
     file_path: str,
     language: str,
     task_description: str,
+    dev_reasoning: str = "",
 ) -> ReviewResult:
-    prompt = QA_REVIEW_PROMPT.format(
-        language=language,
-        file_path=file_path,
-        code=code,
-        description=task_description,
-    )
+    if dev_reasoning.strip():
+        prompt = QA_REVIEW_PROMPT.format(
+            language=language,
+            file_path=file_path,
+            code=code,
+            description=task_description,
+            dev_reasoning=dev_reasoning,
+        )
+    else:
+        prompt = QA_REVIEW_PROMPT_NO_PRIOR.format(
+            language=language,
+            file_path=file_path,
+            code=code,
+            description=task_description,
+        )
+
     response = await llm.generate_text(prompt)
     return _parse_review_response(response.content)
 
@@ -117,6 +158,7 @@ def _parse_review_response(content: str) -> ReviewResult:
     passed = True
     issues: list[str] = []
     reasoning = ""
+    in_issues = False
 
     for line in lines:
         stripped = line.strip()
@@ -124,10 +166,17 @@ def _parse_review_response(content: str) -> ReviewResult:
 
         if upper.startswith("REASONING:"):
             reasoning = stripped[len("REASONING:"):].strip()
+            in_issues = False
         elif upper.startswith("VERDICT:"):
             verdict = upper.replace("VERDICT:", "").strip()
             passed = verdict == "PASS"
-        elif stripped.startswith("- ") and not passed:
+            in_issues = False
+        elif upper.startswith("ISSUES:"):
+            in_issues = True
+            inline = stripped[len("ISSUES:"):].strip()
+            if inline.lower() not in ("none", ""):
+                issues.append(inline)
+        elif in_issues and stripped.startswith("- "):
             issue = stripped.lstrip("- ").strip()
             if issue.lower() not in ("none", ""):
                 issues.append(issue)
@@ -137,6 +186,6 @@ def _parse_review_response(content: str) -> ReviewResult:
 
     logger.info(
         "LLM review result: %s, issues=%d. Reasoning: %s",
-        "PASS" if passed else "FAIL", len(issues), reasoning[:60],
+        "PASS" if passed else "FAIL", len(issues), reasoning[:80],
     )
     return ReviewResult(passed=passed, issues=issues, reasoning=reasoning)

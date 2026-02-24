@@ -17,6 +17,8 @@ Supported providers:
   openrouter  OpenRouter  -- free models available, needs LLM_API_KEY
                             https://openrouter.ai/keys
                             Default model: meta-llama/llama-3.3-70b-instruct:free
+  local       Any OpenAI-compatible local server
+                            e.g. Ollama / LM Studio (no key required)
 
 All providers enforce temperature=0 for determinism.
 Model can be overridden globally with the LLM_MODEL env var.
@@ -33,7 +35,7 @@ from shared.llm_adapter.mock_provider import MockProvider
 
 logger = logging.getLogger(__name__)
 
-_OPENAI_COMPATIBLE = {"openai", "groq", "gemini", "openrouter"}
+_OPENAI_COMPATIBLE = {"openai", "groq", "gemini", "openrouter", "local"}
 
 _PROVIDERS: dict[str, type] = {
     "mock": MockProvider,
@@ -76,7 +78,7 @@ def get_llm_provider(
     if provider_cls is None:
         raise ValueError(
             f"Unknown LLM provider '{name}'. "
-            f"Available: mock, openai, groq, gemini, openrouter"
+            f"Available: mock, openai, groq, gemini, openrouter, local"
         )
 
     inner = provider_cls()

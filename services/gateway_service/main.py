@@ -147,6 +147,17 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.exception("WebSocket error")
         manager.disconnect(websocket)
 
+def _proxy_json(resp: Any) -> dict[str, Any]:
+    """Parse JSON response; avoid 'Expecting value' when upstream returns empty/non-JSON."""
+    text = (resp.text or "").strip()
+    if not text:
+        return {"error": "Upstream returned empty response", "status": resp.status_code}
+    try:
+        return resp.json()
+    except Exception as e:
+        return {"error": f"Invalid upstream response: {e}", "body_preview": text[:200]}
+
+
 @app.post("/api/plan")
 async def create_plan(request_body: dict[str, Any]):
     """Proxy POST /plan to meta_planner."""
@@ -155,7 +166,7 @@ async def create_plan(request_body: dict[str, Any]):
             f"{cfg.meta_planner_url}/plan",
             json=request_body,
         )
-        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+        return JSONResponse(content=_proxy_json(resp), status_code=resp.status_code)
     except Exception as exc:
         logger.exception("Failed to proxy /api/plan")
         return JSONResponse(

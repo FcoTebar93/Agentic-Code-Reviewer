@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import httpx
@@ -83,6 +84,10 @@ async def _consume_pr_requests() -> None:
     idem_store = IdempotencyStore(redis_url=cfg.redis_url)
 
     async def handler(event: BaseEvent) -> None:
+        delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
+        if delay_sec > 0:
+            logger.info("Agent delay: waiting %ds before processing", delay_sec)
+            await asyncio.sleep(delay_sec)
         payload = PRRequestedPayload.model_validate(event.payload)
         await _handle_security_scan(payload)
 

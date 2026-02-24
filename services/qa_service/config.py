@@ -24,6 +24,7 @@ class QAConfig:
     log_level: str
     max_qa_retries: int
     redis_url: str
+    step_delay: str
 
     @classmethod
     def from_env(cls) -> QAConfig:
@@ -34,4 +35,5 @@ class QAConfig:
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
             max_qa_retries=int(os.environ.get("MAX_QA_RETRIES", "2")),
             redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
+            step_delay=os.environ.get("AGENT_STEP_DELAY", "0"),
         )

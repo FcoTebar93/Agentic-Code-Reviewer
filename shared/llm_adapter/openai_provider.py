@@ -57,7 +57,11 @@ class OpenAIProvider(LLMProvider):
             or os.environ.get("LLM_API_KEY", "")
             or os.environ.get("OPENAI_API_KEY", "")
         )
-        if not self._api_key:
+        # Local providers (e.g. Ollama / LM Studio) often don't require a key.
+        # In that case we generate a dummy one so the OpenAI client is happy.
+        if not self._api_key and provider_name == "local":
+            self._api_key = "local-placeholder-key"
+        elif not self._api_key:
             raise ValueError(
                 f"An API key is required for provider '{provider_name}'. "
                 "Set LLM_API_KEY (or OPENAI_API_KEY) in your environment."

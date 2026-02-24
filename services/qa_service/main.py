@@ -7,13 +7,21 @@ Pipeline role:
 On QA pass: aggregates all tasks for the plan and publishes pr.requested.
 On QA fail (retries remaining): re-enqueues task.assigned with feedback for dev_service.
 On QA fail (retries exhausted): publishes qa.failed and logs to memory_service.
+
+Inter-agent reasoning:
+  - Each code.generated event carries the developer's reasoning.
+  - The QA reviewer receives this reasoning and explicitly responds to it.
+  - Dev + QA reasoning are cached per task and forwarded to security_service
+    so the final security scan can reference the full reasoning chain.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
+from typing import Any
 
 import httpx
 from fastapi import FastAPI
@@ -44,6 +52,8 @@ event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: QAConfig | None = None
 
+_dev_reasoning_cache: dict[str, str] = {}
+_qa_reasoning_cache: dict[str, str] = {}
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -88,6 +98,10 @@ async def _consume_code_generated() -> None:
     idem_store = IdempotencyStore(redis_url=cfg.redis_url)
 
     async def handler(event: BaseEvent) -> None:
+        delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
+        if delay_sec > 0:
+            logger.info("Agent delay: waiting %ds before processing", delay_sec)
+            await asyncio.sleep(delay_sec)
         payload = CodeGeneratedPayload.model_validate(event.payload)
         await _handle_code_review(payload)
 
@@ -110,6 +124,9 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
         payload.qa_attempt,
     )
 
+    dev_reasoning = payload.reasoning or ""
+    _dev_reasoning_cache[task_id] = dev_reasoning
+
     with agent_execution_time.labels(service=SERVICE_NAME, operation="code_review").time():
         llm = get_llm_provider()
         result = await review_code(
@@ -118,7 +135,10 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
             file_path=payload.file_path,
             language=payload.language,
             task_description=f"Generate {payload.language} code for {payload.file_path}",
+            dev_reasoning=dev_reasoning,
         )
+
+    _qa_reasoning_cache[task_id] = result.reasoning or ""
 
     qa_payload = QAResultPayload(
         plan_id=plan_id,
@@ -132,6 +152,11 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
     )
 
     if result.passed:
+        step_delay = float(cfg.step_delay)
+        if step_delay > 0:
+            logger.info("Pausing %.1fs before publishing qa.passed (AGENT_STEP_DELAY)", step_delay)
+            await asyncio.sleep(step_delay)
+
         logger.info("QA PASSED for task %s", task_id[:8])
         tasks_completed.labels(service=SERVICE_NAME).inc()
 
@@ -185,6 +210,7 @@ async def _retry_task(
         original.task_id,
         original.plan_id,
         "qa_retry",
+        qa_attempt=original.qa_attempt + 1,
     )
     logger.info(
         "Re-enqueued task %s to dev_service (qa_attempt=%d)",
@@ -196,7 +222,7 @@ async def _retry_task(
 async def _check_plan_ready_for_pr(plan_id: str) -> None:
     """
     Check if all tasks in the plan have passed QA.
-    If so, aggregate files and publish pr.requested to security_service.
+    If so, aggregate files (with combined dev+QA reasoning) and publish pr.requested.
     """
     try:
         resp = await http_client.get(f"/tasks/{plan_id}")
@@ -213,6 +239,7 @@ async def _check_plan_ready_for_pr(plan_id: str) -> None:
                     task_id=t["task_id"],
                     file_path=t["file_path"],
                     code=t["code"],
+                    reasoning=_build_chain_reasoning(t["task_id"]),
                 )
                 for t in all_tasks
             ]
@@ -235,6 +262,19 @@ async def _check_plan_ready_for_pr(plan_id: str) -> None:
     except Exception:
         logger.exception("Error checking plan QA completion for %s", plan_id[:8])
 
+
+def _build_chain_reasoning(task_id: str) -> str:
+    """Build the combined dev+QA reasoning string for a task."""
+    dev = _dev_reasoning_cache.get(task_id, "")
+    qa = _qa_reasoning_cache.get(task_id, "")
+    parts = []
+    if dev:
+        parts.append(f"[Developer] {dev}")
+    if qa:
+        parts.append(f"[QA Reviewer] {qa}")
+    return "\n".join(parts)
+
+
 async def _store_event(event: BaseEvent) -> None:
     try:
         await http_client.post(
@@ -254,17 +294,18 @@ async def _update_task_state(
     task_id: str,
     plan_id: str,
     status: str,
+    qa_attempt: int | None = None,
 ) -> None:
     try:
-        await http_client.post(
-            "/tasks",
-            json={
-                "task_id": task_id,
-                "plan_id": plan_id,
-                "status": status,
-                "file_path": "",
-                "code": "",
-            },
-        )
+        body: dict[str, Any] = {
+            "task_id": task_id,
+            "plan_id": plan_id,
+            "status": status,
+            "file_path": "",
+            "code": "",
+        }
+        if qa_attempt is not None:
+            body["qa_attempt"] = qa_attempt
+        await http_client.post("/tasks", json=body)
     except Exception:
         logger.exception("Failed to update task state %s", task_id[:8])

@@ -65,11 +65,15 @@ async def init_db(database_url: str) -> None:
 
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    try:
-        async with _engine.begin() as conn:
-            await conn.execute(text("ALTER TABLE task_state ADD COLUMN IF NOT EXISTS qa_attempt INTEGER DEFAULT 0"))
-    except Exception:
-        pass
+    # Add qa_attempt for existing PostgreSQL DBs (IF NOT EXISTS is PG-only; skip SQLite)
+    if "postgresql" in database_url:
+        try:
+            async with _engine.begin() as conn:
+                await conn.execute(
+                    text("ALTER TABLE task_state ADD COLUMN IF NOT EXISTS qa_attempt INTEGER DEFAULT 0")
+                )
+        except Exception:
+            pass
 
 
 async def close_db() -> None:
