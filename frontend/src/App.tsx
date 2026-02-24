@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
@@ -29,7 +30,13 @@ async function callApprovalEndpoint(
 
 export default function App() {
   const { events, pendingApprovals, status } = useWebSocket(WS_URL);
-  const latestEvent = events[0] ?? null;
+  const [visibleEvents, setVisibleEvents] = useState(events);
+  const latestEvent = visibleEvents[0] ?? null;
+
+  // Mantener visibleEvents sincronizado con los eventos del socket
+  useEffect(() => {
+    setVisibleEvents(events);
+  }, [events]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -62,7 +69,20 @@ export default function App() {
         <div className="flex flex-col gap-4 min-h-0">
           <PipelineGraph latestEvent={latestEvent} />
           <div className="flex-1 min-h-0">
-            <EventFeed events={events} />
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-mono text-slate-500">
+                Event Feed
+              </span>
+              {visibleEvents.length > 0 && (
+                <button
+                  onClick={() => setVisibleEvents([])}
+                  className="text-[10px] font-mono text-slate-500 hover:text-slate-200 transition-colors"
+                >
+                  clear logs
+                </button>
+              )}
+            </div>
+            <EventFeed events={visibleEvents} />
           </div>
         </div>
 
@@ -85,7 +105,9 @@ export default function App() {
             <dl className="space-y-2">
               <div className="flex justify-between">
                 <dt className="text-slate-500 text-xs font-mono">Total events</dt>
-                <dd className="text-slate-200 text-xs font-mono">{events.length}</dd>
+                <dd className="text-slate-200 text-xs font-mono">
+                  {visibleEvents.length}
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-500 text-xs font-mono">Pending approvals</dt>
