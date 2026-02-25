@@ -110,7 +110,20 @@ async def clone_repo(
     if os.path.exists(local_path):
         logger.info("Repo already cloned at %s", local_path)
         if not await _is_repo_empty(local_path):
-            await run_git("pull", "--ff-only", cwd=local_path)
+            try:
+                await run_git("pull", "--ff-only", cwd=local_path)
+            except RuntimeError as exc:
+                msg = str(exc)
+                # Caso típico: el remoto sigue vacío (no existe la rama main)
+                # pero el repo local ya tiene commits iniciales. En ese caso,
+                # hacemos push de main como rama base y continuamos.
+                if "no such ref was fetched" in msg:
+                    logger.warning(
+                        "Remote has no 'main' yet; pushing local main as initial base"
+                    )
+                    await run_git("push", "-u", auth_url, "main", cwd=local_path)
+                else:
+                    raise
         return local_path
 
     os.makedirs(workspace_dir, exist_ok=True)
