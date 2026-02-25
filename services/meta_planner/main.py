@@ -43,24 +43,29 @@ from shared.contracts.events import (
 )
 from shared.llm_adapter import get_llm_provider
 from shared.utils.rabbitmq import EventBus
+from shared.tools import ToolRegistry, execute_tool
 from services.meta_planner.config import PlannerConfig
 from services.meta_planner.planner import decompose_tasks
+from services.meta_planner.tools import build_planner_tool_registry
 
 SERVICE_NAME = "meta_planner"
 event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: PlannerConfig | None = None
+tool_registry: ToolRegistry | None = None
 
 _IDEM_TTL_SECONDS = int(os.environ.get("PLAN_IDEM_TTL_SECONDS", "30"))
 _plan_idem_cache: dict[str, tuple[str, dict, float]] = {}
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global event_bus, http_client, cfg
+    global event_bus, http_client, cfg, tool_registry
     logger = setup_logging(SERVICE_NAME)
 
     cfg = PlannerConfig.from_env()
     http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=10.0)
+
+    tool_registry = build_planner_tool_registry(memory_service_url=cfg.memory_service_url)
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
@@ -413,14 +418,17 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
     This uses the memory_service semantic search endpoint, which combines
     vector similarity with heuristic scoring (importance, recency, etc.).
     """
-    if http_client is None:
+    global tool_registry
+    if tool_registry is None:
         return ""
 
     try:
-        resp = await http_client.post(
-            "/semantic/search",
-            json={
+        result = await execute_tool(
+            tool_registry,
+            "semantic_search_memory",
+            {
                 "query": user_prompt,
+                "plan_id": None,
                 "limit": limit,
                 "event_types": [
                     EventType.PLAN_CREATED.value,
@@ -428,16 +436,15 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
                     EventType.QA_FAILED.value,
                     EventType.SECURITY_BLOCKED.value,
                 ],
+                "limit": limit,
             },
         )
-        if resp.status_code != 200:
-            logger.warning(
-                "Semantic search failed with status %s", resp.status_code
-            )
+        if not result.success:
+            logger.warning("Semantic search tool failed: %s", result.error)
             return ""
 
-        data = resp.json()
-        results = data.get("results") or []
+        payload = result.output or {}
+        results = payload.get("results") or []
         if not isinstance(results, list) or not results:
             return ""
 

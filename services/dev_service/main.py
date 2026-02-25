@@ -31,20 +31,26 @@ from shared.llm_adapter import get_llm_provider
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from services.dev_service.config import DevConfig
 from services.dev_service.generator import generate_code
+from services.dev_service.tools import build_dev_tool_registry, ReadFileInput
+from shared.tools import execute_tool, ToolRegistry
 
 SERVICE_NAME = "dev_service"
 event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: DevConfig | None = None
+tool_registry: ToolRegistry | None = None
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global event_bus, http_client, cfg
+    global event_bus, http_client, cfg, tool_registry
     logger = setup_logging(SERVICE_NAME)
 
     cfg = DevConfig.from_env()
     http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+
+    # Inicializar el registro de herramientas específicas del dev_service.
+    tool_registry = build_dev_tool_registry()
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
@@ -116,11 +122,15 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
         llm = get_llm_provider()
         short_term_memory = await _build_short_term_memory(plan_id)
+        existing_file_preview = await _maybe_read_existing_file(task.file_path)
+        code_result = await generate_code(
         code_result, prompt_tokens, completion_tokens = await generate_code(
             llm,
             task,
             plan_reasoning=payload.plan_reasoning,
-            short_term_memory=short_term_memory,
+            short_term_memory="\n".join(
+                [p for p in [short_term_memory, existing_file_preview] if p]
+            ),
         )
 
         if prompt_tokens or completion_tokens:
@@ -172,6 +182,35 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         tasks_completed.labels(service=SERVICE_NAME).inc()
 
     logger.info("Task %s code generated, forwarded to qa_service", task.task_id[:8])
+
+
+async def _maybe_read_existing_file(file_path: str) -> str:
+    """
+    Best-effort helper: usa el tool read_file para recuperar un pequeño
+    preview del archivo objetivo, si ya existe en el repo.
+    """
+    global tool_registry
+    if not tool_registry:
+        return ""
+    if not file_path.strip():
+        return ""
+    try:
+        result = await execute_tool(
+            tool_registry,
+            "read_file",
+            {"path": file_path, "max_bytes": 4000},
+        )
+        if not result.success:
+            return ""
+        payload = result.output or {}
+        if not payload.get("exists"):
+            return ""
+        content = str(payload.get("content", ""))[:4000]
+        if not content.strip():
+            return ""
+        return f"Existing contents of {file_path}:\n{content}"
+    except Exception:
+        return ""
 
 async def _store_event(event: BaseEvent) -> None:
     try:
