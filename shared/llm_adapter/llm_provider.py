@@ -1,5 +1,5 @@
 """
-OpenAI-compatible LLM provider.
+LLM provider.
 
 Works with any API that speaks the OpenAI Chat Completions protocol:
   - OpenAI      (base_url=https://api.openai.com/v1)
@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import os
 
+import httpx
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
 
@@ -79,24 +80,67 @@ class OpenAIProvider(LLMProvider):
             or _DEFAULT_MODELS.get(provider_name, "gpt-4o-mini")
         )
 
-        try:
-            from openai import AsyncOpenAI
-        except ImportError as exc:
-            raise ImportError(
-                "openai package is required. Install it with: pip install openai"
-            ) from exc
-
         timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT", "120"))
-        self._client = AsyncOpenAI(
-            api_key=self._api_key,
-            base_url=self._base_url,
-            timeout=timeout,
-        )
+
+        # Para el proveedor "local" usamos httpx directamente contra un servidor
+        # OpenAI-compatible (Ollama / LM Studio), evitando así problemas de
+        # encoding en cabeceras del cliente oficial.
+        if provider_name == "local":
+            self._use_raw_http = True
+            # Los servidores locales tipo Ollama/LM Studio normalmente no
+            # requieren cabeceras especiales. No pasamos headers aquí para
+            # evitar problemas de encoding con httpx.
+            self._http_client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=timeout,
+            )
+        else:
+            try:
+                from openai import AsyncOpenAI
+            except ImportError as exc:
+                raise ImportError(
+                    "openai package is required. Install it with: pip install openai"
+                ) from exc
+
+            self._use_raw_http = False
+            self._client = AsyncOpenAI(
+                api_key=self._api_key,
+                base_url=self._base_url,
+                timeout=timeout,
+            )
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
 
         model = self._model if request.model in ("", "gpt-4o") else request.model
+
+        if getattr(self, "_use_raw_http", False):
+            # Llamada HTTP directa al endpoint /chat/completions de un servidor
+            # local OpenAI-compatible (por ejemplo Ollama).
+            resp = await self._http_client.post(
+                "/chat/completions",
+                json={
+                    "model": model,
+                    "temperature": 0.0,
+                    "max_tokens": request.max_tokens,
+                    "messages": [{"role": "user", "content": request.prompt}],
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            choice = data["choices"][0]
+            usage = data.get("usage") or {}
+
+            return LLMResponse(
+                content=choice["message"]["content"] or "",
+                model=data.get("model", model),
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+                total_tokens=usage.get("total_tokens", 0),
+                cached=False,
+                prompt_hash=prompt_hash,
+            )
 
         response = await self._client.chat.completions.create(
             model=model,

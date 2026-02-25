@@ -167,8 +167,10 @@ async def _execute_plan(
 
         tasks_completed.labels(service=SERVICE_NAME).inc()
         logger.info(
-            "Plan %s created with %d tasks. Reasoning: %s",
-            plan_id[:8], len(task_specs), plan_result.reasoning[:60],
+            "Plan %s created with %d tasks. Reasoning: %.60r",
+            plan_id[:8],
+            len(task_specs),
+            plan_result.reasoning,
         )
 
     return {

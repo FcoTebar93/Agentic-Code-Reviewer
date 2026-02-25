@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -63,7 +64,8 @@ async def lifespan(application: FastAPI):
     logger = setup_logging(SERVICE_NAME)
 
     cfg = GatewayConfig.from_env()
-    http_client = httpx.AsyncClient(timeout=30.0)
+    timeout = float(os.environ.get("GATEWAY_HTTP_TIMEOUT", "120.0"))
+    http_client = httpx.AsyncClient(timeout=timeout)
 
     event_bus = EventBus(cfg.rabbitmq_url)
 
