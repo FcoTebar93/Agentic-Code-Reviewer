@@ -136,7 +136,10 @@ async def create_plan(req: PlanRequest):
         )
 
 async def _execute_plan(
-    prompt: str, project_name: str, repo_url: str
+    prompt: str,
+    project_name: str,
+    repo_url: str,
+    forced_plan_id: str | None = None,
 ) -> dict:
     with agent_execution_time.labels(service=SERVICE_NAME, operation="plan").time():
         llm = get_llm_provider()
@@ -145,6 +148,7 @@ async def _execute_plan(
         task_specs = plan_result.tasks
 
         plan_payload = PlanCreatedPayload(
+            plan_id=forced_plan_id or PlanCreatedPayload.model_fields["plan_id"].default_factory(),  # type: ignore
             original_prompt=prompt,
             tasks=task_specs,
             reasoning=plan_result.reasoning,
@@ -189,7 +193,11 @@ async def _consume_plan_requests() -> None:
             logger.info("Agent delay: waiting %ds before processing", delay_sec)
             await asyncio.sleep(delay_sec)
         payload = PlanRequestedPayload.model_validate(event.payload)
-        await _execute_plan(payload.user_prompt, payload.project_name, payload.repo_url)
+        await _execute_plan(
+            payload.user_prompt,
+            payload.project_name,
+            payload.repo_url,
+        )
 
     await event_bus.subscribe(
         queue_name="meta_planner.plan_requests",
