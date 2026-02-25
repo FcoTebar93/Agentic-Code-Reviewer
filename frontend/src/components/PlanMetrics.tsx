@@ -6,6 +6,10 @@ interface ByService {
   service: string;
   prompt_tokens: number;
   completion_tokens: number;
+  total_tokens?: number;
+  estimated_cost_prompt_usd?: number;
+  estimated_cost_completion_usd?: number;
+  estimated_cost_total_usd?: number;
 }
 
 interface PlanMetricsPayload {
@@ -13,6 +17,9 @@ interface PlanMetricsPayload {
   total_prompt_tokens: number;
   total_completion_tokens: number;
   total_tokens: number;
+  estimated_cost_prompt_usd?: number;
+  estimated_cost_completion_usd?: number;
+  estimated_cost_total_usd?: number;
   by_service: ByService[];
 }
 
@@ -68,6 +75,12 @@ export function PlanMetrics({ events }: { events: EventLike[] }) {
     };
   }, [planId]);
 
+  const formatUsd = (value: number | undefined) => {
+    if (value === undefined) return "—";
+    if (!Number.isFinite(value)) return "—";
+    return `$${value.toFixed(4)}`;
+  };
+
   if (!planId) {
     return (
       <div className="bg-slate-900 rounded-xl border border-slate-700 p-4">
@@ -115,11 +128,33 @@ export function PlanMetrics({ events }: { events: EventLike[] }) {
               {metrics.total_completion_tokens.toLocaleString()}
             </dd>
           </div>
+          {typeof metrics.estimated_cost_total_usd === "number" &&
+            metrics.estimated_cost_total_usd > 0 && (
+              <>
+                <div className="flex justify-between pt-1 border-t border-slate-700 mt-1">
+                  <dt className="text-slate-500 text-xs font-mono">
+                    Estimated cost (USD)
+                  </dt>
+                  <dd className="text-slate-200 text-xs font-mono">
+                    {formatUsd(metrics.estimated_cost_total_usd)}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500 text-[10px] font-mono">
+                    Prompt / Completion
+                  </dt>
+                  <dd className="text-slate-200 text-[10px] font-mono">
+                    {formatUsd(metrics.estimated_cost_prompt_usd)} /{" "}
+                    {formatUsd(metrics.estimated_cost_completion_usd)}
+                  </dd>
+                </div>
+              </>
+            )}
           {metrics.by_service.length > 0 && (
             <div className="pt-2 border-t border-slate-700">
               <dt className="text-slate-500 text-xs font-mono mb-1.5">By service</dt>
               <dd className="space-y-1">
-                {metrics.by_service.map((s) => (
+                {metrics.by_service.map((s: ByService) => (
                   <div
                     key={s.service}
                     className="flex justify-between text-xs font-mono"
@@ -127,8 +162,16 @@ export function PlanMetrics({ events }: { events: EventLike[] }) {
                     <span className="text-slate-400 truncate max-w-[140px]">
                       {s.service}
                     </span>
-                    <span className="text-slate-300">
-                      {(s.prompt_tokens + s.completion_tokens).toLocaleString()}
+                    <span className="text-slate-300 text-right">
+                      {(s.total_tokens ??
+                        s.prompt_tokens + s.completion_tokens
+                      ).toLocaleString()}
+                      {typeof s.estimated_cost_total_usd === "number" &&
+                        s.estimated_cost_total_usd > 0 && (
+                          <span className="block text-[10px] text-slate-500">
+                            {formatUsd(s.estimated_cost_total_usd)}
+                          </span>
+                        )}
                     </span>
                   </div>
                 ))}

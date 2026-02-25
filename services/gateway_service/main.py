@@ -253,7 +253,7 @@ async def get_plan_metrics(plan_id: str):
         if not isinstance(events, list):
             events = []
 
-        by_service: dict[str, dict[str, int]] = {}
+        by_service: dict[str, dict[str, float]] = {}
         total_prompt = 0
         total_completion = 0
         for ev in events:
@@ -262,20 +262,46 @@ async def get_plan_metrics(plan_id: str):
             pt = int(p.get("prompt_tokens", 0) or 0)
             ct = int(p.get("completion_tokens", 0) or 0)
             if svc not in by_service:
-                by_service[svc] = {"prompt_tokens": 0, "completion_tokens": 0}
+                by_service[svc] = {"prompt_tokens": 0.0, "completion_tokens": 0.0}
             by_service[svc]["prompt_tokens"] += pt
             by_service[svc]["completion_tokens"] += ct
             total_prompt += pt
             total_completion += ct
+
+        prompt_price = cfg.llm_prompt_price_per_1k if cfg else 0.0
+        completion_price = cfg.llm_completion_price_per_1k if cfg else 0.0
+
+        prompt_cost = (total_prompt / 1000.0) * prompt_price
+        completion_cost = (total_completion / 1000.0) * completion_price
+        total_cost = prompt_cost + completion_cost
+
+        by_service_list: list[dict[str, float | str]] = []
+        for s, v in sorted(by_service.items()):
+            svc_prompt = v["prompt_tokens"]
+            svc_completion = v["completion_tokens"]
+            svc_prompt_cost = (svc_prompt / 1000.0) * prompt_price
+            svc_completion_cost = (svc_completion / 1000.0) * completion_price
+            by_service_list.append(
+                {
+                    "service": s,
+                    "prompt_tokens": int(svc_prompt),
+                    "completion_tokens": int(svc_completion),
+                    "total_tokens": int(svc_prompt + svc_completion),
+                    "estimated_cost_prompt_usd": svc_prompt_cost,
+                    "estimated_cost_completion_usd": svc_completion_cost,
+                    "estimated_cost_total_usd": svc_prompt_cost + svc_completion_cost,
+                }
+            )
 
         return {
             "plan_id": plan_id,
             "total_prompt_tokens": total_prompt,
             "total_completion_tokens": total_completion,
             "total_tokens": total_prompt + total_completion,
-            "by_service": [
-                {"service": s, **v} for s, v in sorted(by_service.items())
-            ],
+            "estimated_cost_prompt_usd": prompt_cost,
+            "estimated_cost_completion_usd": completion_cost,
+            "estimated_cost_total_usd": total_cost,
+            "by_service": by_service_list,
         }
     except Exception as exc:
         logger.exception("Failed to get plan_metrics for %s", plan_id[:8])
