@@ -110,18 +110,21 @@ async def clone_repo(
     if os.path.exists(local_path):
         logger.info("Repo already cloned at %s", local_path)
         if not await _is_repo_empty(local_path):
+            # Actualizar URL de origin con el token actual (por si el token cambió o el volumen es viejo).
+            await run_git("remote", "set-url", "origin", auth_url, cwd=local_path)
+            # Volver siempre a main antes de pull: si el run anterior falló en el push,
+            # el repo puede estar en una rama de feature sin upstream y "git pull" fallaría.
+            await run_git("checkout", "main", cwd=local_path)
             try:
-                await run_git("pull", "--ff-only", cwd=local_path)
+                await run_git("pull", "origin", "main", "--ff-only", cwd=local_path)
             except RuntimeError as exc:
                 msg = str(exc)
-                # Caso típico: el remoto no tiene aún la rama base que
-                # Git espera (por ejemplo 'main'). Si vemos este tipo de
-                # error, asumimos que nuestro 'main' local debe convertirse
-                # en la rama base remota y hacemos push en vez de fallar.
+                # Remoto sin rama main aún, o ref no encontrada -> subir nuestro main como base.
                 if (
                     "no such ref was fetched" in msg
                     or "Couldn't find remote ref" in msg
                     or "couldn't find remote ref" in msg
+                    or "There is no tracking information" in msg
                 ):
                     logger.warning(
                         "Remote has no base branch yet; pushing local 'main' as initial base"
@@ -142,8 +145,16 @@ async def clone_repo(
 
 
 async def create_branch(repo_path: str, branch_name: str) -> None:
-    await run_git("checkout", "-b", branch_name, cwd=repo_path)
-    logger.info("Created branch %s", branch_name)
+    """Crear la rama o cambiar a ella si ya existe (p. ej. en un reintento)."""
+    try:
+        await run_git("checkout", "-b", branch_name, cwd=repo_path)
+        logger.info("Created branch %s", branch_name)
+    except RuntimeError as exc:
+        if "already exists" in str(exc):
+            await run_git("checkout", branch_name, cwd=repo_path)
+            logger.info("Switched to existing branch %s", branch_name)
+        else:
+            raise
 
 
 async def write_files(repo_path: str, files: list[dict]) -> list[str]:
@@ -170,7 +181,13 @@ async def commit_and_push(
     await configure_git_identity(repo_path, author_name, author_email)
     for fp in file_paths:
         await run_git("add", fp, cwd=repo_path)
-    await run_git("commit", "-m", message, cwd=repo_path)
+    try:
+        await run_git("commit", "-m", message, cwd=repo_path)
+    except RuntimeError as exc:
+        if "nothing to commit" in str(exc) or "working tree clean" in str(exc):
+            logger.info("No new changes to commit (e.g. retry), pushing existing commits")
+        else:
+            raise
     await run_git("push", "-u", "origin", branch_name, cwd=repo_path)
     logger.info("Pushed branch %s", branch_name)
 
