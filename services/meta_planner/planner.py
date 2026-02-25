@@ -16,9 +16,12 @@ import logging
 from dataclasses import dataclass
 
 from shared.contracts.events import TaskSpec
-from shared.llm_adapter import LLMProvider
+from shared.llm_adapter import LLMProvider, LLMResponse
+from shared.observability.metrics import llm_tokens
 
 logger = logging.getLogger(__name__)
+
+SERVICE_NAME = "meta_planner"
 
 PLANNING_PROMPT_TEMPLATE = """You are a senior software architect. Given the following user request,
 decompose it into a list of concrete development tasks.
@@ -61,7 +64,15 @@ async def decompose_tasks(
         prompt=user_prompt,
         memory_context=memory_context.strip() or "None.",
     )
-    response = await llm.generate_text(prompt)
+    response: LLMResponse = await llm.generate_text(prompt)
+
+    if response.prompt_tokens or response.completion_tokens:
+        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(
+            response.prompt_tokens
+        )
+        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(
+            response.completion_tokens
+        )
 
     reasoning, tasks = _parse_response(response.content)
     logger.info(

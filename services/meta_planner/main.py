@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from shared.logging.logger import setup_logging
-from shared.observability.metrics import metrics_response, agent_execution_time, tasks_completed
+from shared.observability.metrics import metrics_response, agent_execution_time, tasks_completed, llm_tokens
 from shared.contracts.events import (
     BaseEvent,
     EventType,
@@ -150,7 +150,7 @@ async def _execute_plan(
         task_specs = plan_result.tasks
 
         plan_payload = PlanCreatedPayload(
-            plan_id=forced_plan_id or PlanCreatedPayload.model_fields["plan_id"].default_factory(),  # type: ignore
+            plan_id=forced_plan_id or PlanCreatedPayload.model_fields["plan_id"].default_factory(),
             original_prompt=prompt,
             tasks=task_specs,
             reasoning=plan_result.reasoning,
@@ -406,8 +406,6 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
             json={
                 "query": user_prompt,
                 "limit": limit,
-                # We intentionally do not filter by plan_id here so that the
-                # planner can leverage memories from previous runs.
                 "event_types": [
                     EventType.PLAN_CREATED.value,
                     EventType.PIPELINE_CONCLUSION.value,
