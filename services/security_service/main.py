@@ -135,6 +135,64 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         await event_bus.publish(blocked_event)
         await _store_event(blocked_event)
 
+
+async def _fetch_security_memory_context(plan_id: str, limit: int = 5) -> str:
+    """
+    Retrieve a small set of past security-related memories for this plan
+    (or globally if plan-specific events are not present), to be attached
+    later to pipeline conclusions or external dashboards.
+
+    Note: the core scanner is intentionally deterministic and does not use
+    the LLM; this context is mainly for observability and potential future
+    human review.
+    """
+    if http_client is None:
+        return ""
+
+    try:
+        resp = await http_client.post(
+            "/semantic/search",
+            json={
+                "query": f"Security findings for plan {plan_id}",
+                "plan_id": plan_id,
+                "event_types": [
+                    EventType.SECURITY_BLOCKED.value,
+                    EventType.SECURITY_APPROVED.value,
+                ],
+                "limit": limit,
+            },
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "Semantic search for security context failed (status=%s)",
+                resp.status_code,
+            )
+            return ""
+
+        data = resp.json()
+        results = data.get("results") or []
+        if not isinstance(results, list) or not results:
+            return ""
+
+        lines: list[str] = []
+        for item in results[:limit]:
+            payload = item.get("payload") or {}
+            score = item.get("heuristic_score", item.get("score", 0.0))
+            text = str(payload.get("text", ""))[:400].replace("\n", " ")
+            etype = payload.get("event_type", "")
+            mem_plan_id = payload.get("plan_id", "")
+            lines.append(
+                f"- [{etype}] plan_id={mem_plan_id} score={score:.3f}: {text}"
+            )
+
+        return "\n".join(lines)
+    except Exception:
+        logger.exception(
+            "Failed to fetch security memory context for plan %s",
+            plan_id[:8],
+        )
+        return ""
+
 async def _store_event(event: BaseEvent) -> None:
     try:
         await http_client.post(

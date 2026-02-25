@@ -27,6 +27,13 @@ DEVELOPER'S REASONING:
 {dev_reasoning}
 ---
 
+You also have access to a short memory window of recent events and decisions
+for this plan (previous QA results, security decisions, pipeline conclusions, etc.).
+Use this context only if it is relevant to your review; otherwise you may ignore it.
+
+SHORT-TERM MEMORY:
+{short_term_memory}
+
 Now review the following {language} code intended for file `{file_path}`:
 
 ```{language}
@@ -92,6 +99,7 @@ async def review_code(
     language: str,
     task_description: str,
     dev_reasoning: str = "",
+    short_term_memory: str = "",
 ) -> ReviewResult:
     """
     Run static checks then LLM review.
@@ -131,6 +139,7 @@ async def _llm_review(
     language: str,
     task_description: str,
     dev_reasoning: str = "",
+    short_term_memory: str = "",
 ) -> ReviewResult:
     if dev_reasoning.strip():
         prompt = QA_REVIEW_PROMPT.format(
@@ -139,6 +148,7 @@ async def _llm_review(
             code=code,
             description=task_description,
             dev_reasoning=dev_reasoning,
+            short_term_memory=short_term_memory.strip() or "None.",
         )
     else:
         prompt = QA_REVIEW_PROMPT_NO_PRIOR.format(

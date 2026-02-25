@@ -129,6 +129,7 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
 
     with agent_execution_time.labels(service=SERVICE_NAME, operation="code_review").time():
         llm = get_llm_provider()
+        short_term_memory = await _build_short_term_memory(plan_id)
         result = await review_code(
             llm=llm,
             code=payload.code,
@@ -136,6 +137,7 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
             language=payload.language,
             task_description=f"Generate {payload.language} code for {payload.file_path}",
             dev_reasoning=dev_reasoning,
+            short_term_memory=short_term_memory,
         )
 
     _qa_reasoning_cache[task_id] = result.reasoning or ""
@@ -309,3 +311,67 @@ async def _update_task_state(
         await http_client.post("/tasks", json=body)
     except Exception:
         logger.exception("Failed to update task state %s", task_id[:8])
+
+
+async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
+    """
+    Build a compact short-term memory window for QA for a given plan_id by
+    querying recent events from the memory_service.
+    """
+    if http_client is None:
+        return ""
+
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={"plan_id": plan_id, "limit": limit},
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "Failed to fetch QA short-term memory for plan %s (status=%s)",
+                plan_id[:8],
+                resp.status_code,
+            )
+            return ""
+
+        events = resp.json()
+        if not isinstance(events, list):
+            return ""
+
+        lines: list[str] = []
+        for evt in events:
+            etype = evt.get("event_type", "")
+            producer = evt.get("producer", "")
+            created_at = evt.get("created_at", "")
+            payload = evt.get("payload") or {}
+
+            summary = ""
+            if etype == EventType.PLAN_CREATED.value:
+                summary = str(payload.get("reasoning", ""))[:200]
+            elif etype == EventType.CODE_GENERATED.value:
+                summary = f"{payload.get('file_path', '')}"
+            elif etype in (
+                EventType.QA_PASSED.value,
+                EventType.QA_FAILED.value,
+                EventType.SECURITY_APPROVED.value,
+                EventType.SECURITY_BLOCKED.value,
+            ):
+                summary = str(payload.get("reasoning", ""))[:200]
+            else:
+                summary = ""
+
+            line = f"[{etype}] from {producer} at {created_at}"
+            if summary:
+                line += f" :: {summary}"
+            lines.append(line)
+
+        window = "\n".join(lines[:limit])
+        if len(window) > 2000:
+            window = window[:2000]
+        return window
+    except Exception:
+        logger.exception(
+            "Error while building QA short-term memory for plan %s",
+            plan_id[:8],
+        )
+        return ""
