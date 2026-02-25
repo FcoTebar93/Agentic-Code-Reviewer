@@ -35,6 +35,7 @@ from shared.contracts.events import (
     PlanCreatedPayload,
     PlanRequestedPayload,
     TaskAssignedPayload,
+    PlanRevisionPayload,
     plan_created,
     task_assigned,
 )
@@ -63,7 +64,8 @@ async def lifespan(application: FastAPI):
     await event_bus.connect()
 
     asyncio.create_task(_consume_plan_requests())
-    logger.info("Meta Planner ready")
+    asyncio.create_task(_consume_plan_revisions())
+    logger.info("Meta Planner ready (with replanning support)")
     yield
 
     logger.info("Shutting down")
@@ -204,6 +206,169 @@ async def _consume_plan_requests() -> None:
         routing_keys=[EventType.PLAN_REQUESTED.value],
         handler=handler,
     )
+
+
+async def _consume_plan_revisions() -> None:
+    """
+    Listen for plan.revision_suggested events produced by replanner_service.
+
+    For now, we auto-trigger a new planning run only when severity is
+    'high' or 'critical'. The new plan is created with the new_plan_id
+    suggested by the replanner, and uses an augmented prompt that combines
+    the original user request with the replanner's suggestions.
+    """
+
+    async def handler(event: BaseEvent) -> None:
+        payload = PlanRevisionPayload.model_validate(event.payload)
+        severity = (payload.severity or "medium").lower()
+        if severity not in {"high", "critical"}:
+            logger.info(
+                "Ignoring plan.revision_suggested for %s with non-critical severity %s",
+                payload.original_plan_id[:8],
+                severity,
+            )
+            return
+        await _handle_plan_revision(payload)
+
+    await event_bus.subscribe(
+        queue_name="meta_planner.plan_revisions",
+        routing_keys=[EventType.PLAN_REVISION_SUGGESTED.value],
+        handler=handler,
+    )
+
+
+async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
+    """
+    Replan automatically based on a PlanRevisionPayload.
+
+    - Fetches the original plan.created event to recover the original prompt.
+    - Builds an augmented prompt that incorporates the replanner suggestions.
+    - Infers the repo_url from the existing task state, if any.
+    - Executes a new plan with the provided new_plan_id.
+    """
+    original_plan_id = payload.original_plan_id
+    new_plan_id = payload.new_plan_id
+
+    original_prompt, original_reasoning = await _fetch_original_plan_prompt(
+        original_plan_id
+    )
+    if not original_prompt:
+        logger.warning(
+            "Could not find original plan.prompt for plan %s; skipping replanning",
+            original_plan_id[:8],
+        )
+        return
+
+    augmented_prompt_lines = [
+        original_prompt.strip(),
+        "",
+        "---",
+        f"A replanning agent analysed the previous execution of plan {original_plan_id[:8]} "
+        f"and suggested revising the plan.",
+        f"Severity: {payload.severity or 'medium'}",
+    ]
+    if payload.reason:
+        augmented_prompt_lines.append(f"Replanner reason: {payload.reason}")
+    if original_reasoning:
+        augmented_prompt_lines.append(
+            f"Original planner reasoning (for context, may be outdated): {original_reasoning}"
+        )
+    if payload.suggestions:
+        augmented_prompt_lines.append("")
+        augmented_prompt_lines.append("Replanner suggestions:")
+        for s in payload.suggestions:
+            augmented_prompt_lines.append(f"- {s}")
+
+    augmented_prompt = "\n".join(augmented_prompt_lines)
+
+    repo_url = await _infer_repo_url_for_plan(original_plan_id)
+
+    logger.info(
+        "Auto-replanning for original plan %s -> new plan %s (severity=%s)",
+        original_plan_id[:8],
+        new_plan_id[:8],
+        payload.severity,
+    )
+    await _execute_plan(
+        augmented_prompt,
+        project_name="default",
+        repo_url=repo_url or "",
+        forced_plan_id=new_plan_id,
+    )
+
+
+async def _fetch_original_plan_prompt(
+    plan_id: str,
+) -> tuple[str, str]:
+    """
+    Retrieve the original user prompt and planner reasoning for a plan.
+
+    Uses memory_service /events filtered by event_type=plan.created and plan_id.
+    """
+    if http_client is None:
+        return "", ""
+
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={
+                "event_type": "plan.created",
+                "plan_id": plan_id,
+                "limit": 1,
+            },
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "Failed to fetch original plan.created for %s (status=%s)",
+                plan_id[:8],
+                resp.status_code,
+            )
+            return "", ""
+
+        events = resp.json()
+        if not isinstance(events, list) or not events:
+            return "", ""
+
+        evt = events[0]
+        payload = evt.get("payload") or {}
+        original_prompt = str(payload.get("original_prompt", "")).strip()
+        reasoning = str(payload.get("reasoning", "")).strip()
+        return original_prompt, reasoning
+    except Exception:
+        logger.exception(
+            "Error while fetching original plan.created for %s",
+            plan_id[:8],
+        )
+        return "", ""
+
+
+async def _infer_repo_url_for_plan(plan_id: str) -> str:
+    """
+    Infer the repo_url for a given plan by asking memory_service for task state.
+
+    This allows the replanned version to keep targeting the same repository.
+    """
+    if http_client is None:
+        return ""
+
+    try:
+        resp = await http_client.get(f"/tasks/{plan_id}")
+        if resp.status_code != 200:
+            return ""
+        tasks = resp.json()
+        if not isinstance(tasks, list) or not tasks:
+            return ""
+        for t in tasks:
+            repo_url = t.get("repo_url") or ""
+            if isinstance(repo_url, str) and repo_url.strip():
+                return repo_url.strip()
+        return ""
+    except Exception:
+        logger.exception(
+            "Error while inferring repo_url for plan %s",
+            plan_id[:8],
+        )
+        return ""
 
 async def _store_event(event: BaseEvent) -> None:
     """Persist event to memory_service via HTTP."""

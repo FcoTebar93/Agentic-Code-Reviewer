@@ -27,6 +27,26 @@ function extractReasoning(payload: Record<string, unknown>, eventType?: string):
     const c = payload["conclusion_text"];
     if (typeof c === "string" && c.trim().length > 0) return c.trim();
   }
+
+  if (eventType === "plan.revision_suggested") {
+    const summary = payload["summary"];
+    const suggestions = payload["suggestions"];
+    let text = "";
+    if (typeof summary === "string" && summary.trim().length > 0) {
+      text += summary.trim();
+    }
+    if (Array.isArray(suggestions) && suggestions.length > 0) {
+      const suggLines = suggestions
+        .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+        .map((s) => `- ${s.trim()}`)
+        .join("\n");
+      if (suggLines) {
+        text = text ? `${text}\n\nSuggested changes:\n${suggLines}` : suggLines;
+      }
+    }
+    if (text) return text;
+  }
+
   const r = payload["reasoning"];
   if (typeof r === "string" && r.trim().length > 0) return r.trim();
   const sr = payload["security_reasoning"];
