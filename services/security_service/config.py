@@ -26,6 +26,9 @@ class SecurityConfig:
     memory_service_url: str
     log_level: str
     redis_url: str
+    agent_name: str
+    agent_goal: str
+    strategy: str
 
     @classmethod
     def from_env(cls) -> SecurityConfig:
@@ -34,4 +37,10 @@ class SecurityConfig:
             memory_service_url=os.environ["MEMORY_SERVICE_URL"],
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
             redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
+            agent_name=os.environ.get("AGENT_NAME", "security_agent"),
+            agent_goal=os.environ.get(
+                "AGENT_GOAL",
+                "Bloquear cambios con patrones de seguridad peligrosos antes de que lleguen a GitHub.",
+            ),
+            strategy=os.environ.get("AGENT_STRATEGY", "deterministic_static_scan"),
         )
