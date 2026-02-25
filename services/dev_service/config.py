@@ -12,6 +12,10 @@ class DevConfig:
     log_level: str
     redis_url: str
     step_delay: str
+    agent_name: str
+    agent_goal: str
+    token_budget_per_task: int
+    strategy: str
 
     @classmethod
     def from_env(cls) -> DevConfig:
@@ -22,4 +26,11 @@ class DevConfig:
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
             redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
             step_delay=os.environ.get("AGENT_STEP_DELAY", "0"),
+            agent_name=os.environ.get("AGENT_NAME", "dev_agent"),
+            agent_goal=os.environ.get(
+                "AGENT_GOAL",
+                "Escribir código de producción fiel al plan y fácil de mantener.",
+            ),
+            token_budget_per_task=int(os.environ.get("TOKEN_BUDGET_PER_TASK", "20000")),
+            strategy=os.environ.get("AGENT_STRATEGY", "implementation"),
         )
