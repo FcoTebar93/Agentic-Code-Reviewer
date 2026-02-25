@@ -114,12 +114,17 @@ async def clone_repo(
                 await run_git("pull", "--ff-only", cwd=local_path)
             except RuntimeError as exc:
                 msg = str(exc)
-                # Caso típico: el remoto sigue vacío (no existe la rama main)
-                # pero el repo local ya tiene commits iniciales. En ese caso,
-                # hacemos push de main como rama base y continuamos.
-                if "no such ref was fetched" in msg:
+                # Caso típico: el remoto no tiene aún la rama base que
+                # Git espera (por ejemplo 'main'). Si vemos este tipo de
+                # error, asumimos que nuestro 'main' local debe convertirse
+                # en la rama base remota y hacemos push en vez de fallar.
+                if (
+                    "no such ref was fetched" in msg
+                    or "Couldn't find remote ref" in msg
+                    or "couldn't find remote ref" in msg
+                ):
                     logger.warning(
-                        "Remote has no 'main' yet; pushing local main as initial base"
+                        "Remote has no base branch yet; pushing local 'main' as initial base"
                     )
                     await run_git("push", "-u", auth_url, "main", cwd=local_path)
                 else:
