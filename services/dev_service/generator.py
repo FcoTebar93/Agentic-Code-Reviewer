@@ -15,7 +15,8 @@ import logging
 from dataclasses import dataclass
 
 from shared.contracts.events import TaskSpec
-from shared.llm_adapter import LLMProvider
+from shared.llm_adapter import LLMProvider, LLMResponse
+from shared.observability.metrics import llm_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,9 @@ class CodeResult:
     reasoning: str
 
 
+SERVICE_NAME = "dev_service"
+
+
 async def generate_code(
     llm: LLMProvider,
     task: TaskSpec,
@@ -101,7 +105,14 @@ async def generate_code(
             file_path=task.file_path,
         )
 
-    response = await llm.generate_text(prompt)
+    response: LLMResponse = await llm.generate_text(prompt)
+    if response.prompt_tokens or response.completion_tokens:
+        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(
+            response.prompt_tokens
+        )
+        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(
+            response.completion_tokens
+        )
     result = _parse_response(response.content)
 
     logger.info(
