@@ -4,6 +4,7 @@ import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
 import { PlanForm } from "./components/PlanForm";
 import { ApprovalQueue } from "./components/ApprovalQueue";
+import { PlanMetrics } from "./components/PlanMetrics";
 
 const WS_URL = import.meta.env.VITE_GATEWAY_WS_URL ?? "ws://localhost:8080/ws";
 const HTTP_BASE = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
@@ -89,6 +90,8 @@ export default function App() {
         {/* Right column */}
         <div className="flex flex-col gap-4 overflow-y-auto">
           <PlanForm />
+
+          <PlanMetrics events={visibleEvents} />
 
           {/* HITL Approval Queue */}
           <ApprovalQueue

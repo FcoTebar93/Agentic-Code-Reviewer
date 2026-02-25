@@ -83,13 +83,8 @@ async def generate_code(
     task: TaskSpec,
     plan_reasoning: str = "",
     short_term_memory: str = "",
-) -> CodeResult:
-    """Use the LLM to generate code for a single task.
-
-    If plan_reasoning is provided, the prompt instructs the developer agent
-    to explicitly respond to the planner's reasoning, creating a visible
-    inter-agent dialogue.
-    """
+) -> tuple[CodeResult, int, int]:
+    """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
     if plan_reasoning.strip():
         prompt = CODE_GEN_PROMPT.format(
             language=task.language,
@@ -106,20 +101,18 @@ async def generate_code(
         )
 
     response: LLMResponse = await llm.generate_text(prompt)
-    if response.prompt_tokens or response.completion_tokens:
-        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(
-            response.prompt_tokens
-        )
-        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(
-            response.completion_tokens
-        )
+    pt = response.prompt_tokens or 0
+    ct = response.completion_tokens or 0
+    if pt or ct:
+        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
+        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
     result = _parse_response(response.content)
 
     logger.info(
         "Generated %d chars of %s code for %s. Reasoning: %s",
         len(result.code), task.language, task.file_path, result.reasoning[:80],
     )
-    return result
+    return result, pt, ct
 
 
 def _parse_response(raw: str) -> CodeResult:

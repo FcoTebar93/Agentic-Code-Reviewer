@@ -197,7 +197,6 @@ async def confirm_replan(request_body: dict[str, Any]):
 
   event = plan_revision_confirmed(SERVICE_NAME, payload)
   await event_bus.publish(event)
-  # Broadcast to WebSocket clients so the feed shows the confirmation as well.
   await manager.broadcast(
       json.dumps({"type": "event", "event": json.loads(event.model_dump_json())})
   )
@@ -226,6 +225,60 @@ async def get_tasks(plan_id: str):
         return JSONResponse(content=resp.json(), status_code=resp.status_code)
     except Exception as exc:
         logger.exception("Failed to proxy /api/tasks/%s", plan_id)
+        return JSONResponse(content={"error": str(exc)}, status_code=502)
+
+
+@app.get("/api/plan_metrics/{plan_id}")
+async def get_plan_metrics(plan_id: str):
+    """
+    Aggregate LLM token usage for a plan from metrics.tokens_used events.
+
+    Returns total and per-service prompt/completion token counts.
+    """
+    try:
+        resp = await http_client.get(
+            f"{cfg.memory_service_url}/events",
+            params={
+                "plan_id": plan_id,
+                "event_type": EventType.METRICS_TOKENS_USED.value,
+                "limit": 500,
+            },
+        )
+        if resp.status_code != 200:
+            return JSONResponse(
+                content={"error": "Failed to fetch events", "status": resp.status_code},
+                status_code=502,
+            )
+        events = resp.json()
+        if not isinstance(events, list):
+            events = []
+
+        by_service: dict[str, dict[str, int]] = {}
+        total_prompt = 0
+        total_completion = 0
+        for ev in events:
+            p = ev.get("payload") or {}
+            svc = str(p.get("service", "unknown"))
+            pt = int(p.get("prompt_tokens", 0) or 0)
+            ct = int(p.get("completion_tokens", 0) or 0)
+            if svc not in by_service:
+                by_service[svc] = {"prompt_tokens": 0, "completion_tokens": 0}
+            by_service[svc]["prompt_tokens"] += pt
+            by_service[svc]["completion_tokens"] += ct
+            total_prompt += pt
+            total_completion += ct
+
+        return {
+            "plan_id": plan_id,
+            "total_prompt_tokens": total_prompt,
+            "total_completion_tokens": total_completion,
+            "total_tokens": total_prompt + total_completion,
+            "by_service": [
+                {"service": s, **v} for s, v in sorted(by_service.items())
+            ],
+        }
+    except Exception as exc:
+        logger.exception("Failed to get plan_metrics for %s", plan_id[:8])
         return JSONResponse(content={"error": str(exc)}, status_code=502)
 
 

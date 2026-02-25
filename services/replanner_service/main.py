@@ -16,7 +16,9 @@ from shared.contracts.events import (
     QAResultPayload,
     SecurityResultPayload,
     PlanRevisionPayload,
+    TokensUsedPayload,
     plan_revision_suggested,
+    metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
@@ -134,7 +136,7 @@ async def _analyse_and_emit_revision(
         llm = get_llm_provider()
         memory_context = await _fetch_memory_context(plan_id)
 
-        result = await analyse_outcome(
+        result, prompt_tokens, completion_tokens = await analyse_outcome(
             llm=llm,
             agent_goal=cfg.agent_goal,
             plan_id=plan_id,
@@ -142,10 +144,17 @@ async def _analyse_and_emit_revision(
             memory_context=memory_context,
         )
 
-        # Token metrics are recorded from the llm_adapter usage.
-        # We only count completions here; prompts are tracked separately.
-        # (The generate_text wrapper returns LLMResponse with token counts.)
-        # NOTE: For simplicity we don't enforce budgets yet, solo observabilidad.
+        if prompt_tokens or completion_tokens:
+            tok_event = metrics_tokens_used(
+                SERVICE_NAME,
+                TokensUsedPayload(
+                    plan_id=plan_id,
+                    service=SERVICE_NAME,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                ),
+            )
+            await _store_event(tok_event)
 
     if not result.revision_needed:
         logger.info(

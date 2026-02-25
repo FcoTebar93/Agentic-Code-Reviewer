@@ -23,7 +23,9 @@ from shared.contracts.events import (
     EventType,
     TaskAssignedPayload,
     CodeGeneratedPayload,
+    TokensUsedPayload,
     code_generated,
+    metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
@@ -114,12 +116,24 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
         llm = get_llm_provider()
         short_term_memory = await _build_short_term_memory(plan_id)
-        code_result = await generate_code(
+        code_result, prompt_tokens, completion_tokens = await generate_code(
             llm,
             task,
             plan_reasoning=payload.plan_reasoning,
             short_term_memory=short_term_memory,
         )
+
+        if prompt_tokens or completion_tokens:
+            tok_event = metrics_tokens_used(
+                SERVICE_NAME,
+                TokensUsedPayload(
+                    plan_id=plan_id,
+                    service=SERVICE_NAME,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                ),
+            )
+            await _store_event(tok_event)
 
         current_attempt = 0
         try:
@@ -227,7 +241,6 @@ async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
                 line += f" :: {summary}"
             lines.append(line)
 
-        # Keep newest-first order and cap total length.
         window = "\n".join(lines[:limit])
         if len(window) > 2000:
             window = window[:2000]

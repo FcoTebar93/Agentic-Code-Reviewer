@@ -14,7 +14,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from shared.llm_adapter import LLMProvider
+from shared.llm_adapter import LLMProvider, LLMResponse
+from shared.observability.metrics import llm_tokens
 from services.qa_service.config import DANGEROUS_PATTERNS
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,9 @@ class ReviewResult:
     reasoning: str = ""
 
 
+SERVICE_NAME = "qa_service"
+
+
 async def review_code(
     llm: LLMProvider,
     code: str,
@@ -100,12 +104,9 @@ async def review_code(
     task_description: str,
     dev_reasoning: str = "",
     short_term_memory: str = "",
-) -> ReviewResult:
+) -> tuple[ReviewResult, int, int]:
     """
-    Run static checks then LLM review.
-
-    If dev_reasoning is provided, the QA agent is instructed to explicitly
-    respond to the developer's reasoning, creating a visible dialogue.
+    Run static checks then LLM review. Returns (result, prompt_tokens, completion_tokens).
     """
     static_issues = _static_check(code)
     if static_issues:
@@ -115,12 +116,12 @@ async def review_code(
             "developer's stated rationale."
         )
         logger.warning("Static check FAILED for %s: %s", file_path, static_issues)
-        return ReviewResult(passed=False, issues=static_issues, reasoning=reasoning)
+        return ReviewResult(passed=False, issues=static_issues, reasoning=reasoning), 0, 0
 
-    llm_result = await _llm_review(
-        llm, code, file_path, language, task_description, dev_reasoning
+    return await _llm_review(
+        llm, code, file_path, language, task_description, dev_reasoning,
+        short_term_memory=short_term_memory,
     )
-    return llm_result
 
 
 def _static_check(code: str) -> list[str]:
@@ -140,7 +141,7 @@ async def _llm_review(
     task_description: str,
     dev_reasoning: str = "",
     short_term_memory: str = "",
-) -> ReviewResult:
+) -> tuple[ReviewResult, int, int]:
     if dev_reasoning.strip():
         prompt = QA_REVIEW_PROMPT.format(
             language=language,
@@ -158,8 +159,16 @@ async def _llm_review(
             description=task_description,
         )
 
-    response = await llm.generate_text(prompt)
-    return _parse_review_response(response.content)
+    response: LLMResponse = await llm.generate_text(prompt)
+
+    pt = response.prompt_tokens or 0
+    ct = response.completion_tokens or 0
+    if pt or ct:
+        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
+        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+
+    result = _parse_review_response(response.content)
+    return result, pt, ct
 
 
 def _parse_review_response(content: str) -> ReviewResult:

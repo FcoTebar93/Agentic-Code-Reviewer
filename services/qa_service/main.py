@@ -36,11 +36,13 @@ from shared.contracts.events import (
     TaskAssignedPayload,
     QAResultPayload,
     TaskSpec,
+    TokensUsedPayload,
     code_generated,
     pr_requested,
     task_assigned,
     qa_passed,
     qa_failed,
+    metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
@@ -130,7 +132,7 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
     with agent_execution_time.labels(service=SERVICE_NAME, operation="code_review").time():
         llm = get_llm_provider()
         short_term_memory = await _build_short_term_memory(plan_id)
-        result = await review_code(
+        result, prompt_tokens, completion_tokens = await review_code(
             llm=llm,
             code=payload.code,
             file_path=payload.file_path,
@@ -139,6 +141,18 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
             dev_reasoning=dev_reasoning,
             short_term_memory=short_term_memory,
         )
+
+    if prompt_tokens or completion_tokens:
+        tok_event = metrics_tokens_used(
+            SERVICE_NAME,
+            TokensUsedPayload(
+                plan_id=plan_id,
+                service=SERVICE_NAME,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            ),
+        )
+        await _store_event(tok_event)
 
     _qa_reasoning_cache[task_id] = result.reasoning or ""
 
