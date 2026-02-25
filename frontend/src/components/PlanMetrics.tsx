@@ -20,6 +20,15 @@ interface PlanMetricsPayload {
   estimated_cost_prompt_usd?: number;
   estimated_cost_completion_usd?: number;
   estimated_cost_total_usd?: number;
+  pipeline_status?: string;
+  first_event_at?: string | null;
+  last_event_at?: string | null;
+  duration_seconds?: number;
+  qa_retry_count?: number;
+  qa_failed_count?: number;
+  security_blocked_count?: number;
+  replan_suggestions_count?: number;
+  replan_confirmed_count?: number;
   by_service: ByService[];
 }
 
@@ -81,6 +90,19 @@ export function PlanMetrics({ events }: { events: EventLike[] }) {
     return `$${value.toFixed(4)}`;
   };
 
+  const formatDuration = (seconds?: number) => {
+    if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) {
+      return "—";
+    }
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    if (mins < 60) return `${mins}m ${secs}s`;
+    const hours = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    return `${hours}h ${remMins}m`;
+  };
+
   if (!planId) {
     return (
       <div className="bg-slate-900 rounded-xl border border-slate-700 p-4">
@@ -126,6 +148,35 @@ export function PlanMetrics({ events }: { events: EventLike[] }) {
             <dt className="text-slate-500 text-xs font-mono">Completion</dt>
             <dd className="text-slate-200 text-xs font-mono">
               {metrics.total_completion_tokens.toLocaleString()}
+            </dd>
+          </div>
+          {/* Pipeline health */}
+          <div className="flex justify-between pt-1 border-t border-slate-700 mt-1">
+            <dt className="text-slate-500 text-xs font-mono">Pipeline status</dt>
+            <dd className="text-slate-200 text-xs font-mono">
+              {metrics.pipeline_status ?? "unknown"}
+            </dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-slate-500 text-xs font-mono">Duration</dt>
+            <dd className="text-slate-200 text-xs font-mono">
+              {formatDuration(metrics.duration_seconds)}
+            </dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-slate-500 text-[10px] font-mono">Retries (QA)</dt>
+            <dd className="text-slate-200 text-[10px] font-mono">
+              {metrics.qa_retry_count ?? 0}
+            </dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-slate-500 text-[10px] font-mono">Replans</dt>
+            <dd className="text-slate-200 text-[10px] font-mono">
+              {metrics.replan_suggestions_count ?? 0}
+              {typeof metrics.replan_confirmed_count === "number" &&
+                metrics.replan_confirmed_count > 0 && (
+                  <span className="text-slate-500"> (confirmed {metrics.replan_confirmed_count})</span>
+                )}
             </dd>
           </div>
           {typeof metrics.estimated_cost_total_usd === "number" &&

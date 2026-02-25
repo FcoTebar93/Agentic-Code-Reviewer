@@ -25,6 +25,7 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -249,14 +250,14 @@ async def get_plan_metrics(plan_id: str):
                 content={"error": "Failed to fetch events", "status": resp.status_code},
                 status_code=502,
             )
-        events = resp.json()
-        if not isinstance(events, list):
-            events = []
+        token_events = resp.json()
+        if not isinstance(token_events, list):
+            token_events = []
 
         by_service: dict[str, dict[str, float]] = {}
         total_prompt = 0
         total_completion = 0
-        for ev in events:
+        for ev in token_events:
             p = ev.get("payload") or {}
             svc = str(p.get("service", "unknown"))
             pt = int(p.get("prompt_tokens", 0) or 0)
@@ -293,6 +294,114 @@ async def get_plan_metrics(plan_id: str):
                 }
             )
 
+        # Pipeline health metrics: derive from all events for this plan_id.
+        health_events: list[dict[str, Any]] = []
+        try:
+            resp_all = await http_client.get(
+                f"{cfg.memory_service_url}/events",
+                params={"plan_id": plan_id, "limit": 500},
+            )
+            if resp_all.status_code == 200:
+                data_all = resp_all.json()
+                if isinstance(data_all, list):
+                    health_events = data_all
+        except Exception:
+            logger.warning("Failed to fetch health events for plan %s", plan_id[:8])
+
+        first_ts: datetime | None = None
+        last_ts: datetime | None = None
+        qa_retry_count = 0
+        qa_failed_count = 0
+        security_blocked_count = 0
+
+        for ev in health_events:
+            ts_str = ev.get("created_at")
+            if isinstance(ts_str, str):
+                try:
+                    ts = datetime.fromisoformat(ts_str)
+                    if first_ts is None or ts < first_ts:
+                        first_ts = ts
+                    if last_ts is None or ts > last_ts:
+                        last_ts = ts
+                except Exception:
+                    pass
+
+            etype = str(ev.get("event_type", ""))
+            payload = ev.get("payload") or {}
+
+            if etype == EventType.TASK_ASSIGNED.value:
+                feedback = str(payload.get("qa_feedback", "") or "")
+                if feedback.strip():
+                    qa_retry_count += 1
+            elif etype == EventType.QA_FAILED.value:
+                qa_failed_count += 1
+            elif etype == EventType.SECURITY_BLOCKED.value:
+                security_blocked_count += 1
+
+        duration_seconds = 0
+        if first_ts and last_ts:
+            try:
+                duration_seconds = int((last_ts - first_ts).total_seconds())
+            except Exception:
+                duration_seconds = 0
+
+        pipeline_status = "unknown"
+        if any(
+            str(ev.get("event_type", "")) == EventType.PIPELINE_CONCLUSION.value
+            and bool((ev.get("payload") or {}).get("approved", False))
+            for ev in health_events
+        ):
+            pipeline_status = "approved"
+        elif security_blocked_count > 0:
+            pipeline_status = "security_blocked"
+        elif qa_failed_count > 0:
+            pipeline_status = "qa_failed"
+        elif health_events:
+            pipeline_status = "in_progress"
+
+        # Replanner activity (scan by original_plan_id across revision events).
+        replan_suggestions_count = 0
+        replan_confirmed_count = 0
+        try:
+            resp_suggested = await http_client.get(
+                f"{cfg.memory_service_url}/events",
+                params={
+                    "event_type": EventType.PLAN_REVISION_SUGGESTED.value,
+                    "limit": 200,
+                },
+            )
+            if resp_suggested.status_code == 200:
+                events_sugg = resp_suggested.json()
+                if isinstance(events_sugg, list):
+                    for ev in events_sugg:
+                        payload = ev.get("payload") or {}
+                        if str(payload.get("original_plan_id", "")) == plan_id:
+                            replan_suggestions_count += 1
+        except Exception:
+            logger.warning(
+                "Failed to fetch plan.revision_suggested events for health metrics"
+            )
+
+        try:
+            resp_confirmed = await http_client.get(
+                f"{cfg.memory_service_url}/events",
+                params={
+                    "event_type": EventType.PLAN_REVISION_CONFIRMED.value,
+                    "limit": 200,
+                },
+            )
+            if resp_confirmed.status_code == 200:
+                events_conf = resp_confirmed.json()
+                if isinstance(events_conf, list):
+                    for ev in events_conf:
+                        payload = ev.get("payload") or {}
+                        if str(payload.get("original_plan_id", "")) == plan_id:
+                            replan_confirmed_count += 1
+        except Exception:
+            logger.warning(
+                "Failed to fetch plan.revision_confirmed events for health metrics"
+            )
+
         return {
             "plan_id": plan_id,
             "total_prompt_tokens": total_prompt,
@@ -301,6 +410,15 @@ async def get_plan_metrics(plan_id: str):
             "estimated_cost_prompt_usd": prompt_cost,
             "estimated_cost_completion_usd": completion_cost,
             "estimated_cost_total_usd": total_cost,
+            "pipeline_status": pipeline_status,
+            "first_event_at": first_ts.isoformat() if first_ts else None,
+            "last_event_at": last_ts.isoformat() if last_ts else None,
+            "duration_seconds": duration_seconds,
+            "qa_retry_count": qa_retry_count,
+            "qa_failed_count": qa_failed_count,
+            "security_blocked_count": security_blocked_count,
+            "replan_suggestions_count": replan_suggestions_count,
+            "replan_confirmed_count": replan_confirmed_count,
             "by_service": by_service_list,
         }
     except Exception as exc:
