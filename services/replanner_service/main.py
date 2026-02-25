@@ -20,22 +20,27 @@ from shared.contracts.events import (
 )
 from shared.llm_adapter import get_llm_provider
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from shared.tools import ToolRegistry, execute_tool
 from services.replanner_service.config import ReplannerConfig
 from services.replanner_service.critic import analyse_outcome
+from services.replanner_service.tools import build_replanner_tool_registry
 
 SERVICE_NAME = "replanner_service"
 event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: ReplannerConfig | None = None
+tool_registry: ToolRegistry | None = None
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global event_bus, http_client, cfg
+    global event_bus, http_client, cfg, tool_registry
     logger = setup_logging(SERVICE_NAME)
 
     cfg = ReplannerConfig.from_env()
     http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+
+    tool_registry = build_replanner_tool_registry(memory_service_url=cfg.memory_service_url)
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
@@ -142,11 +147,6 @@ async def _analyse_and_emit_revision(
             memory_context=memory_context,
         )
 
-        # Token metrics are recorded from the llm_adapter usage.
-        # We only count completions here; prompts are tracked separately.
-        # (The generate_text wrapper returns LLMResponse with token counts.)
-        # NOTE: For simplicity we don't enforce budgets yet, solo observabilidad.
-
     if not result.revision_needed:
         logger.info(
             "Replanner decided no revision needed for plan %s (severity=%s)",
@@ -181,33 +181,26 @@ async def _fetch_memory_context(plan_id: str, limit: int = 5) -> str:
     Retrieve semantic memory focused on this plan id to provide context
     to the replanner (previous conclusions, QA failures, security blocks).
     """
-    if http_client is None:
+    global tool_registry
+    if tool_registry is None:
         return ""
 
     try:
-        resp = await http_client.post(
-            "/semantic/search",
-            json={
-                "query": f"Outcome summary and reasoning for plan {plan_id}",
-                "plan_id": plan_id,
-                "event_types": [
-                    EventType.PIPELINE_CONCLUSION.value,
-                    EventType.QA_FAILED.value,
-                    EventType.SECURITY_BLOCKED.value,
-                ],
-                "limit": limit,
-            },
+        result = await execute_tool(
+            tool_registry,
+            "semantic_outcome_memory",
+            {"plan_id": plan_id, "limit": limit},
         )
-        if resp.status_code != 200:
+        if not result.success:
             logger.warning(
-                "Replanner semantic search failed for plan %s (status=%s)",
+                "Replanner semantic search tool failed for plan %s: %s",
                 plan_id[:8],
-                resp.status_code,
+                result.error,
             )
             return ""
 
-        data = resp.json()
-        results = data.get("results") or []
+        payload = result.output or {}
+        results = payload.get("results") or []
         if not isinstance(results, list) or not results:
             return ""
 
