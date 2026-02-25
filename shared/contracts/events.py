@@ -33,6 +33,7 @@ class EventType(str, Enum):
     SECURITY_APPROVED = "security.approved"
     SECURITY_BLOCKED = "security.blocked"
     PIPELINE_CONCLUSION = "pipeline.conclusion"
+    PLAN_REVISION_SUGGESTED = "plan.revision_suggested"
 
 
 class BaseEvent(BaseModel):
@@ -170,6 +171,20 @@ class PipelineConclusionPayload(BaseModel):
     approved: bool = True
 
 
+class PlanRevisionPayload(BaseModel):
+    """
+    Suggested revision to an existing plan, typically produced by the
+    replanner_service after analysing QA and Security outcomes.
+    """
+
+    original_plan_id: str
+    new_plan_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    reason: str = ""
+    summary: str = ""
+    suggestions: list[str] = Field(default_factory=list)
+    severity: str = "medium"
+
+
 def plan_requested(producer: str, payload: PlanRequestedPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.PLAN_REQUESTED,
@@ -277,6 +292,14 @@ def security_blocked(producer: str, payload: SecurityResultPayload) -> BaseEvent
 def pipeline_conclusion(producer: str, payload: PipelineConclusionPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.PIPELINE_CONCLUSION,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def plan_revision_suggested(producer: str, payload: PlanRevisionPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.PLAN_REVISION_SUGGESTED,
         producer=producer,
         payload=payload.model_dump(),
     )
