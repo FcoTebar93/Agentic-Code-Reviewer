@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 PLANNING_PROMPT_TEMPLATE = """You are a senior software architect. Given the following user request,
 decompose it into a list of concrete development tasks.
 
+You also have access to selected memories from past plans and pipeline runs.
+These may include previous user prompts, planner reasoning, pipeline conclusions,
+and QA/security outcomes. Use them only if they are truly relevant; otherwise,
+ignore them.
+
+MEMORY CONTEXT:
+{memory_context}
+
 First, explain your reasoning: why these tasks, what architectural decisions you made,
 and how they relate to each other.
 
@@ -44,10 +52,15 @@ class PlanResult:
 
 
 async def decompose_tasks(
-    llm: LLMProvider, user_prompt: str
+    llm: LLMProvider,
+    user_prompt: str,
+    memory_context: str = "",
 ) -> PlanResult:
     """Call the LLM to break a user prompt into TaskSpecs with reasoning."""
-    prompt = PLANNING_PROMPT_TEMPLATE.format(prompt=user_prompt)
+    prompt = PLANNING_PROMPT_TEMPLATE.format(
+        prompt=user_prompt,
+        memory_context=memory_context.strip() or "None.",
+    )
     response = await llm.generate_text(prompt)
 
     reasoning, tasks = _parse_response(response.content)

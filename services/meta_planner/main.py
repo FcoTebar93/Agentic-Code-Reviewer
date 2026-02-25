@@ -140,7 +140,8 @@ async def _execute_plan(
 ) -> dict:
     with agent_execution_time.labels(service=SERVICE_NAME, operation="plan").time():
         llm = get_llm_provider()
-        plan_result = await decompose_tasks(llm, prompt)
+        memory_context = await _fetch_memory_context(prompt)
+        plan_result = await decompose_tasks(llm, prompt, memory_context=memory_context)
         task_specs = plan_result.tasks
 
         plan_payload = PlanCreatedPayload(
@@ -211,3 +212,58 @@ async def _store_event(event: BaseEvent) -> None:
         )
     except Exception:
         logger.exception("Failed to store event %s in memory_service", event.event_id[:8])
+
+
+async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
+    """
+    Retrieve a compact textual memory window for the planner based on
+    the current user prompt.
+
+    This uses the memory_service semantic search endpoint, which combines
+    vector similarity with heuristic scoring (importance, recency, etc.).
+    """
+    if http_client is None:
+        return ""
+
+    try:
+        resp = await http_client.post(
+            "/semantic/search",
+            json={
+                "query": user_prompt,
+                "limit": limit,
+                # We intentionally do not filter by plan_id here so that the
+                # planner can leverage memories from previous runs.
+                "event_types": [
+                    EventType.PLAN_CREATED.value,
+                    EventType.PIPELINE_CONCLUSION.value,
+                    EventType.QA_FAILED.value,
+                    EventType.SECURITY_BLOCKED.value,
+                ],
+            },
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "Semantic search failed with status %s", resp.status_code
+            )
+            return ""
+
+        data = resp.json()
+        results = data.get("results") or []
+        if not isinstance(results, list) or not results:
+            return ""
+
+        lines: list[str] = []
+        for item in results[:limit]:
+            payload = item.get("payload") or {}
+            score = item.get("heuristic_score", item.get("score", 0.0))
+            text = str(payload.get("text", ""))[:400].replace("\n", " ")
+            etype = payload.get("event_type", "")
+            plan_id = payload.get("plan_id", "")
+            lines.append(
+                f"- [{etype}] plan_id={plan_id} score={score:.3f}: {text}"
+            )
+
+        return "\n".join(lines)
+    except Exception:
+        logger.exception("Failed to fetch memory context from memory_service")
+        return ""
