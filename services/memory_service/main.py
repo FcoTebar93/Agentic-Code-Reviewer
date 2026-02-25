@@ -91,9 +91,13 @@ async def store_event(req: StoreEventRequest):
 
 
 @app.get("/events")
-async def list_events(event_type: str | None = None, limit: int = 50):
+async def list_events(
+    event_type: str | None = None,
+    plan_id: str | None = None,
+    limit: int = 50,
+):
     s = _get_store()
-    return await s.get_events(event_type=event_type, limit=limit)
+    return await s.get_events(event_type=event_type, plan_id=plan_id, limit=limit)
 
 class UpdateTaskRequest(BaseModel):
     task_id: str
@@ -145,3 +149,32 @@ async def cache_get(key: str):
     if value is None:
         raise HTTPException(status_code=404, detail="Key not found")
     return {"key": key, "value": value}
+
+
+class SemanticSearchRequest(BaseModel):
+    query: str
+    plan_id: str | None = None
+    event_types: list[str] = []
+    limit: int = 5
+
+
+@app.post("/semantic/search")
+async def semantic_search(req: SemanticSearchRequest):
+    """
+    Semantic retrieval over the unified memory store.
+
+    Returns memories ordered by a heuristic score that combines:
+    - vector similarity
+    - importance
+    - recency
+    - frequency
+    - impact on decisions
+    """
+    s = _get_store()
+    results = await s.semantic_search(
+        query=req.query,
+        plan_id=req.plan_id,
+        event_types=req.event_types,
+        limit=req.limit,
+    )
+    return {"results": results}

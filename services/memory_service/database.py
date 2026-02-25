@@ -31,6 +31,7 @@ class EventLog(Base):
     producer: Mapped[str] = mapped_column(String(128))
     idempotency_key: Mapped[str] = mapped_column(String(128), index=True)
     payload: Mapped[str] = mapped_column(Text)
+    plan_id: Mapped[str] = mapped_column(String(64), index=True, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -71,6 +72,16 @@ async def init_db(database_url: str) -> None:
             async with _engine.begin() as conn:
                 await conn.execute(
                     text("ALTER TABLE task_state ADD COLUMN IF NOT EXISTS qa_attempt INTEGER DEFAULT 0")
+                )
+        except Exception:
+            pass
+        try:
+            async with _engine.begin() as conn:
+                await conn.execute(
+                    text("ALTER TABLE event_log ADD COLUMN IF NOT EXISTS plan_id VARCHAR(64)")
+                )
+                await conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_event_log_plan_id ON event_log (plan_id)")
                 )
         except Exception:
             pass
