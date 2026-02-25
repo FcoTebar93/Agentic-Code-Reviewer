@@ -4,9 +4,12 @@ import logging
 from dataclasses import dataclass
 
 from shared.contracts.events import QAResultPayload, SecurityResultPayload
-from shared.llm_adapter import LLMProvider
+from shared.llm_adapter import LLMProvider, LLMResponse
+from shared.observability.metrics import llm_tokens
 
 logger = logging.getLogger(__name__)
+
+SERVICE_NAME = "replanner_service"
 
 
 REPLANNER_PROMPT = """You are an autonomous replanning agent in a multi-agent dev pipeline.
@@ -55,7 +58,8 @@ async def analyse_outcome(
     plan_id: str,
     outcome: QAResultPayload | SecurityResultPayload,
     memory_context: str,
-) -> ReplanDecision:
+) -> tuple[ReplanDecision, int, int]:
+    """Returns (decision, prompt_tokens, completion_tokens)."""
     outcome_summary = _summarise_outcome(outcome)
     prompt = REPLANNER_PROMPT.format(
         agent_goal=agent_goal,
@@ -64,7 +68,14 @@ async def analyse_outcome(
         outcome_summary=outcome_summary,
     )
 
-    response = await llm.generate_text(prompt)
+    response: LLMResponse = await llm.generate_text(prompt)
+
+    pt = response.prompt_tokens or 0
+    ct = response.completion_tokens or 0
+    if pt or ct:
+        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
+        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+
     decision = _parse_replanner_response(response.content)
 
     logger.info(
@@ -74,7 +85,7 @@ async def analyse_outcome(
         decision.severity,
         decision.reason[:120],
     )
-    return decision
+    return decision, pt, ct
 
 
 def _summarise_outcome(outcome: QAResultPayload | SecurityResultPayload) -> str:
@@ -86,7 +97,6 @@ def _summarise_outcome(outcome: QAResultPayload | SecurityResultPayload) -> str:
             f"Issues: {issues}. Reasoning: {outcome.reasoning}"
         )
 
-    # SecurityResultPayload
     status = "APPROVED" if outcome.approved else "BLOCKED"
     violations = ", ".join(outcome.violations) if outcome.violations else "none"
     return (
