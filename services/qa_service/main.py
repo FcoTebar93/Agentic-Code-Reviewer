@@ -44,24 +44,29 @@ from shared.contracts.events import (
 )
 from shared.llm_adapter import get_llm_provider
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from shared.tools import ToolRegistry, execute_tool
 from services.qa_service.config import QAConfig
-from services.qa_service.reviewer import review_code
+from services.qa_service.reviewer import review_code, ReviewResult
+from services.qa_service.tools import build_qa_tool_registry
 
 SERVICE_NAME = "qa_service"
 event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: QAConfig | None = None
+tool_registry: ToolRegistry | None = None
 
 _dev_reasoning_cache: dict[str, str] = {}
 _qa_reasoning_cache: dict[str, str] = {}
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global event_bus, http_client, cfg
+    global event_bus, http_client, cfg, tool_registry
     logger = setup_logging(SERVICE_NAME)
 
     cfg = QAConfig.from_env()
     http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+
+    tool_registry = build_qa_tool_registry()
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
@@ -128,17 +133,34 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
     _dev_reasoning_cache[task_id] = dev_reasoning
 
     with agent_execution_time.labels(service=SERVICE_NAME, operation="code_review").time():
-        llm = get_llm_provider()
-        short_term_memory = await _build_short_term_memory(plan_id)
-        result = await review_code(
-            llm=llm,
+        static_issues = await _run_static_lint(
             code=payload.code,
             file_path=payload.file_path,
             language=payload.language,
-            task_description=f"Generate {payload.language} code for {payload.file_path}",
-            dev_reasoning=dev_reasoning,
-            short_term_memory=short_term_memory,
         )
+
+        if static_issues:
+            reasoning = (
+                f"Static linting detected {len(static_issues)} issue(s) before LLM review. "
+                "Rejecting this change until the issues reported by the linter are fixed."
+            )
+            result = ReviewResult(
+                passed=False,
+                issues=static_issues,
+                reasoning=reasoning,
+            )
+        else:
+            llm = get_llm_provider()
+            short_term_memory = await _build_short_term_memory(plan_id)
+            result = await review_code(
+                llm=llm,
+                code=payload.code,
+                file_path=payload.file_path,
+                language=payload.language,
+                task_description=f"Generate {payload.language} code for {payload.file_path}",
+                dev_reasoning=dev_reasoning,
+                short_term_memory=short_term_memory,
+            )
 
     _qa_reasoning_cache[task_id] = result.reasoning or ""
 
@@ -375,3 +397,51 @@ async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
             plan_id[:8],
         )
         return ""
+
+
+async def _run_static_lint(
+    code: str,
+    file_path: str,
+    language: str,
+) -> list[str]:
+    """
+    Ejecuta el tool python_lint cuando el lenguaje es Python y devuelve
+    una lista de issues en formato legible para el agente.
+    """
+    global tool_registry
+    if language.lower() != "python":
+        return []
+    if not tool_registry:
+        return []
+
+    try:
+        result = await execute_tool(
+            tool_registry,
+            "python_lint",
+            {
+                "language": "python",
+                "code": code,
+                "file_path": file_path or "tmp.py",
+            },
+        )
+        if not result.success:
+            logger.warning("python_lint tool failed: %s", result.error)
+            return []
+
+        payload = result.output or {}
+        if not payload.get("supported", True):
+            return []
+        issues = payload.get("issues") or []
+        formatted: list[str] = []
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            line = issue.get("line")
+            col = issue.get("column")
+            code_str = issue.get("code", "")
+            msg = issue.get("message", "")
+            formatted.append(f"[ruff {code_str}] L{line}:C{col} {msg}")
+        return formatted
+    except Exception:
+        logger.exception("Error while running python_lint tool")
+        return []
