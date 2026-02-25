@@ -35,6 +35,7 @@ class EventType(str, Enum):
     PIPELINE_CONCLUSION = "pipeline.conclusion"
     PLAN_REVISION_SUGGESTED = "plan.revision_suggested"
     PLAN_REVISION_CONFIRMED = "plan.revision_confirmed"
+    METRICS_TOKENS_USED = "metrics.tokens_used"
 
 
 class BaseEvent(BaseModel):
@@ -186,6 +187,15 @@ class PlanRevisionPayload(BaseModel):
     severity: str = "medium"
 
 
+class TokensUsedPayload(BaseModel):
+    """Emitted by agents after each LLM call for plan-level token aggregation."""
+
+    plan_id: str
+    service: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
 def plan_requested(producer: str, payload: PlanRequestedPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.PLAN_REQUESTED,
@@ -309,6 +319,14 @@ def plan_revision_suggested(producer: str, payload: PlanRevisionPayload) -> Base
 def plan_revision_confirmed(producer: str, payload: PlanRevisionPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.PLAN_REVISION_CONFIRMED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def metrics_tokens_used(producer: str, payload: TokensUsedPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.METRICS_TOKENS_USED,
         producer=producer,
         payload=payload.model_dump(),
     )
