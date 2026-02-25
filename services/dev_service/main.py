@@ -113,7 +113,13 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         await _update_task_state(task.task_id, plan_id, "in_progress")
 
         llm = get_llm_provider()
-        code_result = await generate_code(llm, task, plan_reasoning=payload.plan_reasoning)
+        short_term_memory = await _build_short_term_memory(plan_id)
+        code_result = await generate_code(
+            llm,
+            task,
+            plan_reasoning=payload.plan_reasoning,
+            short_term_memory=short_term_memory,
+        )
 
         current_attempt = 0
         try:
@@ -167,6 +173,71 @@ async def _store_event(event: BaseEvent) -> None:
         )
     except Exception:
         logger.exception("Failed to store event %s", event.event_id[:8])
+
+
+async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
+    """
+    Build a compact short-term memory window for a given plan_id by querying
+    recent events from the memory_service.
+    """
+    if http_client is None:
+        return ""
+
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={"plan_id": plan_id, "limit": limit},
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "Failed to fetch short-term memory for plan %s (status=%s)",
+                plan_id[:8],
+                resp.status_code,
+            )
+            return ""
+
+        events = resp.json()
+        if not isinstance(events, list):
+            return ""
+
+        lines: list[str] = []
+        for evt in events:
+            etype = evt.get("event_type", "")
+            producer = evt.get("producer", "")
+            created_at = evt.get("created_at", "")
+            payload = evt.get("payload") or {}
+
+            summary = ""
+            if etype == EventType.PLAN_CREATED.value:
+                summary = str(payload.get("reasoning", ""))[:200]
+            elif etype == EventType.CODE_GENERATED.value:
+                summary = f"{payload.get('file_path', '')}"
+            elif etype in (
+                EventType.QA_PASSED.value,
+                EventType.QA_FAILED.value,
+                EventType.SECURITY_APPROVED.value,
+                EventType.SECURITY_BLOCKED.value,
+            ):
+                summary = str(payload.get("reasoning", ""))[:200]
+            else:
+                summary = ""
+
+            line = f"[{etype}] from {producer} at {created_at}"
+            if summary:
+                line += f" :: {summary}"
+            lines.append(line)
+
+        # Keep newest-first order and cap total length.
+        window = "\n".join(lines[:limit])
+        if len(window) > 2000:
+            window = window[:2000]
+        return window
+    except Exception:
+        logger.exception(
+            "Error while building short-term memory for plan %s",
+            plan_id[:8],
+        )
+        return ""
 
 
 async def _update_task_state(

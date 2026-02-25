@@ -32,6 +32,14 @@ Your task is:
 
 Target file: {file_path}
 
+You also have access to a short memory window of recent events for this plan
+(planner decisions, previous code generations, QA/security results, etc.).
+Use this context to stay consistent with prior steps, but ignore anything that
+is clearly irrelevant.
+
+SHORT-TERM MEMORY:
+{short_term_memory}
+
 Instructions:
 1. Start your response by explicitly referencing and responding to the planner's reasoning above.
 2. Explain the implementation approach you chose and why, addressing any decisions the planner raised.
@@ -70,6 +78,7 @@ async def generate_code(
     llm: LLMProvider,
     task: TaskSpec,
     plan_reasoning: str = "",
+    short_term_memory: str = "",
 ) -> CodeResult:
     """Use the LLM to generate code for a single task.
 
@@ -83,6 +92,7 @@ async def generate_code(
             plan_reasoning=plan_reasoning,
             description=task.description,
             file_path=task.file_path,
+            short_term_memory=short_term_memory.strip() or "None.",
         )
     else:
         prompt = CODE_GEN_PROMPT_NO_PRIOR.format(
