@@ -34,6 +34,7 @@ class EventType(str, Enum):
     SECURITY_BLOCKED = "security.blocked"
     PIPELINE_CONCLUSION = "pipeline.conclusion"
     PLAN_REVISION_SUGGESTED = "plan.revision_suggested"
+    PLAN_REVISION_CONFIRMED = "plan.revision_confirmed"
 
 
 class BaseEvent(BaseModel):
@@ -300,6 +301,14 @@ def pipeline_conclusion(producer: str, payload: PipelineConclusionPayload) -> Ba
 def plan_revision_suggested(producer: str, payload: PlanRevisionPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.PLAN_REVISION_SUGGESTED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def plan_revision_confirmed(producer: str, payload: PlanRevisionPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.PLAN_REVISION_CONFIRMED,
         producer=producer,
         payload=payload.model_dump(),
     )

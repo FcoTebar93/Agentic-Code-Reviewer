@@ -210,29 +210,31 @@ async def _consume_plan_requests() -> None:
 
 async def _consume_plan_revisions() -> None:
     """
-    Listen for plan.revision_suggested events produced by replanner_service.
+    Listen for plan.revision_suggested and plan.revision_confirmed events.
 
-    For now, we auto-trigger a new planning run only when severity is
-    'high' or 'critical'. The new plan is created with the new_plan_id
-    suggested by the replanner, and uses an augmented prompt that combines
-    the original user request with the replanner's suggestions.
+    - plan.revision_suggested: auto-replan only when severity is high|critical.
+    - plan.revision_confirmed: always replan (human confirmed in the UI).
     """
 
     async def handler(event: BaseEvent) -> None:
         payload = PlanRevisionPayload.model_validate(event.payload)
-        severity = (payload.severity or "medium").lower()
-        if severity not in {"high", "critical"}:
-            logger.info(
-                "Ignoring plan.revision_suggested for %s with non-critical severity %s",
-                payload.original_plan_id[:8],
-                severity,
-            )
-            return
+        if event.event_type == EventType.PLAN_REVISION_SUGGESTED:
+            severity = (payload.severity or "medium").lower()
+            if severity not in {"high", "critical"}:
+                logger.info(
+                    "Ignoring plan.revision_suggested for %s with non-critical severity %s",
+                    payload.original_plan_id[:8],
+                    severity,
+                )
+                return
         await _handle_plan_revision(payload)
 
     await event_bus.subscribe(
         queue_name="meta_planner.plan_revisions",
-        routing_keys=[EventType.PLAN_REVISION_SUGGESTED.value],
+        routing_keys=[
+            EventType.PLAN_REVISION_SUGGESTED.value,
+            EventType.PLAN_REVISION_CONFIRMED.value,
+        ],
         handler=handler,
     )
 

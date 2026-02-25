@@ -40,6 +40,8 @@ from shared.contracts.events import (
     SecurityResultPayload,
     PrApprovalPayload,
     PipelineConclusionPayload,
+    PlanRevisionPayload,
+    plan_revision_confirmed,
     pr_pending_approval,
     pr_human_approved,
     pr_human_rejected,
@@ -174,6 +176,33 @@ async def create_plan(request_body: dict[str, Any]):
         return JSONResponse(
             content={"error": str(exc)}, status_code=502
         )
+
+
+@app.post("/api/replan")
+async def confirm_replan(request_body: dict[str, Any]):
+  """
+  Human-confirmed replan endpoint.
+
+  The frontend sends the payload of a plan.revision_suggested event, which
+  must match PlanRevisionPayload. The gateway republishes it as
+  plan.revision_confirmed so meta_planner can trigger a new plan.
+  """
+  try:
+      payload = PlanRevisionPayload.model_validate(request_body)
+  except Exception as exc:
+      return JSONResponse(
+          content={"error": f"Invalid PlanRevisionPayload: {exc}"},
+          status_code=400,
+      )
+
+  event = plan_revision_confirmed(SERVICE_NAME, payload)
+  await event_bus.publish(event)
+  # Broadcast to WebSocket clients so the feed shows the confirmation as well.
+  await manager.broadcast(
+      json.dumps({"type": "event", "event": json.loads(event.model_dump_json())})
+  )
+
+  return {"status": "ok", "original_plan_id": payload.original_plan_id, "new_plan_id": payload.new_plan_id}
 
 
 @app.get("/api/events")

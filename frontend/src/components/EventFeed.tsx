@@ -6,6 +6,8 @@ interface Props {
   events: BaseEvent[];
 }
 
+const HTTP_BASE = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
+
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString(undefined, {
@@ -148,7 +150,8 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
   const fileList = extractFiles(evt.event_type, evt.payload);
   const plannedFiles = evt.event_type === "plan.created" ? extractPlannedFiles(evt.payload) : [];
   const isConclusion = evt.event_type === "pipeline.conclusion";
-  const expandable = !!(reasoning || prUrl || codeInfo || fileList.length || plannedFiles.length || isConclusion);
+  const isPlanRevision = evt.event_type === "plan.revision_suggested";
+  const expandable = !!(reasoning || prUrl || codeInfo || fileList.length || plannedFiles.length || isConclusion || isPlanRevision);
 
   const color = EVENT_COLORS[evt.event_type] ?? "#6b7280";
   const label = EVENT_LABELS[evt.event_type] ?? evt.event_type;
@@ -160,6 +163,24 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
       : null;
 
   const open = expandable ? isExpanded : true;
+
+  async function handleReplanClick(e: React.MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation();
+    try {
+      const resp = await fetch(`${HTTP_BASE}/api/replan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(evt.payload),
+      });
+      if (!resp.ok) {
+        // eslint-disable-next-line no-console
+        console.error("Replan request failed", resp.status);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Replan request error", err);
+    }
+  }
 
   return (
     <div className="bg-slate-800 rounded-lg overflow-hidden text-xs font-mono border border-slate-700/40">
@@ -195,6 +216,19 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
 
       {expandable && open && (
         <div className="border-t border-slate-700/60 space-y-3 px-3 pt-2 pb-3">
+          {isPlanRevision && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-slate-500 text-[10px] uppercase tracking-widest">
+                Replanner suggestion
+              </p>
+              <button
+                onClick={handleReplanClick}
+                className="text-[10px] font-mono px-2 py-0.5 rounded border border-amber-400/60 text-amber-300 hover:bg-amber-400/10 transition-colors"
+              >
+                confirm replan
+              </button>
+            </div>
+          )}
           {prUrl && (
             <div>
               <p className="text-slate-500 text-[10px] uppercase tracking-widest mb-1">
