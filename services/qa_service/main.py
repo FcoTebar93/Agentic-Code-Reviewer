@@ -59,6 +59,7 @@ tool_registry: ToolRegistry | None = None
 
 _dev_reasoning_cache: dict[str, str] = {}
 _qa_reasoning_cache: dict[str, str] = {}
+_pr_requested_plan_ids: set[str] = set()
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -261,8 +262,12 @@ async def _check_plan_ready_for_pr(plan_id: str) -> None:
     """
     Check if all tasks in the plan have passed QA.
     If so, aggregate files (with combined dev+QA reasoning) and publish pr.requested.
+    Solo publica una vez por plan y deduplica archivos por file_path.
     """
     try:
+        if plan_id in _pr_requested_plan_ids:
+            return
+
         resp = await http_client.get(f"/tasks/{plan_id}")
         resp.raise_for_status()
         all_tasks = resp.json()
@@ -270,33 +275,44 @@ async def _check_plan_ready_for_pr(plan_id: str) -> None:
         if not all_tasks:
             return
 
-        if all(t["status"] == "qa_passed" for t in all_tasks):
-            files = [
+        if not all(t["status"] == "qa_passed" for t in all_tasks):
+            return
+
+        seen_paths: set[str] = set()
+        files = []
+        for t in all_tasks:
+            fp = t.get("file_path", "")
+            if fp in seen_paths:
+                continue
+            seen_paths.add(fp)
+            files.append(
                 CodeGeneratedPayload(
                     plan_id=plan_id,
                     task_id=t["task_id"],
-                    file_path=t["file_path"],
+                    file_path=fp,
                     code=t["code"],
                     reasoning=_build_chain_reasoning(t["task_id"]),
                 )
-                for t in all_tasks
-            ]
-            repo_url = next((t.get("repo_url", "") for t in all_tasks), "")
-            pr_payload = PRRequestedPayload(
-                plan_id=plan_id,
-                repo_url=repo_url,
-                branch_name=f"admadc/plan-{plan_id[:8]}",
-                files=files,
-                commit_message=f"feat: implement plan {plan_id[:8]} (QA approved)",
-                security_approved=False,
             )
-            pr_event = pr_requested(SERVICE_NAME, pr_payload)
-            await event_bus.publish(pr_event)
-            await _store_event(pr_event)
-            logger.info(
-                "All tasks QA-passed for plan %s, pr.requested published to security_service",
-                plan_id[:8],
-            )
+
+        _pr_requested_plan_ids.add(plan_id)
+        repo_url = next((t.get("repo_url", "") for t in all_tasks), "")
+        pr_payload = PRRequestedPayload(
+            plan_id=plan_id,
+            repo_url=repo_url,
+            branch_name=f"admadc/plan-{plan_id[:8]}",
+            files=files,
+            commit_message=f"feat: implement plan {plan_id[:8]} (QA approved)",
+            security_approved=False,
+        )
+        pr_event = pr_requested(SERVICE_NAME, pr_payload)
+        await event_bus.publish(pr_event)
+        await _store_event(pr_event)
+        logger.info(
+            "All tasks QA-passed for plan %s, pr.requested published (%d file(s))",
+            plan_id[:8],
+            len(files),
+        )
     except Exception:
         logger.exception("Error checking plan QA completion for %s", plan_id[:8])
 

@@ -42,7 +42,7 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
-from shared.utils.rabbitmq import EventBus
+from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from shared.tools import ToolRegistry, execute_tool
 from services.meta_planner.config import PlannerConfig
 from services.meta_planner.planner import decompose_tasks
@@ -156,7 +156,19 @@ async def _execute_plan(
         plan_result, prompt_tokens, completion_tokens = await decompose_tasks(
             llm, prompt, memory_context=memory_context
         )
-        task_specs = plan_result.tasks
+        seen_paths: set[str] = set()
+        task_specs = []
+        for spec in plan_result.tasks:
+            if spec.file_path in seen_paths:
+                continue
+            seen_paths.add(spec.file_path)
+            task_specs.append(spec)
+        if len(task_specs) < len(plan_result.tasks):
+            logger.info(
+                "Deduplicated tasks by file_path: %d -> %d",
+                len(plan_result.tasks),
+                len(task_specs),
+            )
 
         plan_payload = PlanCreatedPayload(
             plan_id=forced_plan_id or PlanCreatedPayload.model_fields["plan_id"].default_factory(),
@@ -208,7 +220,11 @@ async def _execute_plan(
     }
 
 async def _consume_plan_requests() -> None:
-    """Listen for plan.requested events from the bus."""
+    """
+    Listen for plan.requested events from the bus.
+    Idempotencia: mismo evento (mismo idempotency_key) no se ejecuta dos veces.
+    """
+    idem_store = IdempotencyStore()
 
     async def handler(event: BaseEvent) -> None:
         delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
@@ -226,6 +242,8 @@ async def _consume_plan_requests() -> None:
         queue_name="meta_planner.plan_requests",
         routing_keys=[EventType.PLAN_REQUESTED.value],
         handler=handler,
+        idempotency_store=idem_store,
+        max_retries=3,
     )
 
 

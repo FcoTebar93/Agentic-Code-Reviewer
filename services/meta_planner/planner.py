@@ -37,7 +37,8 @@ MEMORY CONTEXT:
 First, explain your reasoning: why these tasks, what architectural decisions you made,
 and how they relate to each other.
 
-Then output the task list.
+Then output the task list. For simple requests (e.g. "create a Hello World in X"),
+output a SINGLE task with one file_path. Do not duplicate the same file_path.
 
 Format your response EXACTLY as:
 REASONING: <your architectural reasoning in 2-3 sentences>

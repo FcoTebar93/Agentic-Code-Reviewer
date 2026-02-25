@@ -46,7 +46,7 @@ _instance: LLMProvider | None = None
 
 def _register_openai_compatible(name: str) -> None:
     """Lazy-register any OpenAI-compatible provider."""
-    from shared.llm_adapter.openai_provider import OpenAIProvider
+    from shared.llm_adapter.llm_provider import OpenAIProvider
 
     def _factory() -> OpenAIProvider:
         return OpenAIProvider(provider_name=name)

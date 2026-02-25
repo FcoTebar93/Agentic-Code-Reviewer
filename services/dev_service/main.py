@@ -49,7 +49,6 @@ async def lifespan(application: FastAPI):
     cfg = DevConfig.from_env()
     http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
 
-    # Inicializar el registro de herramientas específicas del dev_service.
     tool_registry = build_dev_tool_registry()
 
     event_bus = EventBus(cfg.rabbitmq_url)
@@ -123,7 +122,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         llm = get_llm_provider()
         short_term_memory = await _build_short_term_memory(plan_id)
         existing_file_preview = await _maybe_read_existing_file(task.file_path)
-        code_result = await generate_code(
         code_result, prompt_tokens, completion_tokens = await generate_code(
             llm,
             task,

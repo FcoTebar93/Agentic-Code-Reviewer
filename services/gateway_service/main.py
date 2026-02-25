@@ -20,9 +20,11 @@ All other events are forwarded transparently.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -59,6 +61,9 @@ cfg: GatewayConfig | None = None
 manager = ConnectionManager()
 
 _pending_approvals: dict[str, PrApprovalPayload] = {}
+
+_PLAN_IDEM_TTL_SECONDS = int(os.environ.get("GATEWAY_PLAN_IDEM_TTL_SECONDS", "45"))
+_plan_idem_cache: dict[str, tuple[dict, float]] = {}
 
 
 @asynccontextmanager
@@ -165,13 +170,37 @@ def _proxy_json(resp: Any) -> dict[str, Any]:
 
 @app.post("/api/plan")
 async def create_plan(request_body: dict[str, Any]):
-    """Proxy POST /plan to meta_planner."""
+    """
+    Proxy POST /plan to meta_planner.
+    Idempotencia: misma petición (prompt|project_name|repo_url) en 45s devuelve
+    la respuesta cacheada sin llamar de nuevo al meta_planner (evita 4x tokens por doble envío).
+    """
     try:
+        prompt = (request_body.get("prompt") or "").strip()
+        project_name = (request_body.get("project_name") or "default").strip()
+        repo_url = (request_body.get("repo_url") or "").strip()
+        key = hashlib.sha256(
+            f"{prompt}|{project_name}|{repo_url}".encode()
+        ).hexdigest()
+        now = time.monotonic()
+        if key in _plan_idem_cache:
+            cached_content, cached_at = _plan_idem_cache[key]
+            if now - cached_at < _PLAN_IDEM_TTL_SECONDS:
+                logger.info(
+                    "Plan idempotent (same request within %ds), returning cached response",
+                    _PLAN_IDEM_TTL_SECONDS,
+                )
+                return JSONResponse(content=cached_content, status_code=200)
+            del _plan_idem_cache[key]
+
         resp = await http_client.post(
             f"{cfg.meta_planner_url}/plan",
             json=request_body,
         )
-        return JSONResponse(content=_proxy_json(resp), status_code=resp.status_code)
+        content = _proxy_json(resp)
+        if resp.status_code == 200 and isinstance(content, dict) and "plan_id" in content:
+            _plan_idem_cache[key] = (content, now)
+        return JSONResponse(content=content, status_code=resp.status_code)
     except Exception as exc:
         logger.exception("Failed to proxy /api/plan")
         return JSONResponse(
@@ -294,7 +323,6 @@ async def get_plan_metrics(plan_id: str):
                 }
             )
 
-        # Pipeline health metrics: derive from all events for this plan_id.
         health_events: list[dict[str, Any]] = []
         try:
             resp_all = await http_client.get(
@@ -359,7 +387,6 @@ async def get_plan_metrics(plan_id: str):
         elif health_events:
             pipeline_status = "in_progress"
 
-        # Replanner activity (scan by original_plan_id across revision events).
         replan_suggestions_count = 0
         replan_confirmed_count = 0
         try:
