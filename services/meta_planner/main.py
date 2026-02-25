@@ -36,8 +36,10 @@ from shared.contracts.events import (
     PlanRequestedPayload,
     TaskAssignedPayload,
     PlanRevisionPayload,
+    TokensUsedPayload,
     plan_created,
     task_assigned,
+    metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
 from shared.utils.rabbitmq import EventBus
@@ -146,7 +148,9 @@ async def _execute_plan(
     with agent_execution_time.labels(service=SERVICE_NAME, operation="plan").time():
         llm = get_llm_provider()
         memory_context = await _fetch_memory_context(prompt)
-        plan_result = await decompose_tasks(llm, prompt, memory_context=memory_context)
+        plan_result, prompt_tokens, completion_tokens = await decompose_tasks(
+            llm, prompt, memory_context=memory_context
+        )
         task_specs = plan_result.tasks
 
         plan_payload = PlanCreatedPayload(
@@ -157,6 +161,18 @@ async def _execute_plan(
         )
         plan_event = plan_created(SERVICE_NAME, plan_payload)
         plan_id = plan_payload.plan_id
+
+        if prompt_tokens or completion_tokens:
+            tok_event = metrics_tokens_used(
+                SERVICE_NAME,
+                TokensUsedPayload(
+                    plan_id=plan_id,
+                    service=SERVICE_NAME,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                ),
+            )
+            await _store_event(tok_event)
 
         await event_bus.publish(plan_event)
         await _store_event(plan_event)

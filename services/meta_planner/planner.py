@@ -58,21 +58,19 @@ async def decompose_tasks(
     llm: LLMProvider,
     user_prompt: str,
     memory_context: str = "",
-) -> PlanResult:
-    """Call the LLM to break a user prompt into TaskSpecs with reasoning."""
+) -> tuple[PlanResult, int, int]:
+    """Call the LLM to break a user prompt into TaskSpecs with reasoning. Returns (result, prompt_tokens, completion_tokens)."""
     prompt = PLANNING_PROMPT_TEMPLATE.format(
         prompt=user_prompt,
         memory_context=memory_context.strip() or "None.",
     )
     response: LLMResponse = await llm.generate_text(prompt)
 
-    if response.prompt_tokens or response.completion_tokens:
-        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(
-            response.prompt_tokens
-        )
-        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(
-            response.completion_tokens
-        )
+    pt = response.prompt_tokens or 0
+    ct = response.completion_tokens or 0
+    if pt or ct:
+        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
+        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
 
     reasoning, tasks = _parse_response(response.content)
     logger.info(
@@ -80,7 +78,7 @@ async def decompose_tasks(
         len(tasks),
         reasoning[:80],
     )
-    return PlanResult(tasks=tasks, reasoning=reasoning)
+    return PlanResult(tasks=tasks, reasoning=reasoning), pt, ct
 
 
 def _parse_response(raw: str) -> tuple[str, list[TaskSpec]]:
