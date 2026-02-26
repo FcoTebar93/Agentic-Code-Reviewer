@@ -6,17 +6,44 @@ from dataclasses import dataclass, field
 
 
 SECURITY_RULES: list[tuple[str, re.Pattern[str]]] = [
+    # Hardcoded secrets / credentials
     ("hardcoded_api_key", re.compile(r'(?i)(api_key|apikey)\s*=\s*["\'][A-Za-z0-9_\-]{16,}["\']')),
     ("hardcoded_password", re.compile(r'(?i)(password|passwd|pwd)\s*=\s*["\'][^"\']{4,}["\']')),
     ("hardcoded_token", re.compile(r'(?i)(token|secret)\s*=\s*["\'][A-Za-z0-9_\-]{16,}["\']')),
+
+    # Dangerous dynamic code execution
     ("dangerous_eval", re.compile(r'\beval\s*\(')),
     ("dangerous_exec", re.compile(r'\bexec\s*\(')),
+
+    # Unsafe (de)serialization
     ("pickle_deserialize", re.compile(r'\bpickle\.loads\s*\(')),
     ("marshal_deserialize", re.compile(r'\bmarshal\.loads\s*\(')),
+
+    # Path traversal-style patterns
     ("path_traversal", re.compile(r'\.\./')),
+
+    # Shell injection via Python
     ("shell_injection_os", re.compile(r'\bos\.system\s*\(')),
     ("shell_injection_subprocess", re.compile(r'\bsubprocess\.(call|Popen|run)\s*\(.*shell\s*=\s*True')),
+
+    # Basic SQL injection risk (Python DB-API style)
     ("sql_injection_risk", re.compile(r'(?i)(execute|executemany)\s*\(\s*["\'].*%s')),
+
+    # Java / Node shell execution
+    ("java_runtime_exec", re.compile(r'Runtime\.getRuntime\(\)\.exec\s*\(')),
+    ("java_processbuilder_exec", re.compile(r'new\s+ProcessBuilder\s*\(')),
+    ("node_child_process_exec", re.compile(r'child_process\.(exec|execSync)\s*\(')),
+
+    # Very rough SQL concatenation for Java / JS
+    ("sql_concat_plus", re.compile(r'(?i)("(SELECT|UPDATE|DELETE|INSERT)[^"]*"\s*\+\s*\w+)')),
+
+    # Debug / development modes left enabled
+    ("flask_debug_true", re.compile(r'\bapp\.run\([^)]*debug\s*=\s*True')),
+    ("django_debug_true", re.compile(r'\bDEBUG\s*=\s*True')),
+
+    # Overly permissive CORS
+    ("cors_allow_all_header", re.compile(r'Access-Control-Allow-Origin["\']?\s*[:=]\s*["\*]["\']')),
+    ("express_cors_all", re.compile(r'cors\(\s*\{\s*origin\s*:\s*["\']\*["\']')),
 ]
 
 
