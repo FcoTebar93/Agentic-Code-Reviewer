@@ -135,6 +135,9 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
     dev_reasoning = payload.reasoning or ""
     _dev_reasoning_cache[task_id] = dev_reasoning
 
+    prompt_tokens = 0
+    completion_tokens = 0
+
     with agent_execution_time.labels(service=SERVICE_NAME, operation="code_review").time():
         static_issues = await _run_static_lint(
             code=payload.code,
@@ -155,7 +158,7 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
         else:
             llm = get_llm_provider()
             short_term_memory = await _build_short_term_memory(plan_id)
-            result = await review_code(
+            result, prompt_tokens, completion_tokens = await review_code(
                 llm=llm,
                 code=payload.code,
                 file_path=payload.file_path,

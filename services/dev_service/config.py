@@ -16,6 +16,11 @@ class DevConfig:
     agent_goal: str
     token_budget_per_task: int
     strategy: str
+    enable_auto_tests: bool
+    test_command_python: str
+    test_command_javascript: str
+    test_command_typescript: str
+    test_command_java: str
 
     @classmethod
     def from_env(cls) -> DevConfig:
@@ -33,4 +38,10 @@ class DevConfig:
             ),
             token_budget_per_task=int(os.environ.get("TOKEN_BUDGET_PER_TASK", "20000")),
             strategy=os.environ.get("AGENT_STRATEGY", "implementation"),
+            enable_auto_tests=os.environ.get("DEV_ENABLE_AUTO_TESTS", "false").lower()
+            in ("1", "true", "yes"),
+            test_command_python=os.environ.get("DEV_TEST_COMMAND_PYTHON", "pytest"),
+            test_command_javascript=os.environ.get("DEV_TEST_COMMAND_JAVASCRIPT", ""),
+            test_command_typescript=os.environ.get("DEV_TEST_COMMAND_TYPESCRIPT", ""),
+            test_command_java=os.environ.get("DEV_TEST_COMMAND_JAVA", ""),
         )

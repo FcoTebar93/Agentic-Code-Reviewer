@@ -109,24 +109,66 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     plan_id = payload.plan_id
     qa_feedback = payload.qa_feedback
 
-    # Idempotencia: si ya existe un code.generated para este task_id (reintento tras fallo), no regenerar ni publicar de nuevo
+    # Idempotencia defensiva:
+    # 1) Revisar el estado de la tarea en memory_service (/tasks/{plan_id}).
+    #    - Si es la asignación original (sin qa_feedback) y ya existe cualquier estado,
+    #      asumimos que la tarea ya fue procesada al menos una vez y saltamos.
+    #    - Si viene con qa_feedback (reintento desde QA), solo saltamos si la tarea
+    #      está en un estado terminal (qa_passed / qa_failed).
+    # 2) Como respaldo, mirar si ya existe un code.generated en /events.
     try:
-        resp = await http_client.get(
-            "/events",
-            params={"plan_id": plan_id, "event_type": EventType.CODE_GENERATED.value, "limit": 100},
-        )
-        if resp.status_code == 200:
-            events = resp.json() if isinstance(resp.json(), list) else []
-            for ev in events:
-                payload = ev.get("payload") or {}
-                if payload.get("task_id") == task.task_id:
+        # 1) Comprobar estado de tarea persistido
+        resp_tasks = await http_client.get(f"/tasks/{plan_id}")
+        if resp_tasks.status_code == 200:
+            tasks = resp_tasks.json() if isinstance(resp_tasks.json(), list) else []
+            existing_status: str | None = None
+            for t in tasks:
+                if t.get("task_id") == task.task_id:
+                    existing_status = str(t.get("status") or "")
+                    break
+
+            if existing_status is not None:
+                has_feedback = bool((qa_feedback or "").strip())
+                if not has_feedback:
+                    # Asignación original: si ya hay cualquier estado, no repetir.
                     logger.info(
-                        "Task %s already has code.generated, skipping (idempotent)",
+                        "Task %s already has task state '%s', skipping original assignment (idempotent)",
+                        task.task_id[:8],
+                        existing_status,
+                    )
+                    return
+                if existing_status in {"qa_passed", "qa_failed"}:
+                    # Reintento con feedback pero la tarea ya terminó: no reprocesar.
+                    logger.info(
+                        "Task %s already finished with status '%s', skipping QA retry (idempotent)",
+                        task.task_id[:8],
+                        existing_status,
+                    )
+                    return
+
+        # 2) Comprobar eventos previos code.generated para este task_id
+        resp_events = await http_client.get(
+            "/events",
+            params={
+                "plan_id": plan_id,
+                "event_type": EventType.CODE_GENERATED.value,
+                "limit": 100,
+            },
+        )
+        if resp_events.status_code == 200:
+            events = resp_events.json() if isinstance(resp_events.json(), list) else []
+            for ev in events:
+                ev_payload = ev.get("payload") or {}
+                if ev_payload.get("task_id") == task.task_id:
+                    logger.info(
+                        "Task %s already has code.generated event, skipping (idempotent)",
                         task.task_id[:8],
                     )
                     return
     except Exception:
-        pass
+        # Fallos de memoria/idempotencia no deben impedir la ejecución de la tarea;
+        # en el peor caso, el dev agent volverá a generar código y QA tendrá el control.
+        logger.warning("Idempotency pre-check failed for task %s", task.task_id[:8])
 
     logger.info(
         "Processing task %s for plan %s%s",
@@ -174,6 +216,47 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         except Exception:
             pass
 
+        # Opcionalmente, ejecuta tests automáticos para enriquecer el reasoning.
+        # Esto es opt-in y configurable por lenguaje mediante DevConfig.
+        tests_summary = ""
+        try:
+            test_cmd = ""
+            lang = (task.language or "").lower()
+            if cfg and cfg.enable_auto_tests and tool_registry is not None:
+                if lang == "python":
+                    test_cmd = cfg.test_command_python
+                elif lang in ("javascript", "js"):
+                    test_cmd = cfg.test_command_javascript
+                elif lang in ("typescript", "ts"):
+                    test_cmd = cfg.test_command_typescript
+                elif lang == "java":
+                    test_cmd = cfg.test_command_java
+
+            if test_cmd:
+                tests_result = await execute_tool(
+                    tool_registry,
+                    "run_tests",
+                    {"command": test_cmd, "timeout_s": 300.0},
+                )
+                if tests_result.success and isinstance(tests_result.output, dict):
+                    tr = tests_result.output
+                    status = "PASSED" if tr.get("exit_code") == 0 and not tr.get("timed_out") else "FAILED"
+                    tests_summary = (
+                        f"Automated tests ({tr.get('command')}): {status}. "
+                        f"exit_code={tr.get('exit_code')}, timed_out={tr.get('timed_out')}."
+                    )
+                elif not tests_result.success:
+                    tests_summary = f"Automated tests failed to run: {tests_result.error}"
+        except Exception:
+            # Fallo en tests no debe bloquear la generación de código;
+            # simplemente omitimos el resumen de tests.
+            tests_summary = ""
+
+        combined_reasoning = code_result.reasoning
+        if tests_summary:
+            suffix = f"\n[Dev Service] Automated tests summary: {tests_summary}"
+            combined_reasoning = (combined_reasoning + suffix).strip()
+
         cg_payload = CodeGeneratedPayload(
             plan_id=plan_id,
             task_id=task.task_id,
@@ -181,7 +264,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             code=code_result.code,
             language=task.language,
             qa_attempt=current_attempt,
-            reasoning=code_result.reasoning,
+            reasoning=combined_reasoning,
         )
         step_delay = float(cfg.step_delay)
         if step_delay > 0:
