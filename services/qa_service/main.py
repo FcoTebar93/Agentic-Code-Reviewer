@@ -232,6 +232,14 @@ async def _retry_task(
     original: CodeGeneratedPayload, issues: list[str]
 ) -> None:
     """Re-enqueue the task to dev_service with QA feedback embedded."""
+    next_attempt = original.qa_attempt + 1
+    await _update_task_state(
+        original.task_id,
+        original.plan_id,
+        "qa_retry",
+        qa_attempt=next_attempt,
+    )
+
     feedback = "Previous QA issues to fix:\n" + "\n".join(f"- {i}" for i in issues)
     retry_spec = TaskSpec(
         task_id=original.task_id,
@@ -248,16 +256,10 @@ async def _retry_task(
     await event_bus.publish(retry_event)
     await _store_event(retry_event)
 
-    await _update_task_state(
-        original.task_id,
-        original.plan_id,
-        "qa_retry",
-        qa_attempt=original.qa_attempt + 1,
-    )
     logger.info(
         "Re-enqueued task %s to dev_service (qa_attempt=%d)",
         original.task_id[:8],
-        original.qa_attempt + 1,
+        next_attempt,
     )
 
 

@@ -28,6 +28,7 @@ MEMORY CONTEXT:
 
 CURRENT OUTCOME SUMMARY:
 {outcome_summary}
+{security_instruction}
 
 Your job:
 1. Decide whether the existing plan needs revision.
@@ -41,6 +42,9 @@ REVISION_NEEDED: yes|no
 SUGGESTIONS:
 - <suggestion 1 (if any)>
 - <suggestion 2 (if any)>
+"""
+SECURITY_BLOCKED_INSTRUCTION = """
+IMPORTANT (Security denied): The code was BLOCKED by the security scan. Your SUGGESTIONS must directly address EACH violation and the security reasoning above, so that the next implementation satisfies the security rules and the next run succeeds. Each suggestion should state what to remove, change or add to comply with security.
 """
 
 
@@ -58,14 +62,19 @@ async def analyse_outcome(
     plan_id: str,
     outcome: QAResultPayload | SecurityResultPayload,
     memory_context: str,
+    outcome_type: str = "qa_failed",
 ) -> tuple[ReplanDecision, int, int]:
     """Returns (decision, prompt_tokens, completion_tokens)."""
     outcome_summary = _summarise_outcome(outcome)
+    security_instruction = (
+        SECURITY_BLOCKED_INSTRUCTION if outcome_type == "security_blocked" else ""
+    )
     prompt = REPLANNER_PROMPT.format(
         agent_goal=agent_goal,
         plan_id=plan_id,
         memory_context=memory_context.strip() or "None.",
         outcome_summary=outcome_summary,
+        security_instruction=security_instruction,
     )
 
     response: LLMResponse = await llm.generate_text(prompt)
@@ -98,12 +107,19 @@ def _summarise_outcome(outcome: QAResultPayload | SecurityResultPayload) -> str:
         )
 
     status = "APPROVED" if outcome.approved else "BLOCKED"
-    violations = ", ".join(outcome.violations) if outcome.violations else "none"
-    return (
-        f"SECURITY RESULT ({status}) for plan {outcome.plan_id}, "
-        f"branch {outcome.branch_name}. Violations: {violations}. "
-        f"Reasoning: {outcome.reasoning}"
-    )
+    lines = [
+        f"SECURITY RESULT: {status} for plan {outcome.plan_id}, branch {outcome.branch_name}.",
+        f"Files scanned: {outcome.files_scanned}.",
+    ]
+    if outcome.violations:
+        lines.append("Violations (code MUST be changed to fix these):")
+        for i, v in enumerate(outcome.violations, 1):
+            lines.append(f"  {i}. {v}")
+    else:
+        lines.append("Violations: none listed.")
+    if (outcome.reasoning or "").strip():
+        lines.append(f"Security reasoning: {outcome.reasoning}")
+    return "\n".join(lines)
 
 
 def _parse_replanner_response(raw: str) -> ReplanDecision:

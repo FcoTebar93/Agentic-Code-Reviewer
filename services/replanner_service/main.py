@@ -147,6 +147,7 @@ async def _analyse_and_emit_revision(
             plan_id=plan_id,
             outcome=outcome,
             memory_context=memory_context,
+            outcome_type=outcome_type,
         )
 
         if prompt_tokens or completion_tokens:
