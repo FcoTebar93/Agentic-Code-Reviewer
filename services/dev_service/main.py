@@ -109,6 +109,25 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     plan_id = payload.plan_id
     qa_feedback = payload.qa_feedback
 
+    # Idempotencia: si ya existe un code.generated para este task_id (reintento tras fallo), no regenerar ni publicar de nuevo
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={"plan_id": plan_id, "event_type": EventType.CODE_GENERATED.value, "limit": 100},
+        )
+        if resp.status_code == 200:
+            events = resp.json() if isinstance(resp.json(), list) else []
+            for ev in events:
+                payload = ev.get("payload") or {}
+                if payload.get("task_id") == task.task_id:
+                    logger.info(
+                        "Task %s already has code.generated, skipping (idempotent)",
+                        task.task_id[:8],
+                    )
+                    return
+    except Exception:
+        pass
+
     logger.info(
         "Processing task %s for plan %s%s",
         task.task_id[:8],
