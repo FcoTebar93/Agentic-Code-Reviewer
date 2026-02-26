@@ -31,21 +31,8 @@ interface PlanMetricsPayload {
   replan_confirmed_count?: number;
   by_service: ByService[];
 }
-
-interface EventLike {
-  payload?: Record<string, unknown>;
-}
-
-function getLatestPlanIdFromEvents(events: EventLike[]): string | null {
-  for (const ev of events) {
-    const planId = ev.payload?.plan_id ?? ev.payload?.original_plan_id;
-    if (typeof planId === "string" && planId.trim()) return planId.trim();
-  }
-  return null;
-}
-
-export function PlanMetrics({ events }: { events: EventLike[] }) {
-  const planId = getLatestPlanIdFromEvents(events);
+ 
+export function PlanMetrics({ planId }: { planId: string | null }) {
   const [metrics, setMetrics] = useState<PlanMetricsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

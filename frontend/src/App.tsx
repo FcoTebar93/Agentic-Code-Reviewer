@@ -5,6 +5,7 @@ import { EventFeed } from "./components/EventFeed";
 import { PlanForm } from "./components/PlanForm";
 import { ApprovalQueue } from "./components/ApprovalQueue";
 import { PlanMetrics } from "./components/PlanMetrics";
+import type { BaseEvent } from "./types/events";
 
 const WS_URL = import.meta.env.VITE_GATEWAY_WS_URL ?? "ws://localhost:8080/ws";
 const HTTP_BASE = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
@@ -14,6 +15,23 @@ const STATUS_DOT: Record<string, string> = {
   connecting: "bg-yellow-400 animate-pulse",
   disconnected: "bg-red-500 animate-pulse",
 };
+
+function extractPlanId(evt: BaseEvent): string | null {
+  const p =
+    (evt.payload?.plan_id as string | undefined) ??
+    (evt.payload?.original_plan_id as string | undefined);
+  if (typeof p === "string" && p.trim()) return p.trim();
+  return null;
+}
+
+function sortByTimestampDesc(events: BaseEvent[]): BaseEvent[] {
+  return [...events].sort((a, b) => {
+    const ta = Date.parse(a.timestamp);
+    const tb = Date.parse(b.timestamp);
+    if (Number.isNaN(ta) || Number.isNaN(tb)) return 0;
+    return tb - ta;
+  });
+}
 
 async function callApprovalEndpoint(
   approvalId: string,
@@ -31,12 +49,35 @@ async function callApprovalEndpoint(
 
 export default function App() {
   const { events, pendingApprovals, status } = useWebSocket(WS_URL);
-  const [visibleEvents, setVisibleEvents] = useState(events);
-  const latestEvent = visibleEvents[0] ?? null;
+  const [visibleEvents, setVisibleEvents] = useState<BaseEvent[]>(events);
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [knownPlanIds, setKnownPlanIds] = useState<string[]>([]);
+
+  const filteredEvents = sortByTimestampDesc(
+    activePlanId === null
+      ? visibleEvents
+      : visibleEvents.filter((e) => extractPlanId(e) === activePlanId)
+  );
+  const latestEvent = filteredEvents[0] ?? null;
 
   // Mantener visibleEvents sincronizado con los eventos del socket
   useEffect(() => {
     setVisibleEvents(events);
+
+    const ids: string[] = [];
+    for (const ev of events) {
+      const pid = extractPlanId(ev);
+      if (pid && !ids.includes(pid)) {
+        ids.push(pid);
+      }
+    }
+    setKnownPlanIds(ids);
+    setActivePlanId((prev) => {
+      if (prev && ids.includes(prev)) return prev;
+      if (prev === null && ids.length > 0) return ids[0];
+      if (!prev && ids.length > 0) return ids[0];
+      return prev;
+    });
   }, [events]);
 
   return (
@@ -70,20 +111,56 @@ export default function App() {
         <div className="flex flex-col gap-4 min-h-0">
           <PipelineGraph latestEvent={latestEvent} />
           <div className="flex-1 min-h-0">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-mono text-slate-500">
-                Event Feed
-              </span>
+            <div className="flex items-center justify-between mb-1 gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-slate-500">
+                  Event Feed
+                </span>
+                {knownPlanIds.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setActivePlanId(null)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono border ${
+                        activePlanId === null
+                          ? "bg-indigo-600 text-white border-indigo-500"
+                          : "bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700"
+                      }`}
+                    >
+                      All
+                    </button>
+                    {knownPlanIds.map((pid) => (
+                      <button
+                        key={pid}
+                        type="button"
+                        onClick={() => setActivePlanId(pid)}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-mono border truncate max-w-[80px] ${
+                          activePlanId === pid
+                            ? "bg-indigo-600 text-white border-indigo-500"
+                            : "bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700"
+                        }`}
+                        title={pid}
+                      >
+                        {pid.slice(0, 8)}…
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {visibleEvents.length > 0 && (
                 <button
-                  onClick={() => setVisibleEvents([])}
+                  onClick={() => {
+                    setVisibleEvents([]);
+                    setActivePlanId(null);
+                    setKnownPlanIds([]);
+                  }}
                   className="text-[10px] font-mono text-slate-500 hover:text-slate-200 transition-colors"
                 >
                   clear logs
                 </button>
               )}
             </div>
-            <EventFeed events={visibleEvents} />
+            <EventFeed events={filteredEvents} />
           </div>
         </div>
 
@@ -91,7 +168,7 @@ export default function App() {
         <div className="flex flex-col gap-4 overflow-y-auto">
           <PlanForm />
 
-          <PlanMetrics events={visibleEvents} />
+          <PlanMetrics planId={activePlanId} />
 
           {/* HITL Approval Queue */}
           <ApprovalQueue

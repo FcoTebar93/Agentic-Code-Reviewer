@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from shared.llm_adapter import LLMProvider, LLMResponse
 from shared.observability.metrics import llm_tokens
+from shared.policies import rules_for_language, Rule
 from services.qa_service.config import DANGEROUS_PATTERNS
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,16 @@ Your job:
 4. Check for security anti-patterns (hardcoded secrets, dangerous functions, SQL injection, etc.).
 5. Check code quality (readability, unnecessary complexity).
 
+You must also evaluate the code against the following QA rules for the {language} language:
+{qa_rules_block}
+
+Severity levels:
+- blocker: MUST cause VERDICT = FAIL if clearly violated.
+- error: should usually cause VERDICT = FAIL unless fully justified.
+- warning/info: may be accepted, but should be mentioned in ISSUES if relevant.
+
+If you believe any blocker rule is clearly violated, you MUST return VERDICT: FAIL, even if the rest looks fine.
+
 Format your response EXACTLY as:
 REASONING: <2-4 sentences that (a) respond to the developer's reasoning, (b) explain your review decision>
 VERDICT: PASS or FAIL
@@ -76,6 +87,16 @@ Your job:
 2. Identify any logic errors, missing error handling, or undefined variables.
 3. Check for security anti-patterns (hardcoded secrets, dangerous functions, SQL injection, etc.).
 4. Check code quality (readability, unnecessary complexity).
+
+You must also evaluate the code against the following QA rules for the {language} language:
+{qa_rules_block}
+
+Severity levels:
+- blocker: MUST cause VERDICT = FAIL if clearly violated.
+- error: should usually cause VERDICT = FAIL unless fully justified.
+- warning/info: may be accepted, but should be mentioned in ISSUES if relevant.
+
+If you believe any blocker rule is clearly violated, you MUST return VERDICT: FAIL, even if the rest looks fine.
 
 Format your response EXACTLY as:
 REASONING: <your review reasoning in 2-3 sentences>
@@ -142,6 +163,12 @@ async def _llm_review(
     dev_reasoning: str = "",
     short_term_memory: str = "",
 ) -> tuple[ReviewResult, int, int]:
+    qa_rules: list[Rule] = rules_for_language(language, category="qa")
+    rules_lines = [
+        f"- [{r.id}] ({r.severity.value}): {r.description}" for r in qa_rules
+    ]
+    qa_rules_block = "\n".join(rules_lines) if rules_lines else "No specific rules."
+
     if dev_reasoning.strip():
         prompt = QA_REVIEW_PROMPT.format(
             language=language,
@@ -150,6 +177,7 @@ async def _llm_review(
             description=task_description,
             dev_reasoning=dev_reasoning,
             short_term_memory=short_term_memory.strip() or "None.",
+            qa_rules_block=qa_rules_block,
         )
     else:
         prompt = QA_REVIEW_PROMPT_NO_PRIOR.format(
@@ -157,6 +185,7 @@ async def _llm_review(
             file_path=file_path,
             code=code,
             description=task_description,
+            qa_rules_block=qa_rules_block,
         )
 
     response: LLMResponse = await llm.generate_text(prompt)
