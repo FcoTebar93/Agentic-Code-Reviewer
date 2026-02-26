@@ -127,8 +127,8 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     existing_status = str(t.get("status") or "")
                     break
 
+            has_feedback = bool((qa_feedback or "").strip())
             if existing_status is not None:
-                has_feedback = bool((qa_feedback or "").strip())
                 if not has_feedback:
                     # Asignación original: si ya hay cualquier estado, no repetir.
                     logger.info(
@@ -147,24 +147,27 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     return
 
         # 2) Comprobar eventos previos code.generated para este task_id
-        resp_events = await http_client.get(
-            "/events",
-            params={
-                "plan_id": plan_id,
-                "event_type": EventType.CODE_GENERATED.value,
-                "limit": 100,
-            },
-        )
-        if resp_events.status_code == 200:
-            events = resp_events.json() if isinstance(resp_events.json(), list) else []
-            for ev in events:
-                ev_payload = ev.get("payload") or {}
-                if ev_payload.get("task_id") == task.task_id:
-                    logger.info(
-                        "Task %s already has code.generated event, skipping (idempotent)",
-                        task.task_id[:8],
-                    )
-                    return
+        # Solo aplicamos idempotencia basada en eventos para la asignación original;
+        # en reintentos desde QA queremos permitir nuevo code.generated.
+        if not has_feedback:
+            resp_events = await http_client.get(
+                "/events",
+                params={
+                    "plan_id": plan_id,
+                    "event_type": EventType.CODE_GENERATED.value,
+                    "limit": 100,
+                },
+            )
+            if resp_events.status_code == 200:
+                events = resp_events.json() if isinstance(resp_events.json(), list) else []
+                for ev in events:
+                    ev_payload = ev.get("payload") or {}
+                    if ev_payload.get("task_id") == task.task_id:
+                        logger.info(
+                            "Task %s already has code.generated event, skipping (idempotent)",
+                            task.task_id[:8],
+                        )
+                        return
     except Exception:
         # Fallos de memoria/idempotencia no deben impedir la ejecución de la tarea;
         # en el peor caso, el dev agent volverá a generar código y QA tendrá el control.

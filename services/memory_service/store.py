@@ -39,7 +39,9 @@ from shared.contracts.events import BaseEvent, EventType
 logger = logging.getLogger(__name__)
 
 QDRANT_COLLECTION = "admadc_code_memory"
-EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1536"))
+# Dimensión por defecto alineada con la colección existente en Qdrant.
+# Se puede sobreescribir vía EMBEDDING_DIM si se recrea la colección con otro tamaño.
+EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "384"))
 
 
 class MemoryStore:
