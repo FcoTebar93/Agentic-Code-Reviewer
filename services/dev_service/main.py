@@ -111,10 +111,10 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
     # Idempotencia defensiva:
     # 1) Revisar el estado de la tarea en memory_service (/tasks/{plan_id}).
-    #    - Si es la asignación original (sin qa_feedback) y ya existe cualquier estado,
+    #    - Si es la asignaci?n original (sin qa_feedback) y ya existe cualquier estado,
     #      asumimos que la tarea ya fue procesada al menos una vez y saltamos.
     #    - Si viene con qa_feedback (reintento desde QA), solo saltamos si la tarea
-    #      está en un estado terminal (qa_passed / qa_failed).
+    #      est? en un estado terminal (qa_passed / qa_failed).
     # 2) Como respaldo, mirar si ya existe un code.generated en /events.
     try:
         # 1) Comprobar estado de tarea persistido
@@ -130,7 +130,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             has_feedback = bool((qa_feedback or "").strip())
             if existing_status is not None:
                 if not has_feedback:
-                    # Asignación original: si ya hay cualquier estado, no repetir.
+                    # Asignaci?n original: si ya hay cualquier estado, no repetir.
                     logger.info(
                         "Task %s already has task state '%s', skipping original assignment (idempotent)",
                         task.task_id[:8],
@@ -138,7 +138,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     )
                     return
                 if existing_status in {"qa_passed", "qa_failed"}:
-                    # Reintento con feedback pero la tarea ya terminó: no reprocesar.
+                    # Reintento con feedback pero la tarea ya termin?: no reprocesar.
                     logger.info(
                         "Task %s already finished with status '%s', skipping QA retry (idempotent)",
                         task.task_id[:8],
@@ -147,7 +147,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     return
 
         # 2) Comprobar eventos previos code.generated para este task_id
-        # Solo aplicamos idempotencia basada en eventos para la asignación original;
+        # Solo aplicamos idempotencia basada en eventos para la asignaci?n original;
         # en reintentos desde QA queremos permitir nuevo code.generated.
         if not has_feedback:
             resp_events = await http_client.get(
@@ -169,8 +169,8 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                         )
                         return
     except Exception:
-        # Fallos de memoria/idempotencia no deben impedir la ejecución de la tarea;
-        # en el peor caso, el dev agent volverá a generar código y QA tendrá el control.
+        # Fallos de memoria/idempotencia no deben impedir la ejecuci?n de la tarea;
+        # en el peor caso, el dev agent volver? a generar c?digo y QA tendr? el control.
         logger.warning("Idempotency pre-check failed for task %s", task.task_id[:8])
 
     logger.info(
@@ -186,12 +186,13 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         llm = get_llm_provider()
         short_term_memory = await _build_short_term_memory(plan_id)
         existing_file_preview = await _maybe_read_existing_file(task.file_path)
+        files_in_dir = await _list_files_in_task_directory(task)
         code_result, prompt_tokens, completion_tokens = await generate_code(
             llm,
             task,
             plan_reasoning=payload.plan_reasoning,
             short_term_memory="\n".join(
-                [p for p in [short_term_memory, existing_file_preview] if p]
+                [p for p in [short_term_memory, existing_file_preview, files_in_dir] if p]
             ),
         )
 
@@ -219,7 +220,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         except Exception:
             pass
 
-        # Opcionalmente, ejecuta tests automáticos para enriquecer el reasoning.
+        # Opcionalmente, ejecuta tests autom?ticos para enriquecer el reasoning.
         # Esto es opt-in y configurable por lenguaje mediante DevConfig.
         tests_summary = ""
         try:
@@ -251,7 +252,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 elif not tests_result.success:
                     tests_summary = f"Automated tests failed to run: {tests_result.error}"
         except Exception:
-            # Fallo en tests no debe bloquear la generación de código;
+            # Fallo en tests no debe bloquear la generaci?n de c?digo;
             # simplemente omitimos el resumen de tests.
             tests_summary = ""
 
@@ -287,9 +288,55 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     logger.info("Task %s code generated, forwarded to qa_service", task.task_id[:8])
 
 
+def _glob_pattern_for_language(language: str) -> str:
+    """Patr?n glob por lenguaje para list_project_files."""
+    lang = (language or "python").lower()
+    if lang in ("python", "py"):
+        return "*.py"
+    if lang in ("javascript", "js"):
+        return "*.js"
+    if lang in ("typescript", "ts"):
+        return "*.ts"
+    if lang == "java":
+        return "*.java"
+    return "*"
+
+
+async def _list_files_in_task_directory(task) -> str:
+    """
+    Usa el tool list_project_files para listar archivos del directorio de la tarea,
+    as? el generador conoce qu? archivos existen (imports, consistencia).
+    """
+    global tool_registry
+    if not tool_registry:
+        return ""
+    file_path = getattr(task, "file_path", "") or ""
+    if not file_path.strip():
+        return ""
+    directory = file_path if "/" not in file_path and "\\" not in file_path else file_path.replace("\\", "/").rsplit("/", 1)[0]
+    if not directory:
+        directory = "."
+    pattern = _glob_pattern_for_language(getattr(task, "language", "python"))
+    try:
+        result = await execute_tool(
+            tool_registry,
+            "list_project_files",
+            {"directory": directory, "pattern": pattern, "max_results": 80},
+        )
+        if not result.success:
+            return ""
+        out = result.output or {}
+        files = out.get("files") or []
+        if not files:
+            return ""
+        return f"Files in target directory ({directory}, {pattern}): " + ", ".join(files[:50]) + (" ..." if len(files) > 50 else "")
+    except Exception:
+        return ""
+
+
 async def _maybe_read_existing_file(file_path: str) -> str:
     """
-    Best-effort helper: usa el tool read_file para recuperar un pequeño
+    Best-effort helper: usa el tool read_file para recuperar un peque?o
     preview del archivo objetivo, si ya existe en el repo.
     """
     global tool_registry

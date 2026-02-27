@@ -134,12 +134,29 @@ async def create_plan(req: PlanRequest):
         _plan_idem_cache[key] = (result["plan_id"], result, now)
         return result
     except Exception as e:
+        err_str = str(e)
+        is_rate_limit = (
+            "429" in err_str
+            or "rate limit" in err_str.lower()
+            or "RateLimitError" in (type(e).__name__,)
+        )
+        if is_rate_limit:
+            logger.warning("LLM rate limit (429): %s", err_str[:200])
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Límite de uso del LLM alcanzado (rate limit). Espera unos minutos o cambia de proveedor.",
+                    "hint": "Groq free tier: 100k tokens/día. Puedes usar LLM_PROVIDER=gemini o LLM_PROVIDER=local (Ollama) mientras tanto.",
+                    "error": err_str[:500],
+                    "error_type": type(e).__name__,
+                },
+            )
         logger.exception("Plan execution failed")
         return JSONResponse(
             status_code=500,
             content={
                 "detail": "Plan execution failed",
-                "error": str(e),
+                "error": err_str,
                 "error_type": type(e).__name__,
             },
         )
@@ -447,7 +464,6 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
             {
                 "query": user_prompt,
                 "plan_id": None,
-                "limit": limit,
                 "event_types": [
                     EventType.PLAN_CREATED.value,
                     EventType.PIPELINE_CONCLUSION.value,
@@ -463,21 +479,42 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
 
         payload = result.output or {}
         results = payload.get("results") or []
-        if not isinstance(results, list) or not results:
-            return ""
-
         lines: list[str] = []
-        for item in results[:limit]:
-            payload = item.get("payload") or {}
-            score = item.get("heuristic_score", item.get("score", 0.0))
-            text = str(payload.get("text", ""))[:400].replace("\n", " ")
-            etype = payload.get("event_type", "")
-            plan_id = payload.get("plan_id", "")
-            lines.append(
-                f"- [{etype}] plan_id={plan_id} score={score:.3f}: {text}"
-            )
+        if isinstance(results, list) and results:
+            for item in results[:limit]:
+                p = item.get("payload") or {}
+                score = item.get("heuristic_score", item.get("score", 0.0))
+                text = str(p.get("text", ""))[:400].replace("\n", " ")
+                etype = p.get("event_type", "")
+                plan_id = p.get("plan_id", "")
+                lines.append(
+                    f"- [{etype}] plan_id={plan_id} score={score:.3f}: {text}"
+                )
+        semantic_block = "\n".join(lines) if lines else ""
 
-        return "\n".join(lines)
+        # Herramienta query_events: actividad reciente para evitar planes duplicados y dar contexto temporal.
+        events_block = ""
+        events_result = await execute_tool(
+            tool_registry,
+            "query_events",
+            {"plan_id": None, "event_type": None, "limit": 15},
+        )
+        if events_result.success and isinstance(events_result.output, dict):
+            events_list = (events_result.output.get("events") or []) if isinstance(events_result.output.get("events"), list) else []
+            if events_list:
+                recent: list[str] = []
+                for ev in events_list[:15]:
+                    etype = ev.get("event_type", "")
+                    created = ev.get("created_at", "")[:19]
+                    pid = (ev.get("payload") or {}).get("plan_id", "")[:8]
+                    recent.append(f"  {created} [{etype}] plan={pid}")
+                events_block = "Recent activity (last events):\n" + "\n".join(recent)
+
+        if semantic_block and events_block:
+            return semantic_block + "\n\n" + events_block
+        if events_block:
+            return events_block
+        return semantic_block
     except Exception:
         logger.exception("Failed to fetch memory context from memory_service")
         return ""

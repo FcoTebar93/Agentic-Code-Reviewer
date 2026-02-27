@@ -158,6 +158,8 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
         else:
             llm = get_llm_provider()
             short_term_memory = await _build_short_term_memory(plan_id)
+            repo_context = await _build_repo_context(payload.file_path, payload.code)
+            memory_with_repo = "\n".join([p for p in [short_term_memory, repo_context] if p])
             result, prompt_tokens, completion_tokens = await review_code(
                 llm=llm,
                 code=payload.code,
@@ -165,7 +167,7 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
                 language=payload.language,
                 task_description=f"Generate {payload.language} code for {payload.file_path}",
                 dev_reasoning=dev_reasoning,
-                short_term_memory=short_term_memory,
+                short_term_memory=memory_with_repo,
             )
 
     if prompt_tokens or completion_tokens:
@@ -372,48 +374,50 @@ async def _update_task_state(
 
 async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
     """
-    Build a compact short-term memory window for QA for a given plan_id by
-    querying recent events from the memory_service.
+    Build a compact short-term memory window for QA using the tool query_events.
     """
-    if http_client is None:
+    global tool_registry
+    if not tool_registry:
         return ""
 
     try:
-        resp = await http_client.get(
-            "/events",
-            params={"plan_id": plan_id, "limit": limit},
+        result = await execute_tool(
+            tool_registry,
+            "query_events",
+            {"plan_id": plan_id, "event_type": None, "limit": limit},
         )
-        if resp.status_code != 200:
+        if not result.success:
             logger.warning(
-                "Failed to fetch QA short-term memory for plan %s (status=%s)",
+                "query_events tool failed for plan %s: %s",
                 plan_id[:8],
-                resp.status_code,
+                result.error,
             )
             return ""
 
-        events = resp.json()
-        if not isinstance(events, list):
+        payload = result.output or {}
+        events = payload.get("events") if isinstance(payload.get("events"), list) else []
+        if not events:
             return ""
 
         lines: list[str] = []
-        for evt in events:
+        for evt in events[:limit]:
             etype = evt.get("event_type", "")
             producer = evt.get("producer", "")
             created_at = evt.get("created_at", "")
-            payload = evt.get("payload") or {}
+            pl = evt.get("payload") or {}
 
             summary = ""
             if etype == EventType.PLAN_CREATED.value:
-                summary = str(payload.get("reasoning", ""))[:200]
+                summary = str(pl.get("reasoning", ""))[:200]
             elif etype == EventType.CODE_GENERATED.value:
-                summary = f"{payload.get('file_path', '')}"
+                summary = f"{pl.get('file_path', '')}"
             elif etype in (
                 EventType.QA_PASSED.value,
                 EventType.QA_FAILED.value,
                 EventType.SECURITY_APPROVED.value,
                 EventType.SECURITY_BLOCKED.value,
             ):
-                summary = str(payload.get("reasoning", ""))[:200]
+                summary = str(pl.get("reasoning", ""))[:200]
             else:
                 summary = ""
 
@@ -422,7 +426,7 @@ async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
                 line += f" :: {summary}"
             lines.append(line)
 
-        window = "\n".join(lines[:limit])
+        window = "\n".join(lines)
         if len(window) > 2000:
             window = window[:2000]
         return window
@@ -431,6 +435,38 @@ async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
             "Error while building QA short-term memory for plan %s",
             plan_id[:8],
         )
+        return ""
+
+
+async def _build_repo_context(file_path: str, code: str) -> str:
+    """
+    Usa el tool search_in_repo para encontrar referencias al módulo/archivo
+    en el directorio, dando contexto al revisor (estilo, usos similares).
+    """
+    global tool_registry
+    if not tool_registry or not (file_path or "").strip():
+        return ""
+    # Patrón: nombre del archivo sin extensión (ej. main.py -> main) para buscar usos.
+    base = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    if not stem or len(stem) < 2:
+        return ""
+    directory = file_path.replace("\\", "/").rsplit("/", 1)[0] if "/" in file_path else "."
+    try:
+        result = await execute_tool(
+            tool_registry,
+            "search_in_repo",
+            {"pattern": stem, "directory": directory, "max_results": 15},
+        )
+        if not result.success:
+            return ""
+        out = result.output or {}
+        matches = out.get("matches") or []
+        if not matches:
+            return ""
+        lines = [f"  {m.get('file', '')}:L{m.get('line', 0)} {str(m.get('snippet', ''))[:80]}" for m in matches[:10] if isinstance(m, dict)]
+        return "Related usages in repo (search_in_repo):\n" + "\n".join(lines)
+    except Exception:
         return ""
 
 

@@ -9,6 +9,9 @@ from pydantic import ValidationError
 from shared.tools.models import ToolDefinition, ToolExecutionResult, ToolInput
 from shared.tools.registry import ToolRegistry
 
+# Segundos a esperar entre reintentos (backoff simple para fallos transitorios)
+_TOOL_RETRY_DELAY_S = 1.0
+
 
 class ToolExecutionError(Exception):
     """Raised when a tool cannot be executed successfully."""
@@ -80,4 +83,5 @@ async def execute_tool(
                     duration_s=duration,
                 )
             retries += 1
+            await asyncio.sleep(_TOOL_RETRY_DELAY_S)
 
