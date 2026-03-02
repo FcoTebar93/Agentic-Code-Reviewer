@@ -164,8 +164,10 @@ async def _llm_review(
     short_term_memory: str = "",
 ) -> tuple[ReviewResult, int, int]:
     qa_rules: list[Rule] = rules_for_language(language, category="qa")
+    important_rules = [r for r in qa_rules if r.severity.value in ("blocker", "error")]
+    rules_source = important_rules or qa_rules
     rules_lines = [
-        f"- [{r.id}] ({r.severity.value}): {r.description}" for r in qa_rules
+        f"- [{r.id}] ({r.severity.value}): {r.description}" for r in rules_source
     ]
     qa_rules_block = "\n".join(rules_lines) if rules_lines else "No specific rules."
 

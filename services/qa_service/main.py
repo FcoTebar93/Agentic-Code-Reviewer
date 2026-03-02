@@ -45,7 +45,7 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
-from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from shared.utils import EventBus, IdempotencyStore, build_short_term_memory_window
 from shared.tools import ToolRegistry, execute_tool
 from services.qa_service.config import QAConfig
 from services.qa_service.reviewer import review_code, ReviewResult
@@ -372,7 +372,7 @@ async def _update_task_state(
         logger.exception("Failed to update task state %s", task_id[:8])
 
 
-async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
+async def _build_short_term_memory(plan_id: str, limit: int = 15) -> str:
     """
     Build a compact short-term memory window for QA using the tool query_events.
     """
@@ -399,37 +399,7 @@ async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
         if not events:
             return ""
 
-        lines: list[str] = []
-        for evt in events[:limit]:
-            etype = evt.get("event_type", "")
-            producer = evt.get("producer", "")
-            created_at = evt.get("created_at", "")
-            pl = evt.get("payload") or {}
-
-            summary = ""
-            if etype == EventType.PLAN_CREATED.value:
-                summary = str(pl.get("reasoning", ""))[:200]
-            elif etype == EventType.CODE_GENERATED.value:
-                summary = f"{pl.get('file_path', '')}"
-            elif etype in (
-                EventType.QA_PASSED.value,
-                EventType.QA_FAILED.value,
-                EventType.SECURITY_APPROVED.value,
-                EventType.SECURITY_BLOCKED.value,
-            ):
-                summary = str(pl.get("reasoning", ""))[:200]
-            else:
-                summary = ""
-
-            line = f"[{etype}] from {producer} at {created_at}"
-            if summary:
-                line += f" :: {summary}"
-            lines.append(line)
-
-        window = "\n".join(lines)
-        if len(window) > 2000:
-            window = window[:2000]
-        return window
+        return build_short_term_memory_window(events, limit=limit)
     except Exception:
         logger.exception(
             "Error while building QA short-term memory for plan %s",

@@ -56,6 +56,10 @@ tool_registry: ToolRegistry | None = None
 
 _IDEM_TTL_SECONDS = int(os.environ.get("PLAN_IDEM_TTL_SECONDS", "30"))
 _plan_idem_cache: dict[str, tuple[str, dict, float]] = {}
+_MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN = int(
+    os.environ.get("MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN", "1")
+)
+_replans_per_original_plan: dict[str, int] = {}
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -307,6 +311,15 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
     original_plan_id = payload.original_plan_id
     new_plan_id = payload.new_plan_id
 
+    current_replans = _replans_per_original_plan.get(original_plan_id, 0)
+    if current_replans >= _MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN:
+        logger.info(
+            "Skipping auto-replanning for original plan %s: max auto replans reached (%d)",
+            original_plan_id[:8],
+            _MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN,
+        )
+        return
+
     original_prompt, original_reasoning = await _fetch_original_plan_prompt(
         original_plan_id
     )
@@ -353,6 +366,7 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
         repo_url=repo_url or "",
         forced_plan_id=new_plan_id,
     )
+    _replans_per_original_plan[original_plan_id] = current_replans + 1
 
 
 async def _fetch_original_plan_prompt(

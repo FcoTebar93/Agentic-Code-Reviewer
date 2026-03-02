@@ -31,6 +31,11 @@ These may include previous user prompts, planner reasoning, pipeline conclusions
 and QA/security outcomes. Use them only if they are truly relevant; otherwise,
 ignore them.
 
+If the MEMORY CONTEXT includes QA or security failures (qa.failed / security.blocked),
+you MUST explicitly understand what failed (which QA or security rules were violated)
+and adjust the new plan so that future Dev/QA/Security steps fix those issues and
+comply with the referenced rules. Avoid repeating the same mistakes across plans.
+
 MEMORY CONTEXT:
 {memory_context}
 
