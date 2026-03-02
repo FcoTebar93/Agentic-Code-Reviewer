@@ -108,55 +108,8 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     task = payload.task
     plan_id = payload.plan_id
     qa_feedback = payload.qa_feedback
-    
-    try:
-        resp_tasks = await http_client.get(f"/tasks/{plan_id}")
-        if resp_tasks.status_code == 200:
-            tasks = resp_tasks.json() if isinstance(resp_tasks.json(), list) else []
-            existing_status: str | None = None
-            for t in tasks:
-                if t.get("task_id") == task.task_id:
-                    existing_status = str(t.get("status") or "")
-                    break
-
-            has_feedback = bool((qa_feedback or "").strip())
-            if existing_status is not None:
-                if not has_feedback:
-                    logger.info(
-                        "Task %s already has task state '%s', skipping original assignment (idempotent)",
-                        task.task_id[:8],
-                        existing_status,
-                    )
-                    return
-                if existing_status in {"qa_passed", "qa_failed"}:
-                    logger.info(
-                        "Task %s already finished with status '%s', skipping QA retry (idempotent)",
-                        task.task_id[:8],
-                        existing_status,
-                    )
-                    return
-
-        if not has_feedback:
-            resp_events = await http_client.get(
-                "/events",
-                params={
-                    "plan_id": plan_id,
-                    "event_type": EventType.CODE_GENERATED.value,
-                    "limit": 100,
-                },
-            )
-            if resp_events.status_code == 200:
-                events = resp_events.json() if isinstance(resp_events.json(), list) else []
-                for ev in events:
-                    ev_payload = ev.get("payload") or {}
-                    if ev_payload.get("task_id") == task.task_id:
-                        logger.info(
-                            "Task %s already has code.generated event, skipping (idempotent)",
-                            task.task_id[:8],
-                        )
-                        return
-    except Exception:
-        logger.warning("Idempotency pre-check failed for task %s", task.task_id[:8])
+    if await _should_skip_task_for_idempotency(task, plan_id, qa_feedback):
+        return
 
     logger.info(
         "Processing task %s for plan %s%s",
@@ -210,37 +163,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         except Exception:
             pass
 
-        tests_summary = ""
-        try:
-            test_cmd = ""
-            lang = (task.language or "").lower()
-            if cfg and cfg.enable_auto_tests and tool_registry is not None:
-                if lang == "python":
-                    test_cmd = cfg.test_command_python
-                elif lang in ("javascript", "js"):
-                    test_cmd = cfg.test_command_javascript
-                elif lang in ("typescript", "ts"):
-                    test_cmd = cfg.test_command_typescript
-                elif lang == "java":
-                    test_cmd = cfg.test_command_java
-
-            if test_cmd:
-                tests_result = await execute_tool(
-                    tool_registry,
-                    "run_tests",
-                    {"command": test_cmd, "timeout_s": 300.0},
-                )
-                if tests_result.success and isinstance(tests_result.output, dict):
-                    tr = tests_result.output
-                    status = "PASSED" if tr.get("exit_code") == 0 and not tr.get("timed_out") else "FAILED"
-                    tests_summary = (
-                        f"Automated tests ({tr.get('command')}): {status}. "
-                        f"exit_code={tr.get('exit_code')}, timed_out={tr.get('timed_out')}."
-                    )
-                elif not tests_result.success:
-                    tests_summary = f"Automated tests failed to run: {tests_result.error}"
-        except Exception:
-            tests_summary = ""
+        tests_summary = await _maybe_run_auto_tests(task)
 
         combined_reasoning = code_result.reasoning
         if tests_summary:
@@ -278,6 +201,108 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
     logger.info("Task %s code generated, forwarded to qa_service", task.task_id[:8])
 
+
+async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str) -> bool:
+    """
+    Apply defensive idempotency rules before processing a task.
+
+    Returns True if the task should be skipped, False otherwise.
+    """
+    has_feedback = bool((qa_feedback or "").strip())
+    try:
+        resp_tasks = await http_client.get(f"/tasks/{plan_id}")
+        if resp_tasks.status_code == 200:
+            tasks = resp_tasks.json() if isinstance(resp_tasks.json(), list) else []
+            existing_status: str | None = None
+            for t in tasks:
+                if t.get("task_id") == task.task_id:
+                    existing_status = str(t.get("status") or "")
+                    break
+
+            if existing_status is not None:
+                if not has_feedback:
+                    logger.info(
+                        "Task %s already has task state '%s', skipping original assignment (idempotent)",
+                        task.task_id[:8],
+                        existing_status,
+                    )
+                    return True
+                if existing_status in {"qa_passed", "qa_failed"}:
+                    logger.info(
+                        "Task %s already finished with status '%s', skipping QA retry (idempotent)",
+                        task.task_id[:8],
+                        existing_status,
+                    )
+                    return True
+
+        if not has_feedback:
+            resp_events = await http_client.get(
+                "/events",
+                params={
+                    "plan_id": plan_id,
+                    "event_type": EventType.CODE_GENERATED.value,
+                    "limit": 100,
+                },
+            )
+            if resp_events.status_code == 200:
+                events = resp_events.json() if isinstance(resp_events.json(), list) else []
+                for ev in events:
+                    ev_payload = ev.get("payload") or {}
+                    if ev_payload.get("task_id") == task.task_id:
+                        logger.info(
+                            "Task %s already has code.generated event, skipping (idempotent)",
+                            task.task_id[:8],
+                        )
+                        return True
+    except Exception:
+        logger.warning("Idempotency pre-check failed for task %s", task.task_id[:8])
+    return False
+
+
+async def _maybe_run_auto_tests(task) -> str:
+    """
+    Optionally run configured automated tests for the task's language.
+
+    Returns a short human-readable summary, or an empty string if tests
+    are disabled or fail in a non-critical way.
+    """
+    try:
+        test_cmd = ""
+        lang = (task.language or "").lower()
+        if cfg and cfg.enable_auto_tests and tool_registry is not None:
+            if lang == "python":
+                test_cmd = cfg.test_command_python
+            elif lang in ("javascript", "js"):
+                test_cmd = cfg.test_command_javascript
+            elif lang in ("typescript", "ts"):
+                test_cmd = cfg.test_command_typescript
+            elif lang == "java":
+                test_cmd = cfg.test_command_java
+
+        if not test_cmd:
+            return ""
+
+        tests_result = await execute_tool(
+            tool_registry,
+            "run_tests",
+            {"command": test_cmd, "timeout_s": 300.0},
+        )
+        if tests_result.success and isinstance(tests_result.output, dict):
+            tr = tests_result.output
+            status = (
+                "PASSED"
+                if tr.get("exit_code") == 0 and not tr.get("timed_out")
+                else "FAILED"
+            )
+            return (
+                f"Automated tests ({tr.get('command')}): {status}. "
+                f"exit_code={tr.get('exit_code')}, timed_out={tr.get('timed_out')}."
+            )
+        if not tests_result.success:
+            return f"Automated tests failed to run: {tests_result.error}"
+    except Exception:
+        return ""
+    return ""
 
 def _glob_pattern_for_language(language: str) -> str:
     """Patr?n glob por lenguaje para list_project_files."""
