@@ -78,13 +78,7 @@ async def _llm_review(
     dev_reasoning: str = "",
     short_term_memory: str = "",
 ) -> tuple[ReviewResult, int, int]:
-    qa_rules: list[Rule] = rules_for_language(language, category="qa")
-    important_rules = [r for r in qa_rules if r.severity.value in ("blocker", "error")]
-    rules_source = important_rules or qa_rules
-    rules_lines = [
-        f"- [{r.id}] ({r.severity.value}): {r.description}" for r in rules_source
-    ]
-    qa_rules_block = "\n".join(rules_lines) if rules_lines else "No specific rules."
+    qa_rules_block = _build_qa_rules_block(language)
 
     if dev_reasoning.strip():
         prompt = QA_REVIEW_PROMPT.format(
@@ -115,6 +109,21 @@ async def _llm_review(
 
     result = _parse_review_response(response.content)
     return result, pt, ct
+
+
+def _build_qa_rules_block(language: str) -> str:
+    """
+    Build the textual QA rules block for the given language, prioritising
+    high-severity rules (blocker/error) to keep the prompt focused.
+    """
+    qa_rules: list[Rule] = rules_for_language(language, category="qa")
+    if not qa_rules:
+        return "No specific rules."
+
+    important = [r for r in qa_rules if r.severity.value in ("blocker", "error")]
+    source = important or qa_rules
+    lines = [f"- [{r.id}] ({r.severity.value}): {r.description}" for r in source]
+    return "\n".join(lines)
 
 
 def _parse_review_response(content: str) -> ReviewResult:
