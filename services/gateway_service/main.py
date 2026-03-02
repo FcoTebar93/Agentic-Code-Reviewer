@@ -50,7 +50,7 @@ from shared.contracts.events import (
     pr_human_rejected,
     pipeline_conclusion,
 )
-from shared.utils.rabbitmq import EventBus
+from shared.utils import EventBus, store_event
 from services.gateway_service.config import GatewayConfig
 from services.gateway_service.ws_manager import ConnectionManager
 
@@ -283,45 +283,14 @@ async def get_plan_metrics(plan_id: str):
         if not isinstance(token_events, list):
             token_events = []
 
-        by_service: dict[str, dict[str, float]] = {}
-        total_prompt = 0
-        total_completion = 0
-        for ev in token_events:
-            p = ev.get("payload") or {}
-            svc = str(p.get("service", "unknown"))
-            pt = int(p.get("prompt_tokens", 0) or 0)
-            ct = int(p.get("completion_tokens", 0) or 0)
-            if svc not in by_service:
-                by_service[svc] = {"prompt_tokens": 0.0, "completion_tokens": 0.0}
-            by_service[svc]["prompt_tokens"] += pt
-            by_service[svc]["completion_tokens"] += ct
-            total_prompt += pt
-            total_completion += ct
-
         prompt_price = cfg.llm_prompt_price_per_1k if cfg else 0.0
         completion_price = cfg.llm_completion_price_per_1k if cfg else 0.0
 
-        prompt_cost = (total_prompt / 1000.0) * prompt_price
-        completion_cost = (total_completion / 1000.0) * completion_price
-        total_cost = prompt_cost + completion_cost
-
-        by_service_list: list[dict[str, float | str]] = []
-        for s, v in sorted(by_service.items()):
-            svc_prompt = v["prompt_tokens"]
-            svc_completion = v["completion_tokens"]
-            svc_prompt_cost = (svc_prompt / 1000.0) * prompt_price
-            svc_completion_cost = (svc_completion / 1000.0) * completion_price
-            by_service_list.append(
-                {
-                    "service": s,
-                    "prompt_tokens": int(svc_prompt),
-                    "completion_tokens": int(svc_completion),
-                    "total_tokens": int(svc_prompt + svc_completion),
-                    "estimated_cost_prompt_usd": svc_prompt_cost,
-                    "estimated_cost_completion_usd": svc_completion_cost,
-                    "estimated_cost_total_usd": svc_prompt_cost + svc_completion_cost,
-                }
-            )
+        token_summary = _aggregate_token_usage(
+            token_events,
+            prompt_price=prompt_price,
+            completion_price=completion_price,
+        )
 
         health_events: list[dict[str, Any]] = []
         try:
@@ -336,56 +305,7 @@ async def get_plan_metrics(plan_id: str):
         except Exception:
             logger.warning("Failed to fetch health events for plan %s", plan_id[:8])
 
-        first_ts: datetime | None = None
-        last_ts: datetime | None = None
-        qa_retry_count = 0
-        qa_failed_count = 0
-        security_blocked_count = 0
-
-        for ev in health_events:
-            ts_str = ev.get("created_at")
-            if isinstance(ts_str, str):
-                try:
-                    ts = datetime.fromisoformat(ts_str)
-                    if first_ts is None or ts < first_ts:
-                        first_ts = ts
-                    if last_ts is None or ts > last_ts:
-                        last_ts = ts
-                except Exception:
-                    pass
-
-            etype = str(ev.get("event_type", ""))
-            payload = ev.get("payload") or {}
-
-            if etype == EventType.TASK_ASSIGNED.value:
-                feedback = str(payload.get("qa_feedback", "") or "")
-                if feedback.strip():
-                    qa_retry_count += 1
-            elif etype == EventType.QA_FAILED.value:
-                qa_failed_count += 1
-            elif etype == EventType.SECURITY_BLOCKED.value:
-                security_blocked_count += 1
-
-        duration_seconds = 0
-        if first_ts and last_ts:
-            try:
-                duration_seconds = int((last_ts - first_ts).total_seconds())
-            except Exception:
-                duration_seconds = 0
-
-        pipeline_status = "unknown"
-        if any(
-            str(ev.get("event_type", "")) == EventType.PIPELINE_CONCLUSION.value
-            and bool((ev.get("payload") or {}).get("approved", False))
-            for ev in health_events
-        ):
-            pipeline_status = "approved"
-        elif security_blocked_count > 0:
-            pipeline_status = "security_blocked"
-        elif qa_failed_count > 0:
-            pipeline_status = "qa_failed"
-        elif health_events:
-            pipeline_status = "in_progress"
+        health_summary = _compute_pipeline_health(health_events, plan_id)
 
         replan_suggestions_count = 0
         replan_confirmed_count = 0
@@ -400,10 +320,9 @@ async def get_plan_metrics(plan_id: str):
             if resp_suggested.status_code == 200:
                 events_sugg = resp_suggested.json()
                 if isinstance(events_sugg, list):
-                    for ev in events_sugg:
-                        payload = ev.get("payload") or {}
-                        if str(payload.get("original_plan_id", "")) == plan_id:
-                            replan_suggestions_count += 1
+                    replan_suggestions_count = _count_replans_for_plan(
+                        events_sugg, plan_id
+                    )
         except Exception:
             logger.warning(
                 "Failed to fetch plan.revision_suggested events for health metrics"
@@ -420,10 +339,9 @@ async def get_plan_metrics(plan_id: str):
             if resp_confirmed.status_code == 200:
                 events_conf = resp_confirmed.json()
                 if isinstance(events_conf, list):
-                    for ev in events_conf:
-                        payload = ev.get("payload") or {}
-                        if str(payload.get("original_plan_id", "")) == plan_id:
-                            replan_confirmed_count += 1
+                    replan_confirmed_count = _count_replans_for_plan(
+                        events_conf, plan_id
+                    )
         except Exception:
             logger.warning(
                 "Failed to fetch plan.revision_confirmed events for health metrics"
@@ -431,26 +349,170 @@ async def get_plan_metrics(plan_id: str):
 
         return {
             "plan_id": plan_id,
-            "total_prompt_tokens": total_prompt,
-            "total_completion_tokens": total_completion,
-            "total_tokens": total_prompt + total_completion,
-            "estimated_cost_prompt_usd": prompt_cost,
-            "estimated_cost_completion_usd": completion_cost,
-            "estimated_cost_total_usd": total_cost,
-            "pipeline_status": pipeline_status,
-            "first_event_at": first_ts.isoformat() if first_ts else None,
-            "last_event_at": last_ts.isoformat() if last_ts else None,
-            "duration_seconds": duration_seconds,
-            "qa_retry_count": qa_retry_count,
-            "qa_failed_count": qa_failed_count,
-            "security_blocked_count": security_blocked_count,
+            "total_prompt_tokens": token_summary["total_prompt_tokens"],
+            "total_completion_tokens": token_summary["total_completion_tokens"],
+            "total_tokens": token_summary["total_tokens"],
+            "estimated_cost_prompt_usd": token_summary["estimated_cost_prompt_usd"],
+            "estimated_cost_completion_usd": token_summary[
+                "estimated_cost_completion_usd"
+            ],
+            "estimated_cost_total_usd": token_summary["estimated_cost_total_usd"],
+            "pipeline_status": health_summary["pipeline_status"],
+            "first_event_at": health_summary["first_event_at"],
+            "last_event_at": health_summary["last_event_at"],
+            "duration_seconds": health_summary["duration_seconds"],
+            "qa_retry_count": health_summary["qa_retry_count"],
+            "qa_failed_count": health_summary["qa_failed_count"],
+            "security_blocked_count": health_summary["security_blocked_count"],
             "replan_suggestions_count": replan_suggestions_count,
             "replan_confirmed_count": replan_confirmed_count,
-            "by_service": by_service_list,
+            "by_service": token_summary["by_service"],
         }
     except Exception as exc:
         logger.exception("Failed to get plan_metrics for %s", plan_id[:8])
         return JSONResponse(content={"error": str(exc)}, status_code=502)
+
+
+def _aggregate_token_usage(
+    token_events: list[dict[str, Any]],
+    prompt_price: float,
+    completion_price: float,
+) -> dict[str, Any]:
+    """
+    Aggregate prompt/completion tokens and estimate cost per service and in total.
+    """
+    by_service: dict[str, dict[str, float]] = {}
+    total_prompt = 0
+    total_completion = 0
+
+    for ev in token_events:
+        payload = ev.get("payload") or {}
+        service = str(payload.get("service", "unknown"))
+        pt = int(payload.get("prompt_tokens", 0) or 0)
+        ct = int(payload.get("completion_tokens", 0) or 0)
+        if service not in by_service:
+            by_service[service] = {"prompt_tokens": 0.0, "completion_tokens": 0.0}
+        by_service[service]["prompt_tokens"] += pt
+        by_service[service]["completion_tokens"] += ct
+        total_prompt += pt
+        total_completion += ct
+
+    prompt_cost = (total_prompt / 1000.0) * prompt_price
+    completion_cost = (total_completion / 1000.0) * completion_price
+    total_cost = prompt_cost + completion_cost
+
+    by_service_list: list[dict[str, float | str]] = []
+    for service, values in sorted(by_service.items()):
+        svc_prompt = values["prompt_tokens"]
+        svc_completion = values["completion_tokens"]
+        svc_prompt_cost = (svc_prompt / 1000.0) * prompt_price
+        svc_completion_cost = (svc_completion / 1000.0) * completion_price
+        by_service_list.append(
+            {
+                "service": service,
+                "prompt_tokens": int(svc_prompt),
+                "completion_tokens": int(svc_completion),
+                "total_tokens": int(svc_prompt + svc_completion),
+                "estimated_cost_prompt_usd": svc_prompt_cost,
+                "estimated_cost_completion_usd": svc_completion_cost,
+                "estimated_cost_total_usd": svc_prompt_cost + svc_completion_cost,
+            }
+        )
+
+    return {
+        "total_prompt_tokens": total_prompt,
+        "total_completion_tokens": total_completion,
+        "total_tokens": total_prompt + total_completion,
+        "estimated_cost_prompt_usd": prompt_cost,
+        "estimated_cost_completion_usd": completion_cost,
+        "estimated_cost_total_usd": total_cost,
+        "by_service": by_service_list,
+    }
+
+
+def _compute_pipeline_health(
+    health_events: list[dict[str, Any]],
+    plan_id: str,
+) -> dict[str, Any]:
+    """
+    Compute basic pipeline health metrics (status, duration, QA/security counters)
+    from the list of events for a plan.
+    """
+    first_ts: datetime | None = None
+    last_ts: datetime | None = None
+    qa_retry_count = 0
+    qa_failed_count = 0
+    security_blocked_count = 0
+
+    for ev in health_events:
+        ts_str = ev.get("created_at")
+        if isinstance(ts_str, str):
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                if first_ts is None or ts < first_ts:
+                    first_ts = ts
+                if last_ts is None or ts > last_ts:
+                    last_ts = ts
+            except Exception:
+                pass
+
+        etype = str(ev.get("event_type", ""))
+        payload = ev.get("payload") or {}
+
+        if etype == EventType.TASK_ASSIGNED.value:
+            feedback = str(payload.get("qa_feedback", "") or "")
+            if feedback.strip():
+                qa_retry_count += 1
+        elif etype == EventType.QA_FAILED.value:
+            qa_failed_count += 1
+        elif etype == EventType.SECURITY_BLOCKED.value:
+            security_blocked_count += 1
+
+    duration_seconds = 0
+    if first_ts and last_ts:
+        try:
+            duration_seconds = int((last_ts - first_ts).total_seconds())
+        except Exception:
+            duration_seconds = 0
+
+    pipeline_status = "unknown"
+    if any(
+        str(ev.get("event_type", "")) == EventType.PIPELINE_CONCLUSION.value
+        and bool((ev.get("payload") or {}).get("approved", False))
+        for ev in health_events
+    ):
+        pipeline_status = "approved"
+    elif security_blocked_count > 0:
+        pipeline_status = "security_blocked"
+    elif qa_failed_count > 0:
+        pipeline_status = "qa_failed"
+    elif health_events:
+        pipeline_status = "in_progress"
+
+    return {
+        "pipeline_status": pipeline_status,
+        "first_event_at": first_ts.isoformat() if first_ts else None,
+        "last_event_at": last_ts.isoformat() if last_ts else None,
+        "duration_seconds": duration_seconds,
+        "qa_retry_count": qa_retry_count,
+        "qa_failed_count": qa_failed_count,
+        "security_blocked_count": security_blocked_count,
+    }
+
+
+def _count_replans_for_plan(
+    events: list[dict[str, Any]],
+    plan_id: str,
+) -> int:
+    """
+    Count how many replanning events in the list target the given original plan_id.
+    """
+    count = 0
+    for ev in events:
+        payload = ev.get("payload") or {}
+        if str(payload.get("original_plan_id", "")) == plan_id:
+            count += 1
+    return count
 
 
 @app.get("/api/status")
@@ -587,13 +649,12 @@ async def _consume_security_approved() -> None:
         )
         conclusion_event = pipeline_conclusion(SERVICE_NAME, conclusion_payload)
         await event_bus.publish(conclusion_event)
-        try:
-            await http_client.post(
-                f"{cfg.memory_service_url}/events",
-                json=json.loads(conclusion_event.model_dump_json()),
-            )
-        except Exception:
-            logger.warning("Could not store pipeline.conclusion in memory_service")
+        await store_event(
+            http_client,
+            conclusion_event,
+            logger=logger,
+            error_message="Could not store pipeline.conclusion in memory_service (event %s)",
+        )
 
         approval = PrApprovalPayload(
             plan_id=sec.plan_id,
