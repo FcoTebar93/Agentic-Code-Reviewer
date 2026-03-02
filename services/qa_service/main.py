@@ -45,7 +45,7 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
-from shared.utils import EventBus, IdempotencyStore, build_short_term_memory_window
+from shared.utils import EventBus, IdempotencyStore, build_short_term_memory_window, store_event
 from shared.tools import ToolRegistry, execute_tool
 from services.qa_service.config import QAConfig
 from services.qa_service.reviewer import review_code, ReviewResult
@@ -180,7 +180,12 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
                 completion_tokens=completion_tokens,
             ),
         )
-        await _store_event(tok_event)
+        await store_event(
+            http_client,
+            tok_event,
+            logger=logger,
+            error_message="Failed to store event %s",
+        )
 
     _qa_reasoning_cache[task_id] = result.reasoning or ""
 
@@ -206,7 +211,12 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
 
         qa_event = qa_passed(SERVICE_NAME, qa_payload)
         await event_bus.publish(qa_event)
-        await _store_event(qa_event)
+        await store_event(
+            http_client,
+            qa_event,
+            logger=logger,
+            error_message="Failed to store event %s",
+        )
 
         await _update_task_state(task_id, plan_id, "qa_passed")
         await _check_plan_ready_for_pr(plan_id)
@@ -226,7 +236,12 @@ async def _handle_code_review(payload: CodeGeneratedPayload) -> None:
             )
             fail_event = qa_failed(SERVICE_NAME, qa_payload)
             await event_bus.publish(fail_event)
-            await _store_event(fail_event)
+            await store_event(
+                http_client,
+                fail_event,
+                logger=logger,
+                error_message="Failed to store event %s",
+            )
             await _update_task_state(task_id, plan_id, "qa_failed")
 
 
@@ -256,7 +271,12 @@ async def _retry_task(
     )
     retry_event = task_assigned(SERVICE_NAME, retry_payload)
     await event_bus.publish(retry_event)
-    await _store_event(retry_event)
+    await store_event(
+        http_client,
+        retry_event,
+        logger=logger,
+        error_message="Failed to store event %s",
+    )
 
     logger.info(
         "Re-enqueued task %s to dev_service (qa_attempt=%d)",
@@ -314,7 +334,12 @@ async def _check_plan_ready_for_pr(plan_id: str) -> None:
         )
         pr_event = pr_requested(SERVICE_NAME, pr_payload)
         await event_bus.publish(pr_event)
-        await _store_event(pr_event)
+        await store_event(
+            http_client,
+            pr_event,
+            logger=logger,
+            error_message="Failed to store event %s",
+        )
         logger.info(
             "All tasks QA-passed for plan %s, pr.requested published (%d file(s))",
             plan_id[:8],
@@ -335,21 +360,6 @@ def _build_chain_reasoning(task_id: str) -> str:
         parts.append(f"[QA Reviewer] {qa}")
     return "\n".join(parts)
 
-
-async def _store_event(event: BaseEvent) -> None:
-    try:
-        await http_client.post(
-            "/events",
-            json={
-                "event_id": event.event_id,
-                "event_type": event.event_type.value,
-                "producer": event.producer,
-                "idempotency_key": event.idempotency_key,
-                "payload": event.payload,
-            },
-        )
-    except Exception:
-        logger.exception("Failed to store event %s", event.event_id[:8])
 
 async def _update_task_state(
     task_id: str,
@@ -416,7 +426,6 @@ async def _build_repo_context(file_path: str, code: str) -> str:
     global tool_registry
     if not tool_registry or not (file_path or "").strip():
         return ""
-    # Patrón: nombre del archivo sin extensión (ej. main.py -> main) para buscar usos.
     base = file_path.replace("\\", "/").rsplit("/", 1)[-1]
     stem = base.rsplit(".", 1)[0] if "." in base else base
     if not stem or len(stem) < 2:

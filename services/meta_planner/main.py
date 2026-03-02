@@ -42,7 +42,7 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
-from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
 from services.meta_planner.config import PlannerConfig
 from services.meta_planner.planner import decompose_tasks
@@ -210,10 +210,20 @@ async def _execute_plan(
                     completion_tokens=completion_tokens,
                 ),
             )
-            await _store_event(tok_event)
+            await store_event(
+                http_client,
+                tok_event,
+                logger=logger,
+                error_message="Failed to store event %s in memory_service",
+            )
 
         await event_bus.publish(plan_event)
-        await _store_event(plan_event)
+        await store_event(
+            http_client,
+            plan_event,
+            logger=logger,
+            error_message="Failed to store event %s in memory_service",
+        )
 
         for spec in task_specs:
             ta_payload = TaskAssignedPayload(
@@ -224,7 +234,12 @@ async def _execute_plan(
             )
             ta_event = task_assigned(SERVICE_NAME, ta_payload)
             await event_bus.publish(ta_event)
-            await _store_event(ta_event)
+            await store_event(
+                http_client,
+                ta_event,
+                logger=logger,
+                error_message="Failed to store event %s in memory_service",
+            )
 
         tasks_completed.labels(service=SERVICE_NAME).inc()
         logger.info(
@@ -442,23 +457,6 @@ async def _infer_repo_url_for_plan(plan_id: str) -> str:
         )
         return ""
 
-async def _store_event(event: BaseEvent) -> None:
-    """Persist event to memory_service via HTTP."""
-    try:
-        await http_client.post(
-            "/events",
-            json={
-                "event_id": event.event_id,
-                "event_type": event.event_type.value,
-                "producer": event.producer,
-                "idempotency_key": event.idempotency_key,
-                "payload": event.payload,
-            },
-        )
-    except Exception:
-        logger.exception("Failed to store event %s in memory_service", event.event_id[:8])
-
-
 async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
     """
     Retrieve a compact textual memory window for the planner based on
@@ -506,7 +504,6 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
                 )
         semantic_block = "\n".join(lines) if lines else ""
 
-        # Herramienta query_events: actividad reciente para evitar planes duplicados y dar contexto temporal.
         events_block = ""
         events_result = await execute_tool(
             tool_registry,

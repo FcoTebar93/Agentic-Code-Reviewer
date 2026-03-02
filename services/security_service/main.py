@@ -31,7 +31,7 @@ from shared.contracts.events import (
     security_approved,
     security_blocked,
 )
-from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from shared.utils import EventBus, IdempotencyStore, store_event
 from services.security_service.config import SecurityConfig
 from services.security_service.scanner import scan_files
 
@@ -126,14 +126,24 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
 
         approved_event = security_approved(SERVICE_NAME, sec_payload)
         await event_bus.publish(approved_event)
-        await _store_event(approved_event)
+        await store_event(
+            http_client,
+            approved_event,
+            logger=logger,
+            error_message="Failed to store event %s",
+        )
     else:
         logger.error(
             "Security BLOCKED for plan %s: %s", plan_id[:8], result.violations
         )
         blocked_event = security_blocked(SERVICE_NAME, sec_payload)
         await event_bus.publish(blocked_event)
-        await _store_event(blocked_event)
+        await store_event(
+            http_client,
+            blocked_event,
+            logger=logger,
+            error_message="Failed to store event %s",
+        )
 
 
 async def _fetch_security_memory_context(plan_id: str, limit: int = 5) -> str:
@@ -194,16 +204,9 @@ async def _fetch_security_memory_context(plan_id: str, limit: int = 5) -> str:
         return ""
 
 async def _store_event(event: BaseEvent) -> None:
-    try:
-        await http_client.post(
-            "/events",
-            json={
-                "event_id": event.event_id,
-                "event_type": event.event_type.value,
-                "producer": event.producer,
-                "idempotency_key": event.idempotency_key,
-                "payload": event.payload,
-            },
-        )
-    except Exception:
-        logger.exception("Failed to store event %s", event.event_id[:8])
+    await store_event(
+        http_client,
+        event,
+        logger=logger,
+        error_message="Failed to store event %s",
+    )

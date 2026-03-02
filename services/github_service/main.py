@@ -30,7 +30,7 @@ from shared.contracts.events import (
     PrApprovalPayload,
     pr_created,
 )
-from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from shared.utils import EventBus, IdempotencyStore, store_event
 from services.github_service.config import GitHubConfig
 from services.github_service.git_ops import (
     clone_repo,
@@ -170,7 +170,12 @@ async def _handle_pr_request(payload: PRRequestedPayload) -> None:
             )
             created_event = pr_created(SERVICE_NAME, created_payload)
             await event_bus.publish(created_event)
-            await _store_event(created_event)
+            await store_event(
+                http_client,
+                created_event,
+                logger=logger,
+                error_message="Failed to store event %s in memory_service",
+            )
             logger.info(
                 "PR #%d created for plan %s — %s",
                 result["pr_number"], plan_id[:8], result["pr_url"],
@@ -193,7 +198,12 @@ async def _handle_pr_request(payload: PRRequestedPayload) -> None:
             )
             created_event = pr_created(SERVICE_NAME, created_payload)
             await event_bus.publish(created_event)
-            await _store_event(created_event)
+            await store_event(
+                http_client,
+                created_event,
+                logger=logger,
+                error_message="Failed to store event %s in memory_service",
+            )
             logger.info("pr.created published (local workspace) for plan %s", plan_id[:8])
 
         tasks_completed.labels(service=SERVICE_NAME).inc()
@@ -201,16 +211,9 @@ async def _handle_pr_request(payload: PRRequestedPayload) -> None:
 
 async def _store_event(event: BaseEvent) -> None:
     """Persist event to memory_service so the event feed shows it."""
-    try:
-        await http_client.post(
-            "/events",
-            json={
-                "event_id": event.event_id,
-                "event_type": event.event_type.value,
-                "producer": event.producer,
-                "idempotency_key": event.idempotency_key,
-                "payload": event.payload,
-            },
-        )
-    except Exception:
-        logger.exception("Failed to store event %s in memory_service", event.event_id[:8])
+    await store_event(
+        http_client,
+        event,
+        logger=logger,
+        error_message="Failed to store event %s in memory_service",
+    )

@@ -21,7 +21,7 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
-from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
 from services.replanner_service.config import ReplannerConfig
 from services.replanner_service.critic import analyse_outcome
@@ -160,7 +160,12 @@ async def _analyse_and_emit_revision(
                     completion_tokens=completion_tokens,
                 ),
             )
-            await _store_event(tok_event)
+            await store_event(
+                http_client,
+                tok_event,
+                logger=logger,
+                error_message="Failed to store replanner event %s",
+            )
 
     if not result.revision_needed:
         logger.info(
@@ -181,7 +186,12 @@ async def _analyse_and_emit_revision(
     )
     event = plan_revision_suggested(SERVICE_NAME, revision_payload)
     await event_bus.publish(event)
-    await _store_event(event)
+    await store_event(
+        http_client,
+        event,
+        logger=logger,
+        error_message="Failed to store replanner event %s",
+    )
 
     logger.info(
         "Emitted plan.revision_suggested for original plan %s (new_plan_id=%s, severity=%s)",
@@ -234,20 +244,4 @@ async def _fetch_memory_context(plan_id: str, limit: int = 5) -> str:
             plan_id[:8],
         )
         return ""
-
-
-async def _store_event(event: BaseEvent) -> None:
-    try:
-        await http_client.post(
-            "/events",
-            json={
-                "event_id": event.event_id,
-                "event_type": event.event_type.value,
-                "producer": event.producer,
-                "idempotency_key": event.idempotency_key,
-                "payload": event.payload,
-            },
-        )
-    except Exception:
-        logger.exception("Failed to store replanner event %s", event.event_id[:8])
 
