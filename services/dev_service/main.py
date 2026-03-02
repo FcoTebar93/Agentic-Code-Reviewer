@@ -28,7 +28,7 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
-from shared.utils.rabbitmq import EventBus, IdempotencyStore
+from shared.utils import EventBus, IdempotencyStore, build_short_term_memory_window, store_event
 from services.dev_service.config import DevConfig
 from services.dev_service.generator import generate_code
 from services.dev_service.tools import build_dev_tool_registry, ReadFileInput
@@ -108,16 +108,8 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     task = payload.task
     plan_id = payload.plan_id
     qa_feedback = payload.qa_feedback
-
-    # Idempotencia defensiva:
-    # 1) Revisar el estado de la tarea en memory_service (/tasks/{plan_id}).
-    #    - Si es la asignaci?n original (sin qa_feedback) y ya existe cualquier estado,
-    #      asumimos que la tarea ya fue procesada al menos una vez y saltamos.
-    #    - Si viene con qa_feedback (reintento desde QA), solo saltamos si la tarea
-    #      est? en un estado terminal (qa_passed / qa_failed).
-    # 2) Como respaldo, mirar si ya existe un code.generated en /events.
+    
     try:
-        # 1) Comprobar estado de tarea persistido
         resp_tasks = await http_client.get(f"/tasks/{plan_id}")
         if resp_tasks.status_code == 200:
             tasks = resp_tasks.json() if isinstance(resp_tasks.json(), list) else []
@@ -130,7 +122,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             has_feedback = bool((qa_feedback or "").strip())
             if existing_status is not None:
                 if not has_feedback:
-                    # Asignaci?n original: si ya hay cualquier estado, no repetir.
                     logger.info(
                         "Task %s already has task state '%s', skipping original assignment (idempotent)",
                         task.task_id[:8],
@@ -138,7 +129,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     )
                     return
                 if existing_status in {"qa_passed", "qa_failed"}:
-                    # Reintento con feedback pero la tarea ya termin?: no reprocesar.
                     logger.info(
                         "Task %s already finished with status '%s', skipping QA retry (idempotent)",
                         task.task_id[:8],
@@ -146,9 +136,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     )
                     return
 
-        # 2) Comprobar eventos previos code.generated para este task_id
-        # Solo aplicamos idempotencia basada en eventos para la asignaci?n original;
-        # en reintentos desde QA queremos permitir nuevo code.generated.
         if not has_feedback:
             resp_events = await http_client.get(
                 "/events",
@@ -169,8 +156,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                         )
                         return
     except Exception:
-        # Fallos de memoria/idempotencia no deben impedir la ejecuci?n de la tarea;
-        # en el peor caso, el dev agent volver? a generar c?digo y QA tendr? el control.
         logger.warning("Idempotency pre-check failed for task %s", task.task_id[:8])
 
     logger.info(
@@ -206,7 +191,12 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     completion_tokens=completion_tokens,
                 ),
             )
-            await _store_event(tok_event)
+            await store_event(
+                http_client,
+                tok_event,
+                logger=logger,
+                error_message="Failed to store event %s",
+            )
 
         current_attempt = 0
         try:
@@ -220,8 +210,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         except Exception:
             pass
 
-        # Opcionalmente, ejecuta tests autom?ticos para enriquecer el reasoning.
-        # Esto es opt-in y configurable por lenguaje mediante DevConfig.
         tests_summary = ""
         try:
             test_cmd = ""
@@ -252,8 +240,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 elif not tests_result.success:
                     tests_summary = f"Automated tests failed to run: {tests_result.error}"
         except Exception:
-            # Fallo en tests no debe bloquear la generaci?n de c?digo;
-            # simplemente omitimos el resumen de tests.
             tests_summary = ""
 
         combined_reasoning = code_result.reasoning
@@ -277,7 +263,12 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
         cg_event = code_generated(SERVICE_NAME, cg_payload)
         await event_bus.publish(cg_event)
-        await _store_event(cg_event)
+        await store_event(
+            http_client,
+            cg_event,
+            logger=logger,
+            error_message="Failed to store event %s",
+        )
 
         await _update_task_state(
             task.task_id, plan_id, "completed",
@@ -362,23 +353,7 @@ async def _maybe_read_existing_file(file_path: str) -> str:
     except Exception:
         return ""
 
-async def _store_event(event: BaseEvent) -> None:
-    try:
-        await http_client.post(
-            "/events",
-            json={
-                "event_id": event.event_id,
-                "event_type": event.event_type.value,
-                "producer": event.producer,
-                "idempotency_key": event.idempotency_key,
-                "payload": event.payload,
-            },
-        )
-    except Exception:
-        logger.exception("Failed to store event %s", event.event_id[:8])
-
-
-async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
+async def _build_short_term_memory(plan_id: str, limit: int = 15) -> str:
     """
     Build a compact short-term memory window for a given plan_id by querying
     recent events from the memory_service.
@@ -403,37 +378,7 @@ async def _build_short_term_memory(plan_id: str, limit: int = 30) -> str:
         if not isinstance(events, list):
             return ""
 
-        lines: list[str] = []
-        for evt in events:
-            etype = evt.get("event_type", "")
-            producer = evt.get("producer", "")
-            created_at = evt.get("created_at", "")
-            payload = evt.get("payload") or {}
-
-            summary = ""
-            if etype == EventType.PLAN_CREATED.value:
-                summary = str(payload.get("reasoning", ""))[:200]
-            elif etype == EventType.CODE_GENERATED.value:
-                summary = f"{payload.get('file_path', '')}"
-            elif etype in (
-                EventType.QA_PASSED.value,
-                EventType.QA_FAILED.value,
-                EventType.SECURITY_APPROVED.value,
-                EventType.SECURITY_BLOCKED.value,
-            ):
-                summary = str(payload.get("reasoning", ""))[:200]
-            else:
-                summary = ""
-
-            line = f"[{etype}] from {producer} at {created_at}"
-            if summary:
-                line += f" :: {summary}"
-            lines.append(line)
-
-        window = "\n".join(lines[:limit])
-        if len(window) > 2000:
-            window = window[:2000]
-        return window
+        return build_short_term_memory_window(events, limit=limit)
     except Exception:
         logger.exception(
             "Error while building short-term memory for plan %s",
