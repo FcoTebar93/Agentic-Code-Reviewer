@@ -29,6 +29,9 @@ class QAConfig:
     agent_goal: str
     token_budget_per_review: int
     strategy: str
+    enable_semgrep: bool
+    enable_js_lint: bool
+    enable_java_lint: bool
 
     @classmethod
     def from_env(cls) -> QAConfig:
@@ -49,4 +52,10 @@ class QAConfig:
                 os.environ.get("TOKEN_BUDGET_PER_REVIEW", "15000")
             ),
             strategy=os.environ.get("AGENT_STRATEGY", "strict_review"),
+            enable_semgrep=os.environ.get("QA_ENABLE_SEMGREP", "true").lower()
+            in ("1", "true", "yes"),
+            enable_js_lint=os.environ.get("QA_ENABLE_JS_LINT", "false").lower()
+            in ("1", "true", "yes"),
+            enable_java_lint=os.environ.get("QA_ENABLE_JAVA_LINT", "false").lower()
+            in ("1", "true", "yes"),
         )

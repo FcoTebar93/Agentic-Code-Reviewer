@@ -70,40 +70,36 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             language=payload.language,
             deps=deps,
         )
-
         if static_issues:
-            reasoning = (
-                f"Static linting detected {len(static_issues)} issue(s) before LLM review. "
-                "Rejecting this change until the issues reported by the linter are fixed."
-            )
-            result = ReviewResult(
-                passed=False,
-                issues=static_issues,
-                reasoning=reasoning,
+            issues_list = "\n".join(f"- {issue}" for issue in static_issues)
+            static_report = (
+                "Static analysis tools reported the following issues and warnings:\n"
+                f"{issues_list}"
             )
         else:
-            llm = get_llm_provider()
-            short_term_memory = await _build_short_term_memory(plan_id, deps, limit=15)
-            repo_context = await _build_repo_context(
-                payload.file_path, payload.code, deps
-            )
-            memory_with_repo = "\n".join(
-                [p for p in [short_term_memory, repo_context] if p]
-            )
             static_report = (
-                "No static analysis issues or warnings were reported by linters or security tools "
-                "(ruff, Bandit, Semgrep, ESLint/javac if enabled)."
+                "No static analysis issues or warnings were reported by linters or "
+                "security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
             )
-            result, prompt_tokens, completion_tokens = await review_code(
-                llm=llm,
-                code=payload.code,
-                file_path=payload.file_path,
-                language=payload.language,
-                task_description=f"Generate {payload.language} code for {payload.file_path}",
-                dev_reasoning=dev_reasoning,
-                short_term_memory=memory_with_repo,
-                static_analysis_report=static_report,
-            )
+
+        llm = get_llm_provider()
+        short_term_memory = await _build_short_term_memory(plan_id, deps, limit=15)
+        repo_context = await _build_repo_context(
+            payload.file_path, payload.code, deps
+        )
+        memory_with_repo = "\n".join(
+            [p for p in [short_term_memory, repo_context] if p]
+        )
+        result, prompt_tokens, completion_tokens = await review_code(
+            llm=llm,
+            code=payload.code,
+            file_path=payload.file_path,
+            language=payload.language,
+            task_description=f"Generate {payload.language} code for {payload.file_path}",
+            dev_reasoning=dev_reasoning,
+            short_term_memory=memory_with_repo,
+            static_analysis_report=static_report,
+        )
 
     if prompt_tokens or completion_tokens:
         tok_event = metrics_tokens_used(
@@ -495,7 +491,7 @@ async def _run_static_lint(
         except Exception:
             deps.logger.exception("Error while running python_security_scan tool")
 
-    if lang in {"javascript", "js", "typescript", "ts"}:
+    if lang in {"javascript", "js", "typescript", "ts"} and deps.cfg.enable_js_lint:
         try:
             result = await execute_tool(
                 deps.tool_registry,
@@ -523,7 +519,7 @@ async def _run_static_lint(
         except Exception:
             deps.logger.exception("Error while running js_ts_lint tool")
 
-    if lang == "java":
+    if lang == "java" and deps.cfg.enable_java_lint:
         try:
             result = await execute_tool(
                 deps.tool_registry,
@@ -549,7 +545,14 @@ async def _run_static_lint(
         except Exception:
             deps.logger.exception("Error while running java_lint tool")
 
-    if lang in {"python", "javascript", "js", "typescript", "ts", "java"}:
+    if deps.cfg.enable_semgrep and lang in {
+        "python",
+        "javascript",
+        "js",
+        "typescript",
+        "ts",
+        "java",
+    }:
         try:
             result = await execute_tool(
                 deps.tool_registry,
