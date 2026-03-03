@@ -426,43 +426,151 @@ async def _run_static_lint(
     deps: QADeps,
 ) -> list[str]:
     """
-    Run the python_lint tool when the language is Python and return
-    a list of formatted issues for the agent.
+    Run language-specific static analysis tools and return a list of issues
+    formatted for the QA agent.
     """
-    if language.lower() != "python":
-        return []
     if not deps.tool_registry:
         return []
 
-    try:
-        result = await execute_tool(
-            deps.tool_registry,
-            "python_lint",
-            {
-                "language": "python",
-                "code": code,
-                "file_path": file_path or "tmp.py",
-            },
-        )
-        if not result.success:
-            deps.logger.warning("python_lint tool failed: %s", result.error)
-            return []
+    lang = (language or "").lower()
+    formatted: list[str] = []
 
-        payload = result.output or {}
-        if not payload.get("supported", True):
-            return []
-        issues = payload.get("issues") or []
-        formatted: list[str] = []
-        for issue in issues:
-            if not isinstance(issue, dict):
-                continue
-            line = issue.get("line")
-            col = issue.get("column")
-            code_str = issue.get("code", "")
-            msg = issue.get("message", "")
-            formatted.append(f"[ruff {code_str}] L{line}:C{col} {msg}")
-        return formatted
-    except Exception:
-        deps.logger.exception("Error while running python_lint tool")
-        return []
+    if lang == "python":
+        try:
+            result = await execute_tool(
+                deps.tool_registry,
+                "python_lint",
+                {
+                    "language": "python",
+                    "code": code,
+                    "file_path": file_path or "tmp.py",
+                },
+            )
+            if not result.success:
+                deps.logger.warning("python_lint tool failed: %s", result.error)
+            else:
+                payload = result.output or {}
+                if payload.get("supported", True):
+                    issues = payload.get("issues") or []
+                    for issue in issues:
+                        if not isinstance(issue, dict):
+                            continue
+                        line = issue.get("line")
+                        col = issue.get("column")
+                        code_str = issue.get("code", "")
+                        msg = issue.get("message", "")
+                        formatted.append(f"[ruff {code_str}] L{line}:C{col} {msg}")
+        except Exception:
+            deps.logger.exception("Error while running python_lint tool")
+
+        try:
+            result = await execute_tool(
+                deps.tool_registry,
+                "python_security_scan",
+                {
+                    "language": "python",
+                    "code": code,
+                    "file_path": file_path or "tmp.py",
+                },
+            )
+            if not result.success:
+                deps.logger.warning("python_security_scan tool failed: %s", result.error)
+            else:
+                payload = result.output or {}
+                if payload.get("supported", True):
+                    issues = payload.get("issues") or []
+                    for issue in issues:
+                        if not isinstance(issue, dict):
+                            continue
+                        line = issue.get("line")
+                        sev = (issue.get("severity") or "").upper()
+                        code_str = issue.get("code", "")
+                        msg = issue.get("message", "")
+                        formatted.append(f"[bandit {sev} {code_str}] L{line}: {msg}")
+        except Exception:
+            deps.logger.exception("Error while running python_security_scan tool")
+
+    if lang in {"javascript", "js", "typescript", "ts"}:
+        try:
+            result = await execute_tool(
+                deps.tool_registry,
+                "js_ts_lint",
+                {
+                    "language": language,
+                    "code": code,
+                    "file_path": file_path or "tmp",
+                },
+            )
+            if not result.success:
+                deps.logger.warning("js_ts_lint tool failed: %s", result.error)
+            else:
+                payload = result.output or {}
+                if payload.get("supported", True):
+                    issues = payload.get("issues") or []
+                    for issue in issues:
+                        if not isinstance(issue, dict):
+                            continue
+                        line = issue.get("line")
+                        col = issue.get("column")
+                        rule_id = issue.get("rule_id", "")
+                        msg = issue.get("message", "")
+                        formatted.append(f"[eslint {rule_id}] L{line}:C{col} {msg}")
+        except Exception:
+            deps.logger.exception("Error while running js_ts_lint tool")
+
+    if lang == "java":
+        try:
+            result = await execute_tool(
+                deps.tool_registry,
+                "java_lint",
+                {
+                    "language": "java",
+                    "code": code,
+                    "file_path": file_path or "Tmp.java",
+                },
+            )
+            if not result.success:
+                deps.logger.warning("java_lint tool failed: %s", result.error)
+            else:
+                payload = result.output or {}
+                if payload.get("supported", True):
+                    issues = payload.get("issues") or []
+                    for issue in issues:
+                        if not isinstance(issue, dict):
+                            continue
+                        line = issue.get("line")
+                        msg = issue.get("message", "")
+                        formatted.append(f"[javac] L{line}: {msg}")
+        except Exception:
+            deps.logger.exception("Error while running java_lint tool")
+
+    if lang in {"python", "javascript", "js", "typescript", "ts", "java"}:
+        try:
+            result = await execute_tool(
+                deps.tool_registry,
+                "semgrep_scan",
+                {
+                    "language": language,
+                    "code": code,
+                    "file_path": file_path or "tmp",
+                },
+            )
+            if not result.success:
+                deps.logger.warning("semgrep_scan tool failed: %s", result.error)
+            else:
+                payload = result.output or {}
+                if payload.get("supported", True):
+                    issues = payload.get("issues") or []
+                    for issue in issues:
+                        if not isinstance(issue, dict):
+                            continue
+                        line = issue.get("line")
+                        sev = (issue.get("severity") or "").upper()
+                        code_str = issue.get("code", "")
+                        msg = issue.get("message", "")
+                        formatted.append(f"[semgrep {sev} {code_str}] L{line}: {msg}")
+        except Exception:
+            deps.logger.exception("Error while running semgrep_scan tool")
+
+    return formatted
 
