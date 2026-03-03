@@ -144,10 +144,16 @@ Tools are orchestrated by the services (the LLM does not directly choose tools y
   - `read_file` – grab existing file contents as context.
   - `list_project_files` – list files in the target directory (per language glob).
   - `run_tests` – run project tests (configurable commands per language).
-- **QA Service**
-  - `python_lint` – Python static analysis (ruff).
+- **QA Service (by default)**
+  - `python_lint` – Python static analysis (ruff, via pip).
+  - `python_security_scan` – Python security analysis (Bandit, via pip).
+  - `semgrep_scan` – multi‑language static/security analysis (Semgrep, via pip).
   - `search_in_repo` – quick search for related usages in the repo.
   - `query_events` – build a short‑term memory window of relevant events.
+- **QA Service (optional extra linters)**
+  - JS/TS linting with ESLint.
+  - Java compile‑time checks with `javac`.
+  - These are disabled by default; see the section below on enabling them.
 - **Replanner Service**
   - `semantic_outcome_memory` – semantic memory of past outcomes (qa.failed, security.blocked, pipeline.conclusion).
 - **Security Service**
@@ -191,6 +197,37 @@ docker compose up --build
   - Create a new plan (enter project name, repo URL, and prompt).
   - Watch tasks flow through dev → QA → security.
   - Approve/reject PRs from the human‑in‑the‑loop view.
+
+---
+
+### Enabling optional JS/TS & Java linters in QA
+
+By default, the QA service relies on **Python tools (ruff, Bandit)** and **Semgrep** for multi‑language static analysis.  
+If you also want **ESLint (JS/TS)** and **javac (Java)** checks to run inside the `qa_service` container:
+
+- Open `infrastructure/docker/qa_service/Dockerfile`.
+- Locate the commented block:
+
+```dockerfile
+# Optional: enable JS/TS and Java linters inside the qa_service container.
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends nodejs npm openjdk-17-jdk && \
+#     npm install -g eslint typescript && \
+#     apt-get clean && rm -rf /var/lib/apt/lists/*
+```
+
+- **Uncomment** the `RUN` lines, then rebuild:
+
+```bash
+docker compose build qa_service
+docker compose up
+```
+
+With this enabled:
+
+- `js_ts_lint` uses ESLint to analyse JavaScript/TypeScript code.
+- `java_lint` uses `javac` to surface basic compile‑time errors in Java code.
+- `semgrep_scan` continues to run as a multi‑language static/security analyzer.
 
 ---
 
