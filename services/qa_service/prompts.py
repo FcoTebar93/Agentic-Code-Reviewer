@@ -12,12 +12,16 @@ DEVELOPER'S REASONING:
 {dev_reasoning}
 ---
 
-You also have access to a short memory window of recent events and decisions
-for this plan (previous QA results, security decisions, pipeline conclusions, etc.).
-Use this context only if it is relevant to your review; otherwise you may ignore it.
+You also have access to:
+- A short memory window of recent events and decisions for this plan (previous QA results, security decisions, pipeline conclusions, etc.).
+- A STATIC ANALYSIS REPORT summarising issues reported by tools (linters, security scanners, Semgrep, etc.).
+Use these contexts only if they are relevant to your review; otherwise you may ignore them.
 
 SHORT-TERM MEMORY:
 {short_term_memory}
+
+STATIC ANALYSIS REPORT:
+{static_analysis_report}
 
 Now review the following {language} code intended for file `{file_path}`:
 
@@ -90,6 +94,11 @@ Analyse the following {language} code intended for file `{file_path}`:
 
 The original task description was:
 {description}
+
+You also receive a STATIC ANALYSIS REPORT summarising issues reported by tools (linters, security scanners, Semgrep, etc.):
+
+STATIC ANALYSIS REPORT:
+{static_analysis_report}
 
 You must:
 1. Check that the code implements the described task correctly, including edge cases and error conditions.

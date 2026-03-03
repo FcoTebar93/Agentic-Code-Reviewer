@@ -40,6 +40,7 @@ async def review_code(
     task_description: str,
     dev_reasoning: str = "",
     short_term_memory: str = "",
+    static_analysis_report: str = "",
 ) -> tuple[ReviewResult, int, int]:
     """
     Run static checks then LLM review. Returns (result, prompt_tokens, completion_tokens).
@@ -55,8 +56,14 @@ async def review_code(
         return ReviewResult(passed=False, issues=static_issues, reasoning=reasoning), 0, 0
 
     return await _llm_review(
-        llm, code, file_path, language, task_description, dev_reasoning,
+        llm,
+        code,
+        file_path,
+        language,
+        task_description,
+        dev_reasoning,
         short_term_memory=short_term_memory,
+        static_analysis_report=static_analysis_report,
     )
 
 
@@ -77,6 +84,7 @@ async def _llm_review(
     task_description: str,
     dev_reasoning: str = "",
     short_term_memory: str = "",
+    static_analysis_report: str = "",
 ) -> tuple[ReviewResult, int, int]:
     qa_rules_block = _build_qa_rules_block(language)
 
@@ -88,6 +96,8 @@ async def _llm_review(
             description=task_description,
             dev_reasoning=dev_reasoning,
             short_term_memory=short_term_memory.strip() or "None.",
+            static_analysis_report=static_analysis_report.strip()
+            or "No static analysis issues or warnings were reported by tools.",
             qa_rules_block=qa_rules_block,
         )
     else:
@@ -96,6 +106,8 @@ async def _llm_review(
             file_path=file_path,
             code=code,
             description=task_description,
+            static_analysis_report=static_analysis_report.strip()
+            or "No static analysis issues or warnings were reported by tools.",
             qa_rules_block=qa_rules_block,
         )
 

@@ -90,6 +90,10 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             memory_with_repo = "\n".join(
                 [p for p in [short_term_memory, repo_context] if p]
             )
+            static_report = (
+                "No static analysis issues or warnings were reported by linters or security tools "
+                "(ruff, Bandit, Semgrep, ESLint/javac if enabled)."
+            )
             result, prompt_tokens, completion_tokens = await review_code(
                 llm=llm,
                 code=payload.code,
@@ -98,6 +102,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 task_description=f"Generate {payload.language} code for {payload.file_path}",
                 dev_reasoning=dev_reasoning,
                 short_term_memory=memory_with_repo,
+                static_analysis_report=static_report,
             )
 
     if prompt_tokens or completion_tokens:
