@@ -1,8 +1,6 @@
-# Environment
 .env
 !.env.example
 
-# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -11,7 +9,6 @@ dist/
 build/
 .eggs/
 
-# Virtual environments
 .venv/
 venv/
 env/
@@ -22,10 +19,11 @@ env/
 *.swp
 *.swo
 
-# Docker volumes (local dev data)
 postgres_data/
 qdrant_data/
 
-# OS
 .DS_Store
 Thumbs.db
+
+node_modules/
+frontend/node_modules/
