@@ -18,6 +18,15 @@ WORKDIR /app
 COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=deps /usr/local/bin /usr/local/bin
 
+# Optional: enable JS/TS and Java linters inside the qa_service container.
+# To use ESLint (JS/TS) and javac-based checks, uncomment the lines below.
+# They install Node.js, npm, ESLint/TypeScript globally and OpenJDK:
+#
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends nodejs npm openjdk-17-jdk && \
+#     npm install -g eslint typescript && \
+#     apt-get clean && rm -rf /var/lib/apt/lists/*
+
 COPY shared/ ./shared/
 COPY services/__init__.py ./services/__init__.py
 COPY services/qa_service/ ./services/qa_service/
