@@ -14,10 +14,15 @@ Pipeline conclusion:
 
 from __future__ import annotations
 
+import json
 import logging
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-from services.security_service.config import SECURITY_RULES
+from services.security_service.config import SECURITY_RULES, SecurityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +35,7 @@ class ScanResult:
     reasoning: str = ""
 
 
-def scan_files(files: list[dict]) -> ScanResult:
+def scan_files(files: list[dict], cfg: SecurityConfig) -> ScanResult:
     """
     Scan all files in a PR payload for security violations.
 
@@ -48,11 +53,12 @@ def scan_files(files: list[dict]) -> ScanResult:
     for file_entry in files:
         file_path = file_entry.get("file_path", "<unknown>")
         code = file_entry.get("code", "")
+        language = str(file_entry.get("language", "") or "").lower()
         if not code:
             continue
 
         files_scanned += 1
-        file_violations = _scan_single_file(file_path, code)
+        file_violations = _scan_single_file(file_path, code, language, cfg)
         all_violations.extend(file_violations)
 
     approved = len(all_violations) == 0
@@ -136,12 +142,181 @@ def _build_pipeline_conclusion(
     return "\n".join(lines)
 
 
-def _scan_single_file(file_path: str, code: str) -> list[str]:
-    violations = []
+def _scan_single_file(
+    file_path: str,
+    code: str,
+    language: str,
+    cfg: SecurityConfig,
+) -> list[str]:
+    violations: list[str] = []
+
     for rule_name, pattern in SECURITY_RULES:
         if pattern.search(code):
             violations.append(
                 f"[{file_path}] Rule '{rule_name}': pattern matched"
             )
             logger.debug("Rule %s triggered in %s", rule_name, file_path)
+
+    if cfg.enable_bandit and language == "python":
+        violations.extend(_run_bandit_security_checks(file_path, code))
+
+    if cfg.enable_semgrep and language in {
+        "python",
+        "javascript",
+        "js",
+        "typescript",
+        "ts",
+        "java",
+    }:
+        violations.extend(_run_semgrep_security_checks(file_path, code, language))
+
     return violations
+
+
+def _run_bandit_security_checks(file_path: str, code: str) -> list[str]:
+    """
+    Ejecuta bandit sobre el código Python y devuelve violaciones formateadas
+    para el SecurityResultPayload. Falla en modo silencioso si bandit no está
+    disponible o si algo va mal (no rompe el pipeline).
+    """
+    try:
+        try:
+            subprocess.run(
+                ["python", "-m", "bandit", "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception:
+            logger.debug("Bandit no está instalado; omitiendo bandit en security_service")
+            return []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            target = tmp_path / "tmp.py"
+            target.write_text(code, encoding="utf-8")
+
+            proc = subprocess.run(
+                ["python", "-m", "bandit", "-q", "-f", "json", str(target)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            stdout = proc.stdout.strip()
+            if not stdout:
+                return []
+
+            issues: list[str] = []
+            try:
+                data: dict[str, Any] = json.loads(stdout)
+            except Exception:
+                logger.warning("Bandit output could not be parsed as JSON for %s", file_path)
+                return []
+
+            for item in data.get("results", []):
+                sev = str(item.get("issue_severity", "")).upper()
+                test_id = str(item.get("test_id", ""))
+                msg = str(item.get("issue_text", "")).strip()
+                line = int(item.get("line_number", 0) or 0)
+                issues.append(
+                    f"[{file_path}] [bandit {sev} {test_id}] L{line}: {msg}"
+                )
+
+            return issues
+    except Exception as exc:
+        logger.exception("Bandit scan failed for %s: %s", file_path, exc)
+        return []
+
+
+def _run_semgrep_security_checks(
+    file_path: str,
+    code: str,
+    language: str,
+) -> list[str]:
+    """
+    Ejecuta semgrep con un conjunto de reglas orientado a seguridad.
+    Usa --config=p/security-audit (reglas públicas útiles para muchos stacks).
+    """
+    lang = language.lower()
+    supported_langs = {
+        "python": ".py",
+        "javascript": ".js",
+        "js": ".js",
+        "typescript": ".ts",
+        "ts": ".ts",
+        "java": ".java",
+    }
+    if lang not in supported_langs:
+        return []
+
+    try:
+        use_python_module = False
+        try:
+            subprocess.run(
+                ["python", "-m", "semgrep", "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            use_python_module = True
+        except Exception:
+            try:
+                subprocess.run(
+                    ["semgrep", "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            except Exception:
+                logger.debug("Semgrep no está instalado; omitiendo semgrep en security_service")
+                return []
+
+        ext = supported_langs[lang]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            target = tmp_path / f"tmp{ext}"
+            target.write_text(code, encoding="utf-8")
+
+            base_cmd = ["python", "-m", "semgrep"] if use_python_module else ["semgrep"]
+            cmd = base_cmd + [
+                "--config",
+                "p/security-audit",
+                "--json",
+                "--quiet",
+                str(target),
+            ]
+            proc = subprocess.run(
+                cmd,
+                cwd=str(tmp_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            stdout = proc.stdout.strip()
+            if not stdout:
+                return []
+
+            issues: list[str] = []
+            try:
+                data: dict[str, Any] = json.loads(stdout)
+            except Exception:
+                logger.warning("Semgrep output could not be parsed as JSON for %s", file_path)
+                return []
+
+            for result in data.get("results", []):
+                extra = result.get("extra", {}) or {}
+                sev = str(extra.get("severity", "")).upper()
+                rule_id = str(extra.get("id", ""))
+                msg = str(extra.get("message", "")).strip()
+                loc = result.get("start", {}) or {}
+                line_i = int(loc.get("line", 0) or 0)
+                issues.append(
+                    f"[{file_path}] [semgrep {sev} {rule_id}] L{line_i}: {msg}"
+                )
+
+            return issues
+    except Exception as exc:
+        logger.exception("Semgrep scan failed for %s: %s", file_path, exc)
+        return []

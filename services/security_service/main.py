@@ -108,7 +108,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
 
     with agent_execution_time.labels(service=SERVICE_NAME, operation="security_scan").time():
         files_data = [f.model_dump() for f in payload.files]
-        result = scan_files(files_data)
+        result = scan_files(files_data, cfg)
 
     sec_payload = SecurityResultPayload(
         plan_id=plan_id,
