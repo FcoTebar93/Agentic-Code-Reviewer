@@ -61,6 +61,70 @@ _MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN = int(
 )
 _replans_per_original_plan: dict[str, int] = {}
 
+
+def _summarise_planner_memory(
+    semantic_results: list[dict] | None,
+    events: list[dict] | None,
+    max_lines: int = 8,
+) -> str:
+    """
+    Construye un resumen compacto y de alto nivel a partir de:
+    - resultados semánticos (plan.created, pipeline.conclusion, qa.failed, security.blocked)
+    - eventos recientes crudos
+
+    Objetivo: dar al planner "reglas aprendidas" y contexto mínimo sin volcar
+    todos los textos ni scores completos para ahorrar tokens.
+    """
+    semantic_results = semantic_results or []
+    events = events or []
+
+    lines: list[str] = []
+
+    if semantic_results:
+        # Contadores por tipo de evento para tener una vista agregada.
+        type_counts: dict[str, int] = {}
+        for item in semantic_results:
+            payload = item.get("payload") or {}
+            etype = str(payload.get("event_type", "") or "")
+            if not etype:
+                continue
+            type_counts[etype] = type_counts.get(etype, 0) + 1
+
+        if type_counts:
+            summary_parts = [
+                f"{etype} x{count}" for etype, count in sorted(type_counts.items())
+            ]
+            lines.append(
+                "Semantic history summary: " + "; ".join(summary_parts)
+            )
+
+        # Añadimos 2–3 ejemplos cortos con texto truncado.
+        for item in semantic_results[:3]:
+            payload = item.get("payload") or {}
+            score = item.get("heuristic_score", item.get("score", 0.0))
+            text = str(payload.get("text", "")).replace("\n", " ")[:200]
+            etype = payload.get("event_type", "")
+            plan_id = payload.get("plan_id", "")[:8]
+            if text:
+                lines.append(
+                    f"- [{etype}] plan={plan_id} score={score:.2f}: {text}"
+                )
+            if len(lines) >= max_lines:
+                return "\n".join(lines)
+
+    if events and len(lines) < max_lines:
+        recent_lines: list[str] = []
+        for ev in events[: max_lines - len(lines)]:
+            etype = ev.get("event_type", "")
+            created = ev.get("created_at", "")[:19]
+            pid = (ev.get("payload") or {}).get("plan_id", "")[:8]
+            recent_lines.append(f"{created} [{etype}] plan={pid}")
+        if recent_lines:
+            lines.append("Recent activity:")
+            lines.extend(recent_lines)
+
+    return "\n".join(lines)
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global event_bus, http_client, cfg, tool_registry
@@ -457,7 +521,7 @@ async def _infer_repo_url_for_plan(plan_id: str) -> str:
         )
         return ""
 
-async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
+async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
     """
     Retrieve a compact textual memory window for the planner based on
     the current user prompt.
@@ -470,6 +534,7 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
         return ""
 
     try:
+        # 1) Memoria semántica enfocada en planes previos, conclusiones y fallos.
         result = await execute_tool(
             tool_registry,
             "semantic_search_memory",
@@ -485,47 +550,32 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 5) -> str:
                 "limit": limit,
             },
         )
-        if not result.success:
+        semantic_results: list[dict] = []
+        if result.success and isinstance(result.output, dict):
+            raw_results = result.output.get("results") or []
+            if isinstance(raw_results, list):
+                semantic_results = raw_results
+        elif not result.success:
             logger.warning("Semantic search tool failed: %s", result.error)
-            return ""
 
-        payload = result.output or {}
-        results = payload.get("results") or []
-        lines: list[str] = []
-        if isinstance(results, list) and results:
-            for item in results[:limit]:
-                p = item.get("payload") or {}
-                score = item.get("heuristic_score", item.get("score", 0.0))
-                text = str(p.get("text", ""))[:400].replace("\n", " ")
-                etype = p.get("event_type", "")
-                plan_id = p.get("plan_id", "")
-                lines.append(
-                    f"- [{etype}] plan_id={plan_id} score={score:.3f}: {text}"
-                )
-        semantic_block = "\n".join(lines) if lines else ""
-
-        events_block = ""
+        # 2) Eventos recientes crudos como respaldo (límite pequeño).
+        events_list: list[dict] = []
         events_result = await execute_tool(
             tool_registry,
             "query_events",
-            {"plan_id": None, "event_type": None, "limit": 15},
+            {"plan_id": None, "event_type": None, "limit": 10},
         )
         if events_result.success and isinstance(events_result.output, dict):
-            events_list = (events_result.output.get("events") or []) if isinstance(events_result.output.get("events"), list) else []
-            if events_list:
-                recent: list[str] = []
-                for ev in events_list[:15]:
-                    etype = ev.get("event_type", "")
-                    created = ev.get("created_at", "")[:19]
-                    pid = (ev.get("payload") or {}).get("plan_id", "")[:8]
-                    recent.append(f"  {created} [{etype}] plan={pid}")
-                events_block = "Recent activity (last events):\n" + "\n".join(recent)
+            raw_events = events_result.output.get("events") or []
+            if isinstance(raw_events, list):
+                events_list = raw_events
 
-        if semantic_block and events_block:
-            return semantic_block + "\n\n" + events_block
-        if events_block:
-            return events_block
-        return semantic_block
+        summary = _summarise_planner_memory(
+            semantic_results=semantic_results,
+            events=events_list,
+            max_lines=8,
+        )
+        return summary
     except Exception:
         logger.exception("Failed to fetch memory context from memory_service")
         return ""
