@@ -583,6 +583,39 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
             events=events_list,
             max_lines=8,
         )
+
+        patterns_summary = ""
+        patterns_result = await execute_tool(
+            tool_registry,
+            "failure_patterns",
+            {"module_prefix": None, "limit": 200},
+        )
+        if patterns_result.success and isinstance(patterns_result.output, dict):
+            raw_patterns = patterns_result.output.get("patterns") or []
+            lines: list[str] = []
+            for p in raw_patterns[:4]:
+                if not isinstance(p, dict):
+                    continue
+                module = str(p.get("module", ""))
+                qa_n = int(p.get("qa_failed", 0) or 0)
+                sec_n = int(p.get("security_blocked", 0) or 0)
+                if qa_n == 0 and sec_n == 0:
+                    continue
+                pieces = []
+                if qa_n:
+                    pieces.append(f"QA_FAILED x{qa_n}")
+                if sec_n:
+                    pieces.append(f"SEC_BLOCKED x{sec_n}")
+                lines.append(f"- {module}: " + ", ".join(pieces))
+            if lines:
+                patterns_summary = "Historical failure patterns by module:\n" + "\n".join(
+                    lines
+                )
+
+        if patterns_summary:
+            if summary.strip():
+                return summary + "\n\n" + patterns_summary
+            return patterns_summary
         return summary
     except Exception:
         logger.exception("Failed to fetch memory context from memory_service")

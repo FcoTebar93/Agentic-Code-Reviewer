@@ -45,6 +45,19 @@ class QueryEventsInput(ToolInput):
     )
 
 
+class FailurePatternsInput(ToolInput):
+    module_prefix: str | None = Field(
+        default=None,
+        description="Prefijo de módulo/carpeta para filtrar (por ejemplo 'services/dev_service')",
+    )
+    limit: int = Field(
+        default=200,
+        ge=10,
+        le=1000,
+        description="Máximo de eventos base a considerar al construir patrones",
+    )
+
+
 async def semantic_memory_tool(args: SemanticMemoryInput, base_url: str) -> dict[str, Any]:
     """
     Wrapper de alto nivel sobre /semantic/search del memory_service.
@@ -81,6 +94,31 @@ async def query_events_tool(args: QueryEventsInput, base_url: str) -> dict[str, 
     return {"events": data}
 
 
+async def failure_patterns_tool(args: FailurePatternsInput, base_url: str) -> dict[str, Any]:
+    """
+    Wrapper sobre /patterns/failures del memory_service.
+    Opcionalmente filtra por prefijo de módulo en el cliente.
+    """
+    async with httpx.AsyncClient(base_url=base_url, timeout=10.0) as client:
+        resp = await client.get(
+            "/patterns/failures",
+            params={"limit": args.limit},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    patterns = data.get("patterns") or []
+    if args.module_prefix:
+        prefix = args.module_prefix.replace("\\", "/").lower()
+        patterns = [
+            p
+            for p in patterns
+            if isinstance(p, dict)
+            and str(p.get("module", "")).replace("\\", "/").lower().startswith(prefix)
+        ]
+    return {"patterns": patterns}
+
+
 def build_planner_tool_registry(memory_service_url: str) -> ToolRegistry:
     """
     Construye un ToolRegistry con herramientas de memoria para meta_planner.
@@ -92,6 +130,9 @@ def build_planner_tool_registry(memory_service_url: str) -> ToolRegistry:
 
     async def _events_wrapper(args: QueryEventsInput) -> dict[str, Any]:
         return await query_events_tool(args, base_url=memory_service_url)
+
+    async def _patterns_wrapper(args: FailurePatternsInput) -> dict[str, Any]:
+        return await failure_patterns_tool(args, base_url=memory_service_url)
 
     registry.register(
         ToolDefinition(
@@ -116,6 +157,19 @@ def build_planner_tool_registry(memory_service_url: str) -> ToolRegistry:
             max_retries=0,
             sandboxed=True,
             tags=["memory", "events"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="failure_patterns",
+            description="Recuperar patrones históricos de fallos (qa.failed, security.blocked) agregados por módulo",
+            input_model=FailurePatternsInput,
+            func=_patterns_wrapper,
+            timeout_s=10.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["memory", "patterns"],
         )
     )
 
