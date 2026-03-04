@@ -1,0 +1,3 @@
+# spec_service currently only depends on shared requirements.
+# This file is kept for symmetry with other services and future extensions.
+
