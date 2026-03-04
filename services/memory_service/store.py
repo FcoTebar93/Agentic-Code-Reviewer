@@ -39,8 +39,6 @@ from shared.contracts.events import BaseEvent, EventType
 logger = logging.getLogger(__name__)
 
 QDRANT_COLLECTION = "admadc_code_memory"
-# Dimensión por defecto alineada con la colección existente en Qdrant.
-# Se puede sobreescribir vía EMBEDDING_DIM si se recrea la colección con otro tamaño.
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "384"))
 
 
@@ -130,6 +128,83 @@ class MemoryStore:
                 }
                 for r in rows
             ]
+
+    async def get_failure_patterns(
+        self,
+        limit_per_kind: int = 200,
+    ) -> list[dict[str, Any]]:
+        """
+        Aggregate historical QA/seguridad fallos por módulo.
+
+        Esta vista ligera se usa para dar al planner/QA \"patrones de fallo\"
+        sin tener que recorrer todos los eventos desde los agentes.
+        """
+        async with get_session() as session:
+            stmt = (
+                select(EventLog)
+                .where(
+                    EventLog.event_type.in_(
+                        [
+                            EventType.QA_FAILED.value,
+                            EventType.SECURITY_BLOCKED.value,
+                        ]
+                    )
+                )
+                .order_by(EventLog.id.desc())
+                .limit(limit_per_kind * 2)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+
+        patterns: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            try:
+                payload = json.loads(r.payload)
+            except Exception:
+                continue
+            file_path = str(payload.get("file_path", "") or "")
+            if not file_path:
+                module = "<unknown>"
+            else:
+                norm = file_path.replace("\\", "/")
+                parts = norm.split("/")
+                if len(parts) >= 3:
+                    module = "/".join(parts[:3])
+                elif len(parts) >= 2:
+                    module = "/".join(parts[:2])
+                else:
+                    module = norm
+
+            key = module
+            entry = patterns.setdefault(
+                key,
+                {
+                    "module": module,
+                    "qa_failed": 0,
+                    "security_blocked": 0,
+                    "sample_issues": [],
+                },
+            )
+
+            if r.event_type == EventType.QA_FAILED.value:
+                entry["qa_failed"] += 1
+                issues = payload.get("issues") or []
+            else:
+                entry["security_blocked"] += 1
+                issues = payload.get("violations") or []
+
+            for issue in issues[:3]:
+                if isinstance(issue, str) and issue not in entry["sample_issues"]:
+                    entry["sample_issues"].append(issue)
+                if len(entry["sample_issues"]) >= 5:
+                    break
+
+        sorted_patterns = sorted(
+            patterns.values(),
+            key=lambda x: (x["qa_failed"] + x["security_blocked"]),
+            reverse=True,
+        )
+        return sorted_patterns
 
     async def update_task(
         self,
@@ -277,7 +352,7 @@ class MemoryStore:
             return self._hash_to_vector(text, EMBEDDING_DIM)
 
         try:
-            from openai import AsyncOpenAI  # type: ignore
+            from openai import AsyncOpenAI
         except Exception:
             logger.warning(
                 "openai package not available, falling back to hash-based embeddings"

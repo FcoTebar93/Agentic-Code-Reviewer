@@ -158,6 +158,13 @@ class SemanticSearchRequest(BaseModel):
     limit: int = 5
 
 
+class FailurePatternsResponse(BaseModel):
+    module: str
+    qa_failed: int = 0
+    security_blocked: int = 0
+    sample_issues: list[str] = []
+
+
 @app.post("/semantic/search")
 async def semantic_search(req: SemanticSearchRequest):
     """
@@ -178,3 +185,15 @@ async def semantic_search(req: SemanticSearchRequest):
         limit=req.limit,
     )
     return {"results": results}
+
+
+@app.get("/patterns/failures")
+async def failure_patterns(limit: int = 200):
+    """
+    Devuelve patrones agregados de fallos históricos (qa.failed, security.blocked)
+    agrupados por módulo aproximado (carpetas iniciales del file_path).
+    """
+    s = _get_store()
+    raw = await s.get_failure_patterns(limit_per_kind=limit)
+    patterns = [FailurePatternsResponse(**p) for p in raw]
+    return {"patterns": [p.model_dump() for p in patterns]}
