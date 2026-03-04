@@ -79,6 +79,19 @@ class QueryEventsInput(ToolInput):
     )
 
 
+class FailurePatternsInput(ToolInput):
+    module_prefix: str | None = Field(
+        default=None,
+        description="Prefijo de módulo/carpeta para filtrar (por ejemplo 'services/dev_service')",
+    )
+    limit: int = Field(
+        default=200,
+        ge=10,
+        le=1000,
+        description="Máximo de eventos base a considerar al construir patrones",
+    )
+
+
 def python_lint_tool(args: LintInput) -> dict[str, Any]:
     """
     Ejecuta ruff sobre el código proporcionado y devuelve una lista estructurada
@@ -204,6 +217,30 @@ async def query_events_tool(args: QueryEventsInput) -> dict[str, Any]:
         resp.raise_for_status()
         data = resp.json()
     return {"events": data}
+
+
+async def failure_patterns_tool(args: FailurePatternsInput) -> dict[str, Any]:
+    """
+    Consulta los patrones agregados de fallos históricos desde memory_service.
+    """
+    async with httpx.AsyncClient(base_url=MEMORY_SERVICE_URL, timeout=10.0) as client:
+        resp = await client.get(
+            "/patterns/failures",
+            params={"limit": args.limit},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    patterns = data.get("patterns") or []
+    if args.module_prefix:
+        prefix = args.module_prefix.replace("\\", "/").lower()
+        patterns = [
+            p
+            for p in patterns
+            if isinstance(p, dict)
+            and str(p.get("module", "")).replace("\\", "/").lower().startswith(prefix)
+        ]
+    return {"patterns": patterns}
 
 
 def js_ts_lint_tool(args: LintInput) -> dict[str, Any]:
@@ -670,6 +707,19 @@ def build_qa_tool_registry() -> ToolRegistry:
             max_retries=0,
             sandboxed=True,
             tags=["memory", "events"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="failure_patterns",
+            description="Consultar patrones históricos de fallos (qa.failed, security.blocked) agregados por módulo",
+            input_model=FailurePatternsInput,
+            func=failure_patterns_tool,
+            timeout_s=10.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["memory", "patterns"],
         )
     )
 
