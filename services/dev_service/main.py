@@ -125,13 +125,16 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         short_term_memory = await _build_short_term_memory(plan_id)
         existing_file_preview = await _maybe_read_existing_file(task.file_path)
         files_in_dir = await _list_files_in_task_directory(task)
+        dev_context = _build_dev_context(
+            short_term_memory=short_term_memory,
+            existing_file_preview=existing_file_preview,
+            files_in_dir=files_in_dir,
+        )
         code_result, prompt_tokens, completion_tokens = await generate_code(
             llm,
             task,
             plan_reasoning=payload.plan_reasoning,
-            short_term_memory="\n".join(
-                [p for p in [short_term_memory, existing_file_preview, files_in_dir] if p]
-            ),
+            short_term_memory=dev_context,
         )
 
         if prompt_tokens or completion_tokens:
@@ -410,6 +413,40 @@ async def _build_short_term_memory(plan_id: str, limit: int = 15) -> str:
             plan_id[:8],
         )
         return ""
+
+
+def _build_dev_context(
+    short_term_memory: str,
+    existing_file_preview: str,
+    files_in_dir: str,
+    max_chars: int = 2500,
+) -> str:
+    """
+    Construye un contexto compacto y estructurado para el LLM del dev_service.
+
+    - Da prioridad a los eventos recientes (short_term_memory).
+    - Añade un pequeño preview del archivo objetivo si existe.
+    - Añade un resumen de archivos del directorio de trabajo.
+    - Recorta el resultado total para mantener bajo el uso de tokens.
+    """
+    blocks: list[str] = []
+
+    stm = (short_term_memory or "").strip()
+    if stm:
+        blocks.append("RECENT EVENTS:\n" + stm[:1400])
+
+    preview = (existing_file_preview or "").strip()
+    if preview:
+        blocks.append("EXISTING FILE PREVIEW:\n" + preview[:700])
+
+    listing = (files_in_dir or "").strip()
+    if listing:
+        blocks.append("FILES IN DIRECTORY:\n" + listing[:300])
+
+    combined = "\n\n".join(blocks)
+    if len(combined) > max_chars:
+        combined = combined[:max_chars]
+    return combined or "None."
 
 
 async def _update_task_state(
