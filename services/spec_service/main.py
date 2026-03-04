@@ -297,6 +297,18 @@ async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str
                 lines.append("Other files in this plan:")
                 for fp in sibling_files[:8]:
                     lines.append(f"- {fp}")
+                lines.append("")
+
+        spec_hist = await _build_spec_history_for_file(file_path)
+        if spec_hist:
+            lines.append("Previous specs and tests for this file (truncated):")
+            lines.append(spec_hist)
+            lines.append("")
+
+        qa_hist = await _build_qa_history_for_file(file_path)
+        if qa_hist:
+            lines.append("Previous QA failures for this file (truncated):")
+            lines.append(qa_hist)
 
         return "\n".join(lines)
     except Exception:
@@ -374,4 +386,89 @@ def _infer_test_layout(file_path: str, language: str) -> str:
         )
 
     return "\n".join(f"- {h}" for h in hints)
+
+
+async def _build_spec_history_for_file(file_path: str, limit: int = 20) -> str:
+    """
+    Recupera algunas specs/tests anteriores para el mismo archivo (cualquier plan),
+    truncadas para servir como referencia ligera.
+    """
+    if http_client is None or not file_path.strip():
+        return ""
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={
+                "event_type": EventType.SPEC_GENERATED.value,
+                "limit": limit,
+            },
+        )
+        if resp.status_code != 200:
+            return ""
+        events = resp.json()
+        if not isinstance(events, list):
+            return ""
+        lines: list[str] = []
+        for ev in events:
+            payload = ev.get("payload") or {}
+            if str(payload.get("file_path", "") or "") != file_path:
+                continue
+            spec_text = str(payload.get("spec_text", "") or "")[:200].strip()
+            tests = str(payload.get("test_suggestions", "") or "")[:200].strip()
+            if spec_text:
+                lines.append(f"- SPEC: {spec_text}")
+            if tests:
+                lines.append(f"  TESTS: {tests}")
+            if len(lines) >= 4:
+                break
+        return "\n".join(lines)
+    except Exception:
+        logger.exception(
+            "Failed to build spec history context for file %s",
+            (file_path or "")[:40],
+        )
+        return ""
+
+
+async def _build_qa_history_for_file(file_path: str, limit: int = 20) -> str:
+    """
+    Recupera algunos fallos de QA anteriores para el mismo archivo, para que el
+    spec agent pueda reforzar esos casos en los tests sugeridos.
+    """
+    if http_client is None or not file_path.strip():
+        return ""
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={
+                "event_type": EventType.QA_FAILED.value,
+                "limit": limit,
+            },
+        )
+        if resp.status_code != 200:
+            return ""
+        events = resp.json()
+        if not isinstance(events, list):
+            return ""
+        lines: list[str] = []
+        for ev in events:
+            payload = ev.get("payload") or {}
+            if str(payload.get("file_path", "") or "") != file_path:
+                continue
+            issues = payload.get("issues") or []
+            if isinstance(issues, list):
+                for issue in issues:
+                    if isinstance(issue, str) and issue.strip():
+                        lines.append(f"- {issue.strip()[:200]}")
+                    if len(lines) >= 4:
+                        break
+            if len(lines) >= 4:
+                break
+        return "\n".join(lines)
+    except Exception:
+        logger.exception(
+            "Failed to build QA history context for file %s",
+            (file_path or "")[:40],
+        )
+        return ""
 

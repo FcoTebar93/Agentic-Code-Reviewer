@@ -49,6 +49,19 @@ function extractReasoning(payload: Record<string, unknown>, eventType?: string):
     if (text) return text;
   }
 
+  if (eventType === "spec.generated") {
+    const spec = payload["spec_text"];
+    const tests = payload["test_suggestions"];
+    let text = "";
+    if (typeof spec === "string" && spec.trim().length > 0) {
+      text += "SPEC:\n" + spec.trim();
+    }
+    if (typeof tests === "string" && tests.trim().length > 0) {
+      text += (text ? "\n\n" : "") + "TESTS:\n" + tests.trim();
+    }
+    if (text) return text;
+  }
+
   const r = payload["reasoning"];
   if (typeof r === "string" && r.trim().length > 0) return r.trim();
   const sr = payload["security_reasoning"];
@@ -173,11 +186,9 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
         body: JSON.stringify(evt.payload),
       });
       if (!resp.ok) {
-        // eslint-disable-next-line no-console
         console.error("Replan request failed", resp.status);
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error("Replan request error", err);
     }
   }
@@ -305,7 +316,6 @@ export function EventFeed({ events }: Props) {
   const [collapseAll, setCollapseAll] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
-  // New events appear expanded by default
   useEffect(() => {
     if (events.length === 0) return;
     setExpandedIds((prev) => {
