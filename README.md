@@ -82,6 +82,25 @@ It is designed to run **locally via Docker Compose**, while remaining flexible a
 
 ---
 
+### Plan Modes (Normal vs Save)
+
+The frontend `PlanForm` now lets you choose between two **plan generation modes**:
+
+- **Normal mode**:
+  - Default behaviour.
+  - Creates and executes a full plan immediately after you submit it.
+  - Good for day‑to‑day development workflows where you want the pipeline to start working right away.
+- **Save mode**:
+  - Generates the plan and stores it without kicking off the full execution.
+  - Useful when you want to:
+    - Review the generated plan first.
+    - Share or iterate on the plan with your team before running it.
+    - Keep a library of reusable plans for similar repositories.
+
+The selected mode is sent as part of the request from the frontend to the planning backend, and is persisted in the Memory Service together with the plan and tasks.
+
+---
+
 ### LLM Adapter & Providers
 
 The project uses a centralized LLM adapter under `shared/llm_adapter`:
@@ -103,6 +122,20 @@ The project uses a centralized LLM adapter under `shared/llm_adapter`:
   - `LLM_BASE_URL` – override base URL (used especially for `local`).
   - `LLM_MODEL` – override default model per provider.
   - `LLM_PROMPT_PRICE_PER_1K` / `LLM_COMPLETION_PRICE_PER_1K` – used only for **cost estimation** in dashboards.
+
+#### Per‑service tiering
+
+In addition to the global defaults above, each service can override its own LLM configuration via dedicated environment variables in `.env`:
+
+- `META_PLANNER_LLM_PROVIDER`
+- `DEV_LLM_PROVIDER`
+- `QA_LLM_PROVIDER`
+- `REPLANNER_LLM_PROVIDER`
+
+If any of these are not set, the service falls back to `LLM_PROVIDER` and the associated defaults. This lets you, for example, run:
+
+- A **local 7B model** for `meta_planner`, `dev_service`, and `replanner_service`.
+- A **larger 70B cloud model** for `qa_service` and `security_service`.
 
 ---
 
@@ -128,6 +161,8 @@ The design intentionally supports different models **per service**, so you can b
       - `LLM_PROVIDER=groq`
       - `LLM_MODEL=llama-3.3-70b-versatile` (or your chosen 70B model).
       - `LLM_API_KEY=<your_groq_key>`.
+
+When using per‑service tiering, keep `LLM_PROVIDER` and `LLM_MODEL` set to a **safe default** (e.g. `mock` or a local 7B) and configure `QA_LLM_PROVIDER` and `QA_LLM_MODEL` only in environments where you have access to the larger cloud model.
 
 In this configuration, the 7B local model generates and adjusts code, while the 70B model acts as a strict senior reviewer for QA and security. The QA prompts are structured so the 70B returns clear `ISSUES` and `REQUIRED_CHANGES` that the 7B simply has to follow.
 
