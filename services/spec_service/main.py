@@ -109,16 +109,34 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         task.file_path,
     )
 
+    if await _has_existing_spec(plan_id, task.task_id):
+        logger.info(
+            "Spec already exists for task %s (plan %s), skipping regeneration",
+            task.task_id[:8],
+            plan_id[:8],
+        )
+        return
+
+    if mode == "ahorro" and len((task.description or "").strip()) < 60:
+        logger.info(
+            "Skipping spec generation for simple task %s (plan %s) in ahorro mode",
+            task.task_id[:8],
+            plan_id[:8],
+        )
+        return
+
     with agent_execution_time.labels(service=SERVICE_NAME, operation="spec_gen").time():
         llm = get_llm_provider(
             provider_name=cfg.llm_provider,
             redis_url=cfg.redis_url,
         )
+        plan_context = await _build_plan_context(plan_id, task.task_id, task.file_path)
         spec_result, prompt_tokens, completion_tokens = await _generate_spec(
             llm=llm,
             description=task.description,
             file_path=task.file_path,
             language=task.language,
+            plan_context=plan_context,
         )
 
         if prompt_tokens or completion_tokens:
@@ -165,6 +183,7 @@ async def _generate_spec(
     description: str,
     file_path: str,
     language: str,
+    plan_context: str,
 ) -> tuple[dict[str, str], int, int]:
     """
     Call the LLM once to produce SPEC and TESTS sections.
@@ -174,6 +193,7 @@ async def _generate_spec(
         language=language or "python",
         description=description,
         file_path=file_path,
+        plan_context=plan_context.strip() or "None.",
     )
     response: LLMResponse = await llm.generate_text(prompt)
 
@@ -216,4 +236,106 @@ def _parse_spec_response(raw: str) -> tuple[str, str]:
                 tests_block += stripped + "\n"
 
     return spec_block.strip(), tests_block.strip()
+
+
+async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str:
+    """
+    Build a small textual context for the spec agent:
+    - Planner reasoning for this plan (if available).
+    - Other tasks/files in the same plan.
+
+    This avoids long histories while giving the LLM awareness of how this task
+    fits into the overall plan.
+    """
+    if http_client is None:
+        return ""
+
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={
+                "event_type": "plan.created",
+                "plan_id": plan_id,
+                "limit": 1,
+            },
+        )
+        if resp.status_code != 200:
+            return ""
+
+        events = resp.json()
+        if not isinstance(events, list) or not events:
+            return ""
+
+        evt = events[0]
+        payload = evt.get("payload") or {}
+        reasoning = str(payload.get("reasoning", "")).strip()[:400]
+        tasks = payload.get("tasks") or []
+
+        lines: list[str] = []
+        if reasoning:
+            lines.append("Planner reasoning (truncated):")
+            lines.append(reasoning)
+            lines.append("")
+
+        if isinstance(tasks, list) and tasks:
+            sibling_files: list[str] = []
+            for t in tasks:
+                if not isinstance(t, dict):
+                    continue
+                fp = str(t.get("file_path", "") or "")
+                tid = str(t.get("task_id", "") or "")
+                if not fp:
+                    continue
+                if tid == task_id:
+                    continue
+                sibling_files.append(fp)
+            if sibling_files:
+                lines.append("Other files in this plan:")
+                for fp in sibling_files[:8]:
+                    lines.append(f"- {fp}")
+
+        return "\n".join(lines)
+    except Exception:
+        logger.exception(
+            "Failed to build plan context for spec_service (plan %s, task %s)",
+            plan_id[:8],
+            task_id[:8],
+        )
+        return ""
+
+
+async def _has_existing_spec(plan_id: str, task_id: str, limit: int = 20) -> bool:
+    """
+    Comprueba en memory_service si ya existe un evento spec.generated para esta tarea.
+    Evita gastar tokens del LLM repitiendo trabajo.
+    """
+    global http_client
+    if http_client is None:
+        return False
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={
+                "plan_id": plan_id,
+                "event_type": EventType.SPEC_GENERATED.value,
+                "limit": limit,
+            },
+        )
+        if resp.status_code != 200:
+            return False
+        events = resp.json()
+        if not isinstance(events, list):
+            return False
+        for ev in events:
+            payload = ev.get("payload") or {}
+            if str(payload.get("task_id", "")) == task_id:
+                return True
+        return False
+    except Exception:
+        logger.exception(
+            "Error while checking existing spec for task %s (plan %s)",
+            task_id[:8],
+            plan_id[:8],
+        )
+        return False
 
