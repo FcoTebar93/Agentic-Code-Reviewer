@@ -45,7 +45,7 @@ EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "384"))
 class MemoryStore:
 
     def __init__(self, qdrant_url: str, redis_url: str) -> None:
-        self._qdrant = AsyncQdrantClient(url=qdrant_url)
+        self._qdrant = AsyncQdrantClient(url=qdrant_url, check_compatibility=False)
         self._redis = aioredis.from_url(redis_url, decode_responses=True)
         self._embed_model = os.environ.get(
             "EMBEDDING_MODEL", "text-embedding-3-small"
