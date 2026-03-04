@@ -33,6 +33,7 @@ from services.dev_service.config import DevConfig
 from services.dev_service.generator import generate_code
 from services.dev_service.tools import build_dev_tool_registry, ReadFileInput
 from shared.tools import execute_tool, ToolRegistry
+from shared.contracts.events import EventType, SpecGeneratedPayload
 
 SERVICE_NAME = "dev_service"
 event_bus: EventBus | None = None
@@ -125,10 +126,12 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         short_term_memory = await _build_short_term_memory(plan_id)
         existing_file_preview = await _maybe_read_existing_file(task.file_path)
         files_in_dir = await _list_files_in_task_directory(task)
+        spec_block = await _fetch_task_spec(plan_id, task.task_id)
         dev_context = _build_dev_context(
             short_term_memory=short_term_memory,
             existing_file_preview=existing_file_preview,
             files_in_dir=files_in_dir,
+            spec_block=spec_block,
         )
         code_result, prompt_tokens, completion_tokens = await generate_code(
             llm,
@@ -416,10 +419,69 @@ async def _build_short_term_memory(plan_id: str, limit: int = 15) -> str:
         return ""
 
 
+async def _fetch_task_spec(plan_id: str, task_id: str, limit: int = 20) -> str:
+    """
+    Fetch spec/tests for a given task from memory_service (spec.generated events).
+
+    This keeps the dev prompt informed without requiring direct coupling to
+    spec_service internals.
+    """
+    if http_client is None:
+        return ""
+
+    try:
+        resp = await http_client.get(
+            "/events",
+            params={
+                "plan_id": plan_id,
+                "event_type": EventType.SPEC_GENERATED.value,
+                "limit": limit,
+            },
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "Failed to fetch spec events for plan %s (status=%s)",
+                plan_id[:8],
+                resp.status_code,
+            )
+            return ""
+        events = resp.json()
+        if not isinstance(events, list):
+            return ""
+
+        for ev in events:
+            payload = ev.get("payload") or {}
+            try:
+                spec_payload = SpecGeneratedPayload.model_validate(payload)
+            except Exception:
+                continue
+            if spec_payload.task_id == task_id:
+                parts: list[str] = []
+                if spec_payload.spec_text.strip():
+                    parts.append(
+                        f"SPEC FOR TASK {task_id[:8]}:\n{spec_payload.spec_text.strip()}"
+                    )
+                if spec_payload.test_suggestions.strip():
+                    parts.append(
+                        "TEST SUGGESTIONS:\n"
+                        + spec_payload.test_suggestions.strip()
+                    )
+                return "\n\n".join(parts)
+        return ""
+    except Exception:
+        logger.exception(
+            "Error while fetching spec for task %s (plan %s)",
+            task_id[:8],
+            plan_id[:8],
+        )
+        return ""
+
+
 def _build_dev_context(
     short_term_memory: str,
     existing_file_preview: str,
     files_in_dir: str,
+    spec_block: str = "",
     max_chars: int = 2500,
 ) -> str:
     """
@@ -431,6 +493,10 @@ def _build_dev_context(
     - Recorta el resultado total para mantener bajo el uso de tokens.
     """
     blocks: list[str] = []
+
+    spec = (spec_block or "").strip()
+    if spec:
+        blocks.append("TASK SPEC & TESTS:\n" + spec[:700])
 
     stm = (short_term_memory or "").strip()
     if stm:

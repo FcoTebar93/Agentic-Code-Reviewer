@@ -21,6 +21,7 @@ class EventType(str, Enum):
     PLAN_CREATED = "plan.created"
     TASK_ASSIGNED = "task.assigned"
     CODE_GENERATED = "code.generated"
+    SPEC_GENERATED = "spec.generated"
     PR_REQUESTED = "pr.requested"
     PR_CREATED = "pr.created"
     PR_PENDING_APPROVAL = "pr.pending_approval"
@@ -133,7 +134,18 @@ class QAResultPayload(BaseModel):
     file_path: str
     qa_attempt: int
     reasoning: str = ""
-     mode: str = "normal"
+    mode: str = "normal"
+
+
+class SpecGeneratedPayload(BaseModel):
+    """Produced by spec_service after enriching a task with spec and tests."""
+
+    plan_id: str
+    task_id: str
+    file_path: str
+    language: str = "python"
+    spec_text: str = ""
+    test_suggestions: str = ""
 
 
 class SecurityResultPayload(BaseModel):
@@ -284,6 +296,14 @@ def qa_passed(producer: str, payload: QAResultPayload) -> BaseEvent:
 def qa_failed(producer: str, payload: QAResultPayload) -> BaseEvent:
     return BaseEvent(
         event_type=EventType.QA_FAILED,
+        producer=producer,
+        payload=payload.model_dump(),
+    )
+
+
+def spec_generated(producer: str, payload: SpecGeneratedPayload) -> BaseEvent:
+    return BaseEvent(
+        event_type=EventType.SPEC_GENERATED,
         producer=producer,
         payload=payload.model_dump(),
     )
