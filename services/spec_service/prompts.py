@@ -11,6 +11,7 @@ Input:
 - High-level task description from the planner.
 - Target file path in the repo.
 - Optional plan context (planner reasoning and related tasks).
+- Optional repo test layout hints (where tests usually live and how they are named).
 
 TASK DESCRIPTION:
 {description}
@@ -20,6 +21,9 @@ TARGET FILE:
 
 PLAN CONTEXT (if provided, summarised and possibly incomplete):
 {plan_context}
+
+REPO TEST LAYOUT (heuristic, may be approximate):
+{test_layout}
 
 Instructions:
 1. Derive a concise, concrete specification of what the code must do.

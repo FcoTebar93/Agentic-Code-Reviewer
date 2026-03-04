@@ -131,12 +131,14 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             redis_url=cfg.redis_url,
         )
         plan_context = await _build_plan_context(plan_id, task.task_id, task.file_path)
+        test_layout = _infer_test_layout(task.file_path, task.language)
         spec_result, prompt_tokens, completion_tokens = await _generate_spec(
             llm=llm,
             description=task.description,
             file_path=task.file_path,
             language=task.language,
             plan_context=plan_context,
+            test_layout=test_layout,
         )
 
         if prompt_tokens or completion_tokens:
@@ -184,6 +186,7 @@ async def _generate_spec(
     file_path: str,
     language: str,
     plan_context: str,
+    test_layout: str,
 ) -> tuple[dict[str, str], int, int]:
     """
     Call the LLM once to produce SPEC and TESTS sections.
@@ -194,6 +197,7 @@ async def _generate_spec(
         description=description,
         file_path=file_path,
         plan_context=plan_context.strip() or "None.",
+        test_layout=test_layout.strip() or "None.",
     )
     response: LLMResponse = await llm.generate_text(prompt)
 
@@ -338,4 +342,36 @@ async def _has_existing_spec(plan_id: str, task_id: str, limit: int = 20) -> boo
             plan_id[:8],
         )
         return False
+
+
+def _infer_test_layout(file_path: str, language: str) -> str:
+    """
+    Heurística ligera para sugerir rutas y convenciones de tests según el lenguaje
+    y el path del archivo, sin inspeccionar el repo.
+    """
+    lang = (language or "").lower()
+    fp = (file_path or "").replace("\\", "/")
+    name = fp.rsplit("/", 1)[-1]
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+
+    hints: list[str] = []
+
+    if lang in {"python", "py"}:
+        hints.append(
+            f"Python: tests/test_{stem}.py (pytest) o tests/{stem}/test_{stem}.py"
+        )
+    elif lang in {"javascript", "js", "typescript", "ts"}:
+        hints.append(
+            f"JS/TS: __tests__/{stem}.spec.ts(x) o tests/{stem}.test.ts(x) (Jest/Vitest)"
+        )
+    elif lang == "java":
+        hints.append(
+            "Java: src/test/java/.../<ClassName>Test.java siguiendo el paquete de src/main/java"
+        )
+    else:
+        hints.append(
+            "Sin convenciones específicas detectadas; usar el directorio de tests estándar del proyecto."
+        )
+
+    return "\n".join(f"- {h}" for h in hints)
 
