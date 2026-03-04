@@ -77,6 +77,7 @@ class TaskSpec(BaseModel):
     description: str
     file_path: str
     language: str = "python"
+    edit_scope: str = "file"
 
 
 class PlanCreatedPayload(BaseModel):

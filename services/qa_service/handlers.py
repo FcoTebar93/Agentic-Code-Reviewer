@@ -79,8 +79,6 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             )
 
         mode = getattr(payload, "mode", "normal") or "normal"
-        # Fase 1: análisis estático (cheap). Si estamos en modo ahorro y no hay
-        # issues graves, podemos aprobar sin llamar al LLM caro.
         if mode == "ahorro" and not _has_severe_static_issues(static_issues):
             auto_reason = (
                 "Aprobado en modo ahorro: los linters y herramientas de seguridad "
@@ -95,7 +93,6 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             prompt_tokens = 0
             completion_tokens = 0
         else:
-            # Fase 2: revisión LLM (strict), solo cuando es necesario.
             llm = get_llm_provider(
                 provider_name=deps.cfg.llm_provider,
                 redis_url=deps.cfg.redis_url,
@@ -104,6 +101,14 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             repo_context = await _build_repo_context(
                 payload.file_path, payload.code, deps
             )
+            patterns_context = await _build_failure_patterns_context(
+                payload.file_path, deps
+            )
+            if patterns_context:
+                if repo_context:
+                    repo_context = repo_context + "\n\n" + patterns_context
+                else:
+                    repo_context = patterns_context
             qa_context = _build_qa_context(
                 short_term_memory=short_term_memory,
                 repo_context=repo_context,
@@ -231,6 +236,7 @@ async def _retry_task(
         description=f"Fix the following issues in {original.file_path}:\n{feedback}",
         file_path=original.file_path,
         language=original.language,
+        edit_scope="file",
     )
     retry_payload = TaskAssignedPayload(
         plan_id=original.plan_id,
@@ -466,6 +472,58 @@ async def _build_repo_context(
             if isinstance(m, dict)
         ]
         return "Related usages in repo (search_in_repo):\n" + "\n".join(lines)
+    except Exception:
+        return ""
+
+
+async def _build_failure_patterns_context(
+    file_path: str,
+    deps: QADeps,
+) -> str:
+    """
+    Usa la herramienta failure_patterns para recuperar patrones históricos
+    de fallos en módulos cercanos al archivo que estamos revisando.
+    """
+    if not deps.tool_registry or not (file_path or "").strip():
+        return ""
+    directory = (
+        file_path.replace("\\", "/").rsplit("/", 1)[0]
+        if "/" in file_path.replace("\\", "/")
+        else ""
+    )
+    try:
+        result = await execute_tool(
+            deps.tool_registry,
+            "failure_patterns",
+            {"module_prefix": directory or None, "limit": 200},
+        )
+        if not result.success:
+            return ""
+        payload = result.output or {}
+        patterns = payload.get("patterns") or []
+        if not isinstance(patterns, list) or not patterns:
+            return ""
+        lines: list[str] = []
+        for p in patterns[:3]:
+            if not isinstance(p, dict):
+                continue
+            module = str(p.get("module", ""))
+            qa_n = int(p.get("qa_failed", 0) or 0)
+            sec_n = int(p.get("security_blocked", 0) or 0)
+            pieces = []
+            if qa_n:
+                pieces.append(f"QA_FAILED x{qa_n}")
+            if sec_n:
+                pieces.append(f"SEC_BLOCKED x{sec_n}")
+            if not pieces:
+                continue
+            lines.append(f"- {module}: " + ", ".join(pieces))
+        if not lines:
+            return ""
+        return (
+            "Historical failure patterns near this module "
+            "(aggregated qa.failed/security.blocked):\n" + "\n".join(lines)
+        )
     except Exception:
         return ""
 

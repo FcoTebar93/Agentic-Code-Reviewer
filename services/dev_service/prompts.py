@@ -28,6 +28,8 @@ Instructions:
 3. Write complete, production-quality {language} code.
 4. If the SHORT-TERM MEMORY mentions previous QA or security failures, explicitly address each listed issue
    and adjust your implementation so it complies with the QA and security rules referenced there.
+5. If this task was created as a QA retry or patch, haz solo los cambios mínimos necesarios para corregir
+   los problemas indicados, manteniendo intacto el resto del archivo siempre que sea posible.
 
 Format your response EXACTLY as:
 REASONING: <2-4 sentences that (a) acknowledge the planner's analysis, (b) explain your implementation decisions>

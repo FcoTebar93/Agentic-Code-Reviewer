@@ -38,6 +38,7 @@ async def generate_code(
     short_term_memory: str = "",
 ) -> tuple[CodeResult, int, int]:
     """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
+    is_patch_like = getattr(task, "edit_scope", "file") != "file"
     if plan_reasoning.strip():
         prompt = CODE_GEN_PROMPT.format(
             language=task.language,
