@@ -12,6 +12,7 @@ export function PlanForm() {
   const [prompt, setPrompt] = useState("");
   const [projectName, setProjectName] = useState("my-project");
   const [repoUrl, setRepoUrl] = useState("");
+  const [mode, setMode] = useState<"normal" | "save">("normal");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export function PlanForm() {
       if (repoUrl.trim()) {
         body.repo_url = repoUrl.trim();
       }
+      body.mode = mode === "save" ? "ahorro" : "normal";
 
       const resp = await fetch(`${HTTP_URL}/api/plan`, {
         method: "POST",
@@ -73,6 +75,20 @@ export function PlanForm() {
             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-indigo-500"
             placeholder="my-project"
           />
+        </div>
+
+        <div>
+          <label className="block text-slate-500 text-xs font-mono mb-1">
+            Mode
+          </label>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as "normal" | "save")}
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-xs font-mono focus:outline-none focus:border-indigo-500"
+          >
+            <option value="normal">normal (más contexto, más tokens)</option>
+            <option value="save">ahorro (contexto reducido, menos tokens)</option>
+          </select>
         </div>
 
         <div>

@@ -68,6 +68,7 @@ class PlanRequestedPayload(BaseModel):
     user_prompt: str
     project_name: str
     repo_url: str = ""
+    mode: str = "normal"
 
 
 class TaskSpec(BaseModel):
@@ -82,6 +83,7 @@ class PlanCreatedPayload(BaseModel):
     original_prompt: str
     tasks: list[TaskSpec]
     reasoning: str = ""
+    mode: str = "normal"
 
 
 class TaskAssignedPayload(BaseModel):

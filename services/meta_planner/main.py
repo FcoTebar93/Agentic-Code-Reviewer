@@ -81,7 +81,6 @@ def _summarise_planner_memory(
     lines: list[str] = []
 
     if semantic_results:
-        # Contadores por tipo de evento para tener una vista agregada.
         type_counts: dict[str, int] = {}
         for item in semantic_results:
             payload = item.get("payload") or {}
@@ -98,7 +97,6 @@ def _summarise_planner_memory(
                 "Semantic history summary: " + "; ".join(summary_parts)
             )
 
-        # Añadimos 2–3 ejemplos cortos con texto truncado.
         for item in semantic_results[:3]:
             payload = item.get("payload") or {}
             score = item.get("heuristic_score", item.get("score", 0.0))
@@ -171,6 +169,7 @@ class PlanRequest(BaseModel):
     prompt: str
     project_name: str = "default"
     repo_url: str = ""
+    mode: str = "normal"
 
 
 class PlanResponse(BaseModel):
@@ -198,7 +197,12 @@ async def create_plan(req: PlanRequest):
             del _plan_idem_cache[key]
 
     try:
-        result = await _execute_plan(req.prompt, req.project_name, req.repo_url)
+        result = await _execute_plan(
+            req.prompt,
+            req.project_name,
+            req.repo_url,
+            mode=req.mode or "normal",
+        )
         _plan_idem_cache[key] = (result["plan_id"], result, now)
         return result
     except Exception as e:
@@ -234,6 +238,7 @@ async def _execute_plan(
     project_name: str,
     repo_url: str,
     forced_plan_id: str | None = None,
+    mode: str = "normal",
 ) -> dict:
     with agent_execution_time.labels(service=SERVICE_NAME, operation="plan").time():
         llm = get_llm_provider(provider_name=cfg.llm_provider)
@@ -256,10 +261,12 @@ async def _execute_plan(
             )
 
         plan_payload = PlanCreatedPayload(
-            plan_id=forced_plan_id or PlanCreatedPayload.model_fields["plan_id"].default_factory(),
+            plan_id=forced_plan_id
+            or PlanCreatedPayload.model_fields["plan_id"].default_factory(),
             original_prompt=prompt,
             tasks=task_specs,
             reasoning=plan_result.reasoning,
+            mode=mode or "normal",
         )
         plan_event = plan_created(SERVICE_NAME, plan_payload)
         plan_id = plan_payload.plan_id
@@ -336,6 +343,7 @@ async def _consume_plan_requests() -> None:
             payload.user_prompt,
             payload.project_name,
             payload.repo_url,
+            mode=getattr(payload, "mode", "normal") or "normal",
         )
 
     await event_bus.subscribe(
@@ -444,6 +452,7 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
         project_name="default",
         repo_url=repo_url or "",
         forced_plan_id=new_plan_id,
+        mode="normal",
     )
     _replans_per_original_plan[original_plan_id] = current_replans + 1
 
@@ -534,7 +543,6 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
         return ""
 
     try:
-        # 1) Memoria semántica enfocada en planes previos, conclusiones y fallos.
         result = await execute_tool(
             tool_registry,
             "semantic_search_memory",
@@ -558,7 +566,6 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
         elif not result.success:
             logger.warning("Semantic search tool failed: %s", result.error)
 
-        # 2) Eventos recientes crudos como respaldo (límite pequeño).
         events_list: list[dict] = []
         events_result = await execute_tool(
             tool_registry,
