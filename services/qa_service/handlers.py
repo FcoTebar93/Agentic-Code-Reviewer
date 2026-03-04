@@ -78,25 +78,48 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 "security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
             )
 
-        llm = get_llm_provider(provider_name=deps.cfg.llm_provider, redis_url=deps.cfg.redis_url)
-        short_term_memory = await _build_short_term_memory(plan_id, deps, limit=15)
-        repo_context = await _build_repo_context(
-            payload.file_path, payload.code, deps
-        )
-        qa_context = _build_qa_context(
-            short_term_memory=short_term_memory,
-            repo_context=repo_context,
-        )
-        result, prompt_tokens, completion_tokens = await review_code(
-            llm=llm,
-            code=payload.code,
-            file_path=payload.file_path,
-            language=payload.language,
-            task_description=f"Generate {payload.language} code for {payload.file_path}",
-            dev_reasoning=dev_reasoning,
-            short_term_memory=qa_context,
-            static_analysis_report=static_report,
-        )
+        mode = getattr(payload, "mode", "normal") or "normal"
+        # Fase 1: análisis estático (cheap). Si estamos en modo ahorro y no hay
+        # issues graves, podemos aprobar sin llamar al LLM caro.
+        if mode == "ahorro" and not _has_severe_static_issues(static_issues):
+            auto_reason = (
+                "Aprobado en modo ahorro: los linters y herramientas de seguridad "
+                "no han encontrado problemas de severidad alta. Se permite PASS sin "
+                "ejecutar la revisión LLM completa."
+            )
+            result = ReviewResult(
+                passed=True,
+                issues=static_issues,
+                reasoning=auto_reason,
+            )
+            prompt_tokens = 0
+            completion_tokens = 0
+        else:
+            # Fase 2: revisión LLM (strict), solo cuando es necesario.
+            llm = get_llm_provider(
+                provider_name=deps.cfg.llm_provider,
+                redis_url=deps.cfg.redis_url,
+            )
+            short_term_memory = await _build_short_term_memory(plan_id, deps, limit=15)
+            repo_context = await _build_repo_context(
+                payload.file_path, payload.code, deps
+            )
+            qa_context = _build_qa_context(
+                short_term_memory=short_term_memory,
+                repo_context=repo_context,
+            )
+            result, prompt_tokens, completion_tokens = await review_code(
+                llm=llm,
+                code=payload.code,
+                file_path=payload.file_path,
+                language=payload.language,
+                task_description=(
+                    f"Generate {payload.language} code for {payload.file_path}"
+                ),
+                dev_reasoning=dev_reasoning,
+                short_term_memory=qa_context,
+                static_analysis_report=static_report,
+            )
 
     if prompt_tokens or completion_tokens:
         tok_event = metrics_tokens_used(
@@ -126,6 +149,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         file_path=payload.file_path,
         qa_attempt=payload.qa_attempt,
         reasoning=result.reasoning,
+        mode=getattr(payload, "mode", "normal"),
     )
 
     if result.passed:
@@ -212,6 +236,7 @@ async def _retry_task(
         plan_id=original.plan_id,
         task=retry_spec,
         qa_feedback=feedback,
+        mode=getattr(original, "mode", "normal"),
     )
     retry_event = task_assigned("qa_service", retry_payload)
     await deps.event_bus.publish(retry_event)
@@ -641,4 +666,19 @@ def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
         )
 
     return header + "\nEjemplos:\n" + "\n".join(examples)
+
+
+def _has_severe_static_issues(issues: list[str]) -> bool:
+    """
+    Heurística simple para detectar issues \"graves\" a partir del texto de
+    los linters/semgrep/bandit: buscamos palabras clave de severidad alta.
+    """
+    if not issues:
+        return False
+    severe_keywords = ("HIGH", "CRITICAL", "BLOCKER", "ERROR")
+    for issue in issues:
+        upper = issue.upper()
+        if any(kw in upper for kw in severe_keywords):
+            return True
+    return False
 

@@ -302,6 +302,7 @@ async def _execute_plan(
                 task=spec,
                 repo_url=repo_url,
                 plan_reasoning=plan_result.reasoning,
+                mode=plan_payload.mode,
             )
             ta_event = task_assigned(SERVICE_NAME, ta_payload)
             await event_bus.publish(ta_event)

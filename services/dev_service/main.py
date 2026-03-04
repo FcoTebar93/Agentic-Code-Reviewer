@@ -181,6 +181,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             language=task.language,
             qa_attempt=current_attempt,
             reasoning=combined_reasoning,
+            mode=getattr(payload, "mode", "normal"),
         )
         step_delay = float(cfg.step_delay)
         if step_delay > 0:

@@ -92,6 +92,7 @@ class TaskAssignedPayload(BaseModel):
     qa_feedback: str = ""
     repo_url: str = ""
     plan_reasoning: str = ""
+    mode: str = "normal"
 
 
 class CodeGeneratedPayload(BaseModel):
@@ -102,6 +103,7 @@ class CodeGeneratedPayload(BaseModel):
     language: str = "python"
     qa_attempt: int = 0
     reasoning: str = ""
+    mode: str = "normal"
 
 
 class PRRequestedPayload(BaseModel):
@@ -131,6 +133,7 @@ class QAResultPayload(BaseModel):
     file_path: str
     qa_attempt: int
     reasoning: str = ""
+     mode: str = "normal"
 
 
 class SecurityResultPayload(BaseModel):
