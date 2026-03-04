@@ -78,6 +78,10 @@ class TaskSpec(BaseModel):
     file_path: str
     language: str = "python"
     edit_scope: str = "file"
+     # group_id can represent a module/component (e.g. "services/dev_service/api").
+     # epic_id can represent a higher-level feature/epic across multiple groups.
+     group_id: str = ""
+     epic_id: str = ""
 
 
 class PlanCreatedPayload(BaseModel):
@@ -203,6 +207,7 @@ class PlanRevisionPayload(BaseModel):
     summary: str = ""
     suggestions: list[str] = Field(default_factory=list)
     severity: str = "medium"
+    target_group_ids: list[str] = Field(default_factory=list)
 
 
 class TokensUsedPayload(BaseModel):

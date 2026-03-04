@@ -33,6 +33,23 @@ http_client: httpx.AsyncClient | None = None
 cfg: ReplannerConfig | None = None
 tool_registry: ToolRegistry | None = None
 
+def _infer_group_id(file_path: str) -> str:
+    """
+    Deriva un identificador de grupo/módulo a partir del file_path.
+
+    Mantiene la misma heurística que el meta_planner para poder alinear
+    las decisiones de replanning con los grupos de tareas originales.
+    """
+    norm = (file_path or "").replace("\\", "/").strip()
+    if not norm:
+        return "root"
+    parts = norm.split("/")
+    if len(parts) >= 3:
+        return "/".join(parts[:3])
+    if len(parts) >= 2:
+        return "/".join(parts[:2])
+    return norm
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -135,6 +152,12 @@ async def _analyse_and_emit_revision(
     if cfg is None:
         return
 
+    target_group_ids: list[str] = []
+    if isinstance(outcome, QAResultPayload):
+        fp = (outcome.file_path or "").strip()
+        if fp:
+            target_group_ids.append(_infer_group_id(fp))
+
     with agent_execution_time.labels(
         service=SERVICE_NAME, operation=f"replan_{outcome_type}"
     ).time():
@@ -183,6 +206,7 @@ async def _analyse_and_emit_revision(
         ),
         suggestions=result.suggestions,
         severity=result.severity,
+        target_group_ids=target_group_ids,
     )
     event = plan_revision_suggested(SERVICE_NAME, revision_payload)
     await event_bus.publish(event)

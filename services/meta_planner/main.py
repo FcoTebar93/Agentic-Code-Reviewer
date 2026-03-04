@@ -62,6 +62,24 @@ _MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN = int(
 _replans_per_original_plan: dict[str, int] = {}
 
 
+def _infer_group_id(file_path: str) -> str:
+    """
+    Agrupa tareas por módulo aproximado a partir del file_path.
+
+    Se usa tanto en el plan original como en replannings para poder
+    limitar revisiones a subconjuntos coherentes de archivos.
+    """
+    norm = (file_path or "").replace("\\", "/").strip()
+    if not norm:
+        return "root"
+    parts = norm.split("/")
+    if len(parts) >= 3:
+        return "/".join(parts[:3])
+    if len(parts) >= 2:
+        return "/".join(parts[:2])
+    return norm
+
+
 def _summarise_planner_memory(
     semantic_results: list[dict] | None,
     events: list[dict] | None,
@@ -252,6 +270,12 @@ async def _execute_plan(
             if spec.file_path in seen_paths:
                 continue
             seen_paths.add(spec.file_path)
+            gid = (getattr(spec, "group_id", "") or "").strip()
+            if not gid:
+                try:
+                    spec.group_id = _infer_group_id(spec.file_path)
+                except Exception:
+                    spec.group_id = "root"
             task_specs.append(spec)
         if len(task_specs) < len(plan_result.tasks):
             logger.info(
@@ -426,6 +450,15 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
         f"and suggested revising the plan.",
         f"Severity: {payload.severity or 'medium'}",
     ]
+    target_groups = getattr(payload, "target_group_ids", []) or []
+    if target_groups:
+        augmented_prompt_lines.append("Scope limitation:")
+        augmented_prompt_lines.append(
+            "Only replan the following modules/groups; keep the rest of the project "
+            "and tasks unchanged as much as possible:"
+        )
+        for g in target_groups:
+            augmented_prompt_lines.append(f"- {g}")
     if payload.reason:
         augmented_prompt_lines.append(f"Replanner reason: {payload.reason}")
     if original_reasoning:
