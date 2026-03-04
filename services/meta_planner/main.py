@@ -236,7 +236,7 @@ async def _execute_plan(
     forced_plan_id: str | None = None,
 ) -> dict:
     with agent_execution_time.labels(service=SERVICE_NAME, operation="plan").time():
-        llm = get_llm_provider()
+        llm = get_llm_provider(provider_name=cfg.llm_provider)
         memory_context = await _fetch_memory_context(prompt)
         plan_result, prompt_tokens, completion_tokens = await decompose_tasks(
             llm, prompt, memory_context=memory_context

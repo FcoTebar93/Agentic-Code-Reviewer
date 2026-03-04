@@ -138,7 +138,7 @@ async def _analyse_and_emit_revision(
     with agent_execution_time.labels(
         service=SERVICE_NAME, operation=f"replan_{outcome_type}"
     ).time():
-        llm = get_llm_provider()
+        llm = get_llm_provider(provider_name=cfg.llm_provider)
         memory_context = await _fetch_memory_context(plan_id)
 
         result, prompt_tokens, completion_tokens = await analyse_outcome(

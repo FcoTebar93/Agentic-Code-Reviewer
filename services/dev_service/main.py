@@ -121,7 +121,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     with agent_execution_time.labels(service=SERVICE_NAME, operation="code_gen").time():
         await _update_task_state(task.task_id, plan_id, "in_progress")
 
-        llm = get_llm_provider()
+        llm = get_llm_provider(provider_name=cfg.llm_provider, redis_url=cfg.redis_url)
         short_term_memory = await _build_short_term_memory(plan_id)
         existing_file_preview = await _maybe_read_existing_file(task.file_path)
         files_in_dir = await _list_files_in_task_directory(task)

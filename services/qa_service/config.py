@@ -38,7 +38,7 @@ class QAConfig:
         return cls(
             rabbitmq_url=os.environ["RABBITMQ_URL"],
             memory_service_url=os.environ["MEMORY_SERVICE_URL"],
-            llm_provider=os.environ.get("LLM_PROVIDER", "mock"),
+            llm_provider=os.environ.get("QA_LLM_PROVIDER", os.environ.get("LLM_PROVIDER", "mock")),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
             max_qa_retries=int(os.environ.get("MAX_QA_RETRIES", "2")),
             redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),

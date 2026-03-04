@@ -20,7 +20,10 @@ class PlannerConfig:
         return cls(
             rabbitmq_url=os.environ["RABBITMQ_URL"],
             memory_service_url=os.environ["MEMORY_SERVICE_URL"],
-            llm_provider=os.environ.get("LLM_PROVIDER", "mock"),
+            llm_provider=os.environ.get(
+                "META_PLANNER_LLM_PROVIDER",
+                os.environ.get("LLM_PROVIDER", "mock"),
+            ),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
             agent_name=os.environ.get("AGENT_NAME", "meta_planner"),
             agent_goal=os.environ.get(

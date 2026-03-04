@@ -71,24 +71,21 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             deps=deps,
         )
         if static_issues:
-            issues_list = "\n".join(f"- {issue}" for issue in static_issues)
-            static_report = (
-                "Static analysis tools reported the following issues and warnings:\n"
-                f"{issues_list}"
-            )
+            static_report = _summarise_static_report(static_issues)
         else:
             static_report = (
                 "No static analysis issues or warnings were reported by linters or "
                 "security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
             )
 
-        llm = get_llm_provider()
+        llm = get_llm_provider(provider_name=deps.cfg.llm_provider, redis_url=deps.cfg.redis_url)
         short_term_memory = await _build_short_term_memory(plan_id, deps, limit=15)
         repo_context = await _build_repo_context(
             payload.file_path, payload.code, deps
         )
-        memory_with_repo = "\n".join(
-            [p for p in [short_term_memory, repo_context] if p]
+        qa_context = _build_qa_context(
+            short_term_memory=short_term_memory,
+            repo_context=repo_context,
         )
         result, prompt_tokens, completion_tokens = await review_code(
             llm=llm,
@@ -97,7 +94,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             language=payload.language,
             task_description=f"Generate {payload.language} code for {payload.file_path}",
             dev_reasoning=dev_reasoning,
-            short_term_memory=memory_with_repo,
+            short_term_memory=qa_context,
             static_analysis_report=static_report,
         )
 
@@ -378,6 +375,34 @@ async def _build_short_term_memory(
         return ""
 
 
+def _build_qa_context(
+    short_term_memory: str,
+    repo_context: str,
+    max_chars: int = 2500,
+) -> str:
+    """
+    Construye un contexto compacto y estructurado para el LLM de QA.
+
+    - Da prioridad a la memoria reciente del plan.
+    - Añade un pequeño bloque con usos relacionados en el repositorio.
+    - Recorta el resultado para mantener bajo el uso de tokens.
+    """
+    blocks: list[str] = []
+
+    stm = (short_term_memory or "").strip()
+    if stm:
+        blocks.append("MEMORIA RECIENTE DEL PLAN:\n" + stm[:1800])
+
+    repo = (repo_context or "").strip()
+    if repo:
+        blocks.append("CONTEXTO DEL REPOSITORIO:\n" + repo[:500])
+
+    combined = "\n\n".join(blocks)
+    if len(combined) > max_chars:
+        combined = combined[:max_chars]
+    return combined or "None."
+
+
 async def _build_repo_context(
     file_path: str,
     code: str,
@@ -581,4 +606,39 @@ async def _run_static_lint(
             deps.logger.exception("Error while running semgrep_scan tool")
 
     return formatted
+
+
+def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
+    """
+    Resume la salida de linters/herramientas estáticas para el prompt de QA.
+
+    - Agrupa por origen (ruff, bandit, semgrep, eslint, javac, etc.).
+    - Devuelve un resumen corto con contadores y algunos ejemplos, en lugar de
+      volcar todas las líneas, para reducir tokens.
+    """
+    if not issues:
+        return (
+            "No static analysis issues or warnings were reported by linters or "
+            "security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
+        )
+
+    by_source: dict[str, int] = {}
+    for issue in issues:
+        prefix = issue.split("]", 1)[0] if issue.startswith("[") else issue.split(" ", 1)[0]
+        by_source[prefix] = by_source.get(prefix, 0) + 1
+
+    summary_parts = [f"{src} x{count}" for src, count in sorted(by_source.items())]
+    header = "Static analysis tools reported the following issues and warnings:\n"
+    header += "Resumen por origen: " + "; ".join(summary_parts)
+
+    examples: list[str] = []
+    for idx, issue in enumerate(issues[:max_examples], start=1):
+        examples.append(f"{idx}. {issue}")
+
+    if len(issues) > max_examples:
+        examples.append(
+            f"... y {len(issues) - max_examples} issue(s) adicionales no listados aquí."
+        )
+
+    return header + "\nEjemplos:\n" + "\n".join(examples)
 
