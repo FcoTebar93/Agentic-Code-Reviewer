@@ -6,6 +6,7 @@ export type EventType =
   | "plan.created"
   | "task.assigned"
   | "code.generated"
+  | "spec.generated"
   | "pr.requested"
   | "pr.created"
   | "pr.pending_approval"
@@ -54,6 +55,7 @@ export const PRODUCER_FOR_EVENT: Record<EventType, string> = {
   "plan.created": "meta_planner",
   "task.assigned": "meta_planner",
   "code.generated": "dev_service",
+  "spec.generated": "spec_service",
   "pr.requested": "qa_service",
   "pr.created": "github_service",
   "pr.pending_approval": "gateway_service",
@@ -74,6 +76,7 @@ export const EVENT_COLORS: Record<EventType, string> = {
   "plan.created": "#3b82f6",
   "task.assigned": "#8b5cf6",
   "code.generated": "#f59e0b",
+  "spec.generated": "#22c55e",
   "pr.requested": "#06b6d4",
   "pr.created": "#10b981",
   "pr.pending_approval": "#f97316",
@@ -94,6 +97,7 @@ export const EVENT_LABELS: Record<EventType, string> = {
   "plan.created": "Plan Created",
   "task.assigned": "Task Assigned",
   "code.generated": "Code Generated",
+  "spec.generated": "Spec Generated",
   "pr.requested": "PR Requested",
   "pr.created": "PR Created",
   "pr.pending_approval": "Awaiting Human Approval",
