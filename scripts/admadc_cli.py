@@ -14,6 +14,16 @@ Usage:
 
 Environment:
   ADMADC_GATEWAY_URL  Base URL for the gateway (default: http://localhost:8080)
+
+Config file (optional, for profiles):
+  ~/.admadc/config.json
+    {
+      "default_profile": "local",
+      "profiles": {
+        "local":  { "base": "http://localhost:8080" },
+        "staging": { "base": "https://staging-gateway.example.com" }
+      }
+    }
 """
 
 from __future__ import annotations
@@ -34,6 +44,7 @@ except ImportError:
     sys.exit(1)
 
 DEFAULT_BASE = os.environ.get("ADMADC_GATEWAY_URL", "http://localhost:8080")
+CONFIG_PATH = os.path.expanduser("~/.admadc/config.json")
 
 
 def _get_client(base: str, timeout: float = 30.0) -> httpx.Client:
@@ -54,11 +65,63 @@ def _build_ws_url(base: str) -> str:
     return urlunparse((scheme, parsed.netloc, path, "", "", ""))
 
 
+def _load_base_from_profile(profile: str | None, base_arg: str | None) -> str:
+    """
+    Resolve the final base URL combining, in order:
+    - --profile (if provided)
+    - ~/.admadc/config.json
+    - --base
+    - DEFAULT_BASE
+    """
+    if not profile:
+        return (base_arg or DEFAULT_BASE).rstrip("/")
+
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        print(
+            f"[profiles] Config file {CONFIG_PATH} not found. "
+            "Using --base or ADMADC_GATEWAY_URL instead.",
+            file=sys.stderr,
+        )
+        return (base_arg or DEFAULT_BASE).rstrip("/")
+    except Exception as exc:
+        print(
+            f"[profiles] Could not read {CONFIG_PATH}: {exc}. "
+            "Using --base or ADMADC_GATEWAY_URL instead.",
+            file=sys.stderr,
+        )
+        return (base_arg or DEFAULT_BASE).rstrip("/")
+
+    profiles = cfg.get("profiles") or {}
+    profile_cfg = profiles.get(profile)
+    if not isinstance(profile_cfg, dict) or "base" not in profile_cfg:
+        print(
+            f"[profiles] Profile '{profile}' not found or missing 'base' in {CONFIG_PATH}. "
+            "Using --base or ADMADC_GATEWAY_URL instead.",
+            file=sys.stderr,
+        )
+        return (base_arg or DEFAULT_BASE).rstrip("/")
+
+    base = str(profile_cfg.get("base") or "").strip()
+    if not base:
+        print(
+            f"[profiles] Profile '{profile}' has empty 'base' in {CONFIG_PATH}. "
+            "Using --base or ADMADC_GATEWAY_URL instead.",
+            file=sys.stderr,
+        )
+        return (base_arg or DEFAULT_BASE).rstrip("/")
+
+    print(f"[profiles] Using profile '{profile}' with base={base}", file=sys.stderr)
+    return base.rstrip("/")
+
+
 def _build_service_url(base: str, port: int) -> str:
     """
     Build a service URL (http://host:port) reusing the host/scheme from the gateway base URL.
 
-    This asume el despliegue por defecto de docker-compose (puertos 8001..8007, 8003, 8004, 8005, 8006).
+    This assumes the default docker-compose deployment (ports 8001..8007, 8003, 8004, 8005, 8006).
     """
     parsed = urlparse(base)
     host = parsed.hostname or "localhost"
@@ -166,11 +229,60 @@ def cmd_metrics(base: str, plan_id: str, watch: bool = False, interval: float = 
             time.sleep(interval)
 
 
-def cmd_approvals(base: str) -> None:
+def cmd_approvals(
+    base: str,
+    plan_id: str | None = None,
+    auto_approve: bool = False,
+) -> None:
     with _get_client(base) as client:
         r = client.get("/api/approvals")
         r.raise_for_status()
-        print(json.dumps(r.json(), indent=2))
+        data = r.json()
+
+        pending = data.get("pending", [])
+        if not isinstance(pending, list):
+            pending = []
+
+        if plan_id:
+            pending = [
+                a for a in pending if str(a.get("plan_id", "")) == plan_id
+            ]
+
+        if not auto_approve:
+            out = {
+                "pending": pending,
+                "count": len(pending),
+            }
+            print(json.dumps(out, indent=2))
+            return
+
+        if not pending:
+            print("# No pending approvals match the current filter.", file=sys.stderr)
+            return
+
+        print(
+            f"# Auto-approving {len(pending)} pending approval(s)"
+            + (f" for plan_id={plan_id}" if plan_id else "")
+            + "...",
+            file=sys.stderr,
+        )
+
+        for a in pending:
+            approval_id = a.get("approval_id") or a.get("id")
+            if not approval_id:
+                continue
+            try:
+                ar = client.post(f"/api/approvals/{approval_id}/approve")
+                ar.raise_for_status()
+                print(
+                    f"approved {approval_id}: "
+                    f"{json.dumps(ar.json(), ensure_ascii=False)}"
+                )
+            except Exception as exc:
+                print(
+                    f"[auto-approve] error approving {approval_id}: {exc}",
+                    file=sys.stderr,
+                )
 
 
 def cmd_approve(base: str, approval_id: str) -> None:
@@ -196,7 +308,7 @@ def cmd_replan(base: str, payload: dict) -> None:
 
 def cmd_health(base: str) -> None:
     """
-    Consultar /health del gateway y de los servicios principales (puertos por defecto).
+    Query /health for the gateway and core services (default ports).
     """
     services = {
         "gateway": base.rstrip("/"),
@@ -209,7 +321,7 @@ def cmd_health(base: str) -> None:
         "replanner_service": _build_service_url(base, 8007),
     }
 
-    print("# Health check de servicios (usando esquema/host de ADMADC_GATEWAY_URL)\n")
+    print("# Health check for services (reusing scheme/host from ADMADC_GATEWAY_URL)\n")
 
     for name, url in services.items():
         health_url = f"{url}/health"
@@ -226,11 +338,11 @@ def cmd_health(base: str) -> None:
 
 def cmd_doctor(base: str) -> None:
     """
-    Comprobación rápida de salud de la plataforma.
+    Quick health diagnostic for the platform.
 
-    - Muestra la URL base usada.
-    - Muestra el estado del gateway (/api/status).
-    - Llama a cmd_health para consultar /health de los servicios.
+    - Prints the effective gateway base URL.
+    - Shows gateway status (/api/status).
+    - Runs cmd_health for /health on the core services.
     """
     print(f"# ADMADC doctor\n# Gateway base: {base}\n")
 
@@ -241,9 +353,9 @@ def cmd_doctor(base: str) -> None:
             r.raise_for_status()
             print(json.dumps(r.json(), indent=2))
     except Exception as exc:
-        print(f"[doctor] No se pudo consultar /api/status en {base}: {exc}\n", file=sys.stderr)
+        print(f"[doctor] Could not query /api/status on {base}: {exc}\n", file=sys.stderr)
 
-    print("\n## Servicios /health\n")
+    print("\n## Services /health\n")
     cmd_health(base)
 
 
@@ -279,10 +391,10 @@ async def _watch_plan_async(
     ws_url = _build_ws_url(base)
     filt_types = [t.strip() for t in (event_types or []) if t.strip()]
 
-    print(f"# Conectando a WebSocket {ws_url} para plan {plan_id}...", file=sys.stderr)
+    print(f"# Connecting to WebSocket {ws_url} for plan {plan_id}...", file=sys.stderr)
 
     async with websockets.connect(ws_url) as ws:
-        print("# Conectado. Ctrl+C para salir.\n", file=sys.stderr)
+        print("# Connected. Press Ctrl+C to exit.\n", file=sys.stderr)
         while True:
             msg = await ws.recv()
             try:
@@ -329,8 +441,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--base",
-        default=DEFAULT_BASE,
-        help="Gateway base URL (default: env ADMADC_GATEWAY_URL or http://localhost:8080)",
+        default=None,
+        help="Gateway base URL (default: profile base, then env ADMADC_GATEWAY_URL or http://localhost:8080)",
+    )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help=f"Named profile from {CONFIG_PATH} (e.g. local, staging, prod)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -346,12 +463,12 @@ def main() -> None:
         "--mode",
         choices=["normal", "ahorro"],
         default="normal",
-        help="normal = full context; ahorro = reduced tokens",
+        help="normal = full context; 'ahorro' = reduced-token (save) mode",
     )
     p_plan.add_argument(
         "--watch",
         action="store_true",
-        help="Tras crear el plan, seguir sus eventos en tiempo real (WebSocket)",
+        help="After creating the plan, stream its events in real time (WebSocket)",
     )
 
     p_events = sub.add_parser("events", help="List recent events (GET /api/events)")
@@ -387,7 +504,18 @@ def main() -> None:
         help="Seconds between metrics refreshes when using --watch (default: 5.0)",
     )
 
-    sub.add_parser("approvals", help="List pending human approvals")
+    p_approvals = sub.add_parser("approvals", help="List (and optionally auto-approve) pending human approvals")
+    p_approvals.add_argument(
+        "--plan-id",
+        default=None,
+        help="Filter pending approvals by plan_id",
+    )
+    p_approvals.add_argument(
+        "--auto-approve",
+        action="store_true",
+        help="Approve all pending approvals matching the optional filters",
+    )
+
     p_approve = sub.add_parser("approve", help="Approve a PR (human-in-the-loop)")
     p_approve.add_argument("approval_id", help="Approval ID from /api/approvals")
     p_reject = sub.add_parser("reject", help="Reject a PR (human-in-the-loop)")
@@ -427,7 +555,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    base = args.base
+    base = _load_base_from_profile(getattr(args, "profile", None), args.base)
 
     if args.command == "status":
         cmd_status(base)
@@ -455,7 +583,7 @@ def main() -> None:
                     )
                 )
             except KeyboardInterrupt:
-                print("\n# watch-plan terminado por el usuario", file=sys.stderr)
+                print("\n# watch-plan stopped by user", file=sys.stderr)
     elif args.command == "events":
         cmd_events(base, limit=args.limit, plan_id=args.plan_id, event_type=args.event_type)
     elif args.command == "tasks":
@@ -463,7 +591,11 @@ def main() -> None:
     elif args.command == "metrics":
         cmd_metrics(base, args.plan_id, watch=args.watch, interval=args.interval)
     elif args.command == "approvals":
-        cmd_approvals(base)
+        cmd_approvals(
+            base,
+            plan_id=getattr(args, "plan_id", None),
+            auto_approve=getattr(args, "auto_approve", False),
+        )
     elif args.command == "approve":
         cmd_approve(base, args.approval_id)
     elif args.command == "reject":
@@ -487,7 +619,7 @@ def main() -> None:
                 )
             )
         except KeyboardInterrupt:
-            print("\n# watch-plan terminado por el usuario", file=sys.stderr)
+            print("\n# watch-plan stopped by user", file=sys.stderr)
 
 
 if __name__ == "__main__":

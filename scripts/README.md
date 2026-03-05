@@ -1,66 +1,81 @@
 # ADMADC CLI
 
-Cliente ligero por línea de comandos para operar la plataforma vía Gateway API.
+Lightweight command-line client to operate the platform via the Gateway API.
 
-## Requisitos
+## Requirements
 
 - Python 3.10+
-- `httpx`: `pip install httpx` (o usar el entorno del proyecto donde ya está)
-- (Opcional, para seguimiento en tiempo real) `websockets`: `pip install websockets`
+- `httpx`: `pip install httpx` (or use the project environment where it is already installed)
+- (Optional, for real-time streaming) `websockets`: `pip install websockets`
 
-## Uso
+## Usage
 
-Variable de entorno opcional:
+Optional environment variable:
 
-- `ADMADC_GATEWAY_URL`: URL base del gateway (por defecto: `http://localhost:8080`)
+- `ADMADC_GATEWAY_URL`: gateway base URL (default: `http://localhost:8080`)
 
-### Comandos
+Optional config file for profiles:
 
-| Comando | Descripción |
+- Path: `~/.admadc/config.json`
+- Example:
+
+```json
+{
+  "default_profile": "local",
+  "profiles": {
+    "local":  { "base": "http://localhost:8080" },
+    "staging": { "base": "https://staging-gateway.example.com" }
+  }
+}
+```
+
+### Commands
+
+| Command | Description |
 |--------|-------------|
-| `python scripts/admadc_cli.py status` | Estado del gateway (conexiones WS, aprobaciones pendientes) |
-| `python scripts/admadc_cli.py health` | Salud básica de los servicios núcleo (`/health` en gateway, meta_planner, dev, qa, etc.) |
-| `python scripts/admadc_cli.py doctor` | Diagnóstico rápido (muestra `/api/status` del gateway y hace `health` de servicios) |
-| `python scripts/admadc_cli.py plan --prompt "..."` | Crear un plan (opciones: `--project`, `--repo-url`, `--mode normal\|ahorro`, `--watch`) |
-| `python scripts/admadc_cli.py events [--limit 20] [--plan-id ...] [--event-type ...]` | Listar eventos recientes, con filtros opcionales |
-| `python scripts/admadc_cli.py tasks <plan_id>` | Tareas de un plan |
-| `python scripts/admadc_cli.py metrics <plan_id> [--watch] [--interval 5]` | Métricas del plan (tokens, estado del pipeline, duración), con modo seguimiento opcional |
-| `python scripts/admadc_cli.py approvals` | Listar aprobaciones PR pendientes (HITL) |
-| `python scripts/admadc_cli.py approve <approval_id>` | Aprobar un PR |
-| `python scripts/admadc_cli.py reject <approval_id>` | Rechazar un PR |
-| `python scripts/admadc_cli.py replan --payload '{"original_plan_id":"..."}'` | Confirmar un replan (payload completo de `plan.revision_suggested`) |
-| `python scripts/admadc_cli.py watch-plan <plan_id>` | Seguir en tiempo real los eventos de un plan (vía WebSocket, requiere `websockets`) |
+| `python scripts/admadc_cli.py status` | Gateway status (WS connections, pending approvals) |
+| `python scripts/admadc_cli.py health` | Basic health for core services (`/health` on gateway, meta_planner, dev, qa, etc.) |
+| `python scripts/admadc_cli.py doctor` | Quick diagnostic (shows gateway `/api/status` and runs `health` for services) |
+| `python scripts/admadc_cli.py plan --prompt "..."` | Create a plan (options: `--project`, `--repo-url`, `--mode normal\|ahorro`, `--watch`) |
+| `python scripts/admadc_cli.py events [--limit 20] [--plan-id ...] [--event-type ...]` | List recent events, with optional filters |
+| `python scripts/admadc_cli.py tasks <plan_id>` | Tasks for a plan |
+| `python scripts/admadc_cli.py metrics <plan_id> [--watch] [--interval 5]` | Plan metrics (tokens, pipeline status, duration), optional watch mode |
+| `python scripts/admadc_cli.py approvals [--plan-id ...] [--auto-approve]` | List pending PR approvals (HITL) and optionally approve in batch |
+| `python scripts/admadc_cli.py approve <approval_id>` | Approve a PR |
+| `python scripts/admadc_cli.py reject <approval_id>` | Reject a PR |
+| `python scripts/admadc_cli.py replan --payload '{"original_plan_id":"..."}'` | Confirm a replan (full `plan.revision_suggested` payload) |
+| `python scripts/admadc_cli.py watch-plan <plan_id>` | Follow a plan’s events in real time (via WebSocket, requires `websockets`) |
 
-### Ejemplos
+### Examples
 
 ```bash
-# Crear plan en modo ahorro
+# Create a plan in "ahorro" (token-saving) mode
 python scripts/admadc_cli.py plan --prompt "Add a /health endpoint" --mode ahorro
 
-# Crear plan y seguirlo en tiempo real en el mismo comando
+# Create a plan and follow it in real time with a single command
 python scripts/admadc_cli.py plan --prompt "Add a /health endpoint" --watch
 
-# Ver métricas del último plan (usar plan_id devuelto por plan)
+# Show metrics for a plan (use the plan_id returned by the plan command)
 python scripts/admadc_cli.py metrics abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
-# Confirmar replan (el payload suele venir del evento plan.revision_suggested en la UI)
+# Confirm a replan (payload usually comes from a `plan.revision_suggested` event in the UI)
 echo '{"original_plan_id":"...", "new_plan_id":"...", "reason":"...", "severity":"high", "suggestions":[]}' | python scripts/admadc_cli.py replan
 
-# Seguir en tiempo real un plan concreto
+# Follow a specific plan in real time
 python scripts/admadc_cli.py watch-plan abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
-# Ver solo eventos de un plan concreto
+# Show only events for a specific plan
 python scripts/admadc_cli.py events --plan-id abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
-# Ver solo eventos de tipo QA fallida para un plan
+# Show only `qa.failed` events for a plan
 python scripts/admadc_cli.py events --plan-id abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx --event-type qa.failed
 
-# Vigilar las métricas de un plan hasta que termine
+# Watch a plan's metrics until it finishes
 python scripts/admadc_cli.py metrics abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx --watch --interval 3
 
-# Comprobar salud básica de la plataforma
+# Check basic platform health
 python scripts/admadc_cli.py health
 
-# Ejecutar un diagnóstico rápido (status + health)
+# Run a quick diagnostic (status + health)
 python scripts/admadc_cli.py doctor
 ```
