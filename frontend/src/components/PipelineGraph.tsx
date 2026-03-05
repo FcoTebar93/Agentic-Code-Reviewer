@@ -30,15 +30,15 @@ function getServiceColor(serviceId: string): string {
   return SERVICE_COLORS[serviceId] ?? "#6366f1";
 }
 
-const SVG_W = 760;
 const SVG_H = 140;
 const NODE_Y = SVG_H / 2;
-const PADDING = 60;
-const STEP = (SVG_W - PADDING * 2) / (SERVICES.length - 1);
+const PADDING = 80;
+const NODE_SPACING = 170;
+const SVG_W = PADDING * 2 + NODE_SPACING * (SERVICES.length - 1);
 
 const NODE_POSITIONS = SERVICES.map((s, i) => ({
   ...s,
-  x: PADDING + i * STEP,
+  x: PADDING + i * NODE_SPACING,
   y: NODE_Y,
 }));
 
@@ -75,9 +75,9 @@ export function PipelineGraph({ latestEvent }: Props) {
           return (
             <line
               key={`edge-${i}`}
-              x1={node.x + 65}
+              x1={node.x + 70}
               y1={NODE_Y}
-              x2={next.x - 65}
+              x2={next.x - 70}
               y2={NODE_Y}
               stroke={isActive ? edgeColor : "#334155"}
               strokeWidth={isActive ? 2 : 1}
@@ -94,7 +94,7 @@ export function PipelineGraph({ latestEvent }: Props) {
           const edgeColor = activeService
             ? getServiceColor(activeService)
             : "#6366f1";
-          const arrowX = next.x - 65;
+          const arrowX = next.x - 70;
           return (
             <polygon
               key={`arrow-${i}`}

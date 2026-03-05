@@ -31,8 +31,8 @@ export function ServiceNode({
         height={height}
         rx={8}
         ry={8}
-        fill={active ? activeColor : "#020617"}
-        stroke={active ? _lighten(activeColor, 1.35) : "#27272a"}
+        fill={active ? activeColor : "#000000"}
+        stroke={active ? _lighten(activeColor, 1.35) : "#18181b"}
         strokeWidth={active ? 2 : 1}
         style={{
           transition: "fill 0.4s ease, stroke 0.4s ease",
