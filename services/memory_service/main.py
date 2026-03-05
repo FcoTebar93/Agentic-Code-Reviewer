@@ -7,6 +7,7 @@ HTTP API. No direct database access from outside.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -22,19 +23,40 @@ from services.memory_service.store import MemoryStore
 SERVICE_NAME = "memory_service"
 store: MemoryStore | None = None
 
+_STARTUP_RETRIES = int(__import__("os").environ.get("MEMORY_STARTUP_RETRIES", "10"))
+_STARTUP_DELAY_SEC = float(__import__("os").environ.get("MEMORY_STARTUP_DELAY_SEC", "3"))
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global store
     logger = setup_logging(SERVICE_NAME)
-
     cfg = MemoryConfig.from_env()
-    logger.info("Initializing database")
-    await init_db(cfg.database_url)
 
-    store = MemoryStore(qdrant_url=cfg.qdrant_url, redis_url=cfg.redis_url)
-    await store.initialize()
-    logger.info("Memory store ready")
+    last_error: Exception | None = None
+    for attempt in range(1, _STARTUP_RETRIES + 1):
+        try:
+            logger.info("Initializing database (attempt %d/%d)", attempt, _STARTUP_RETRIES)
+            await init_db(cfg.database_url)
+            store = MemoryStore(qdrant_url=cfg.qdrant_url, redis_url=cfg.redis_url)
+            await store.initialize()
+            logger.info("Memory store ready")
+            last_error = None
+            break
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "Startup attempt %d/%d failed: %s. Retrying in %.1fs.",
+                attempt,
+                _STARTUP_RETRIES,
+                e,
+                _STARTUP_DELAY_SEC,
+            )
+            if attempt < _STARTUP_RETRIES:
+                await asyncio.sleep(_STARTUP_DELAY_SEC)
+            else:
+                logger.exception("Memory service failed to start after %d attempts", _STARTUP_RETRIES)
+                raise last_error from last_error
 
     yield
 

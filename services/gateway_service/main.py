@@ -235,10 +235,18 @@ async def confirm_replan(request_body: dict[str, Any]):
 
 
 @app.get("/api/events")
-async def get_events():
-    """Proxy GET /events to memory_service."""
+async def get_events(limit: int = 50, event_type: str | None = None, plan_id: str | None = None):
+    """Proxy GET /events to memory_service. Optional: limit, event_type, plan_id."""
     try:
-        resp = await http_client.get(f"{cfg.memory_service_url}/events")
+        params: dict[str, str | int] = {"limit": limit}
+        if event_type:
+            params["event_type"] = event_type
+        if plan_id:
+            params["plan_id"] = plan_id
+        resp = await http_client.get(
+            f"{cfg.memory_service_url}/events",
+            params=params,
+        )
         return JSONResponse(content=resp.json(), status_code=resp.status_code)
     except Exception as exc:
         logger.exception("Failed to proxy /api/events")
