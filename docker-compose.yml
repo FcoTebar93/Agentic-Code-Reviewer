@@ -45,12 +45,6 @@ services:
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
     networks:
       - admadc_net
 
@@ -140,7 +134,7 @@ services:
       - "8001:8000"
     depends_on:
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
       memory_service:
         condition: service_healthy
     networks:
@@ -167,7 +161,7 @@ services:
       - "8002:8000"
     depends_on:
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
       memory_service:
         condition: service_healthy
     networks:
@@ -195,7 +189,7 @@ services:
       - "8005:8000"
     depends_on:
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
       memory_service:
         condition: service_healthy
     healthcheck:
@@ -227,7 +221,7 @@ services:
       - "8007:8000"
     depends_on:
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
       memory_service:
         condition: service_healthy
     healthcheck:
@@ -258,7 +252,7 @@ services:
       AGENT_DELAY_SECONDS: ${AGENT_DELAY_SECONDS:-0}
     depends_on:
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
       memory_service:
         condition: service_healthy
     healthcheck:
@@ -286,7 +280,7 @@ services:
       - "8006:8000"
     depends_on:
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
       memory_service:
         condition: service_healthy
     healthcheck:
@@ -316,7 +310,7 @@ services:
       - github_workspace:/app/workspace
     depends_on:
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
     networks:
       - admadc_net
 
@@ -335,7 +329,7 @@ services:
       - "8080:8000"
     depends_on:
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
       memory_service:
         condition: service_healthy
     healthcheck:
