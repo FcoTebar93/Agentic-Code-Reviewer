@@ -19,6 +19,8 @@ Variable de entorno opcional:
 | Comando | Descripción |
 |--------|-------------|
 | `python scripts/admadc_cli.py status` | Estado del gateway (conexiones WS, aprobaciones pendientes) |
+| `python scripts/admadc_cli.py health` | Salud básica de los servicios núcleo (`/health` en gateway, meta_planner, dev, qa, etc.) |
+| `python scripts/admadc_cli.py doctor` | Diagnóstico rápido (muestra `/api/status` del gateway y hace `health` de servicios) |
 | `python scripts/admadc_cli.py plan --prompt "..."` | Crear un plan (opciones: `--project`, `--repo-url`, `--mode normal\|ahorro`, `--watch`) |
 | `python scripts/admadc_cli.py events [--limit 20] [--plan-id ...] [--event-type ...]` | Listar eventos recientes, con filtros opcionales |
 | `python scripts/admadc_cli.py tasks <plan_id>` | Tareas de un plan |
@@ -55,4 +57,10 @@ python scripts/admadc_cli.py events --plan-id abc12345-xxxx-xxxx-xxxx-xxxxxxxxxx
 
 # Vigilar las métricas de un plan hasta que termine
 python scripts/admadc_cli.py metrics abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx --watch --interval 3
+
+# Comprobar salud básica de la plataforma
+python scripts/admadc_cli.py health
+
+# Ejecutar un diagnóstico rápido (status + health)
+python scripts/admadc_cli.py doctor
 ```

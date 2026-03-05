@@ -54,6 +54,18 @@ def _build_ws_url(base: str) -> str:
     return urlunparse((scheme, parsed.netloc, path, "", "", ""))
 
 
+def _build_service_url(base: str, port: int) -> str:
+    """
+    Build a service URL (http://host:port) reusing the host/scheme from the gateway base URL.
+
+    This asume el despliegue por defecto de docker-compose (puertos 8001..8007, 8003, 8004, 8005, 8006).
+    """
+    parsed = urlparse(base)
+    host = parsed.hostname or "localhost"
+    scheme = parsed.scheme or "http"
+    return f"{scheme}://{host}:{port}"
+
+
 def cmd_status(base: str) -> None:
     with _get_client(base) as client:
         r = client.get("/api/status")
@@ -131,7 +143,7 @@ def cmd_metrics(base: str, plan_id: str, watch: bool = False, interval: float = 
                 r = client.get(f"/api/plan_metrics/{plan_id}")
                 r.raise_for_status()
                 data = r.json()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 print(f"[metrics] error: {exc}", file=sys.stderr)
                 time.sleep(interval)
                 continue
@@ -182,6 +194,59 @@ def cmd_replan(base: str, payload: dict) -> None:
         print(json.dumps(r.json(), indent=2))
 
 
+def cmd_health(base: str) -> None:
+    """
+    Consultar /health del gateway y de los servicios principales (puertos por defecto).
+    """
+    services = {
+        "gateway": base.rstrip("/"),
+        "meta_planner": _build_service_url(base, 8001),
+        "dev_service": _build_service_url(base, 8002),
+        "github_service": _build_service_url(base, 8003),
+        "memory_service": _build_service_url(base, 8004),
+        "qa_service": _build_service_url(base, 8005),
+        "security_service": _build_service_url(base, 8006),
+        "replanner_service": _build_service_url(base, 8007),
+    }
+
+    print("# Health check de servicios (usando esquema/host de ADMADC_GATEWAY_URL)\n")
+
+    for name, url in services.items():
+        health_url = f"{url}/health"
+        try:
+            r = httpx.get(health_url, timeout=5.0)
+            status = r.status_code
+            ok = status == 200
+            body = r.json() if ok else {}
+            service_name = body.get("service") or name
+            print(f"{service_name:18s} [{status}] {'OK' if ok else 'FAIL'}  -> {health_url}")
+        except Exception as exc:
+            print(f"{name:18s} [ERR] FAIL  -> {health_url}  ({exc})")
+
+
+def cmd_doctor(base: str) -> None:
+    """
+    Comprobación rápida de salud de la plataforma.
+
+    - Muestra la URL base usada.
+    - Muestra el estado del gateway (/api/status).
+    - Llama a cmd_health para consultar /health de los servicios.
+    """
+    print(f"# ADMADC doctor\n# Gateway base: {base}\n")
+
+    print("## Gateway /api/status\n")
+    try:
+        with _get_client(base, timeout=5.0) as client:
+            r = client.get("/api/status")
+            r.raise_for_status()
+            print(json.dumps(r.json(), indent=2))
+    except Exception as exc:
+        print(f"[doctor] No se pudo consultar /api/status en {base}: {exc}\n", file=sys.stderr)
+
+    print("\n## Servicios /health\n")
+    cmd_health(base)
+
+
 def _event_matches_plan(ev: dict[str, Any], plan_id: str) -> bool:
     """Best-effort match of an event JSON to a given plan_id."""
     if not plan_id:
@@ -202,7 +267,7 @@ async def _watch_plan_async(
     event_types: list[str] | None = None,
 ) -> None:
     try:
-        import websockets  # type: ignore[import]
+        import websockets
     except ImportError:
         print(
             "error: websockets is required for watch-plan. "
@@ -216,7 +281,7 @@ async def _watch_plan_async(
 
     print(f"# Conectando a WebSocket {ws_url} para plan {plan_id}...", file=sys.stderr)
 
-    async with websockets.connect(ws_url) as ws:  # type: ignore[attr-defined]
+    async with websockets.connect(ws_url) as ws:
         print("# Conectado. Ctrl+C para salir.\n", file=sys.stderr)
         while True:
             msg = await ws.recv()
@@ -248,7 +313,6 @@ async def _watch_plan_async(
                     print(f"[{created_at}] {ev_type} ({service})")
 
             elif msg_type in {"approval", "approval_decided"}:
-                # Mensajes de aprobaciones HITL, los mostramos siempre
                 if raw:
                     print(json.dumps(data, indent=2))
                 else:
@@ -271,6 +335,8 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="Show gateway status (connections, pending approvals)")
+    sub.add_parser("health", help="Check /health for core services (gateway, meta_planner, dev, qa, etc.)")
+    sub.add_parser("doctor", help="Run a quick diagnostic over gateway and core services")
 
     p_plan = sub.add_parser("plan", help="Create a new plan (POST /api/plan)")
     p_plan.add_argument("--prompt", required=True, help="User prompt for the plan")
@@ -365,6 +431,10 @@ def main() -> None:
 
     if args.command == "status":
         cmd_status(base)
+    elif args.command == "health":
+        cmd_health(base)
+    elif args.command == "doctor":
+        cmd_doctor(base)
     elif args.command == "plan":
         plan_id = cmd_plan(
             base,
