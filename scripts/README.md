@@ -37,7 +37,7 @@ Optional config file for profiles:
 | `python scripts/admadc_cli.py shell` | Start an interactive ADMADC shell (REPL-style CLI) |
 | `python scripts/admadc_cli.py health` | Basic health for core services (`/health` on gateway, meta_planner, dev, qa, etc.) |
 | `python scripts/admadc_cli.py doctor` | Quick diagnostic (shows gateway `/api/status` and runs `health` for services) |
-| `python scripts/admadc_cli.py plan --prompt "..."` | Create a plan (options: `--project`, `--repo-url`, `--mode normal\|ahorro`, `--watch`) |
+| `python scripts/admadc_cli.py plan --prompt "..."` | Create a plan (options: `--project`, `--repo-url`, `--mode normal\|save`, `--watch`) |
 | `python scripts/admadc_cli.py events [--limit 20] [--plan-id ...] [--event-type ...]` | List recent events, with optional filters |
 | `python scripts/admadc_cli.py tasks <plan_id>` | Tasks for a plan |
 | `python scripts/admadc_cli.py metrics <plan_id> [--watch] [--interval 5]` | Plan metrics (tokens, pipeline status, duration), optional watch mode |
@@ -50,8 +50,8 @@ Optional config file for profiles:
 ### Examples
 
 ```bash
-# Create a plan in "ahorro" (token-saving) mode
-python scripts/admadc_cli.py plan --prompt "Add a /health endpoint" --mode ahorro
+# Create a plan in "save" (token-saving) mode
+python scripts/admadc_cli.py plan --prompt "Add a /health endpoint" --mode save
 
 # Create a plan and follow it in real time with a single command
 python scripts/admadc_cli.py plan --prompt "Add a /health endpoint" --watch

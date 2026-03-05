@@ -3,7 +3,7 @@ ADMADC CLI — lightweight client for the gateway API.
 
 Usage:
   python scripts/admadc_cli.py status
-  python scripts/admadc_cli.py plan --prompt "Add a health endpoint" [--mode ahorro]
+  python scripts/admadc_cli.py plan --prompt "Add a health endpoint" [--mode save]
   python scripts/admadc_cli.py events [--limit 20]
   python scripts/admadc_cli.py tasks <plan_id>
   python scripts/admadc_cli.py metrics <plan_id>
@@ -152,8 +152,15 @@ def cmd_plan(
             "prompt": prompt,
             "project_name": project,
             "repo_url": repo_url or "",
-            "mode": "ahorro" if mode.lower() == "ahorro" else "normal",
         }
+        mode_norm = (mode or "normal").strip().lower()
+        if mode_norm not in {"normal", "save"}:
+            # Backwards-compatible alias for older scripts that used "ahorro"
+            if mode_norm == "ahorro":
+                mode_norm = "save"
+            else:
+                mode_norm = "normal"
+        body["mode"] = mode_norm
         r = client.post("/api/plan", json=body)
         r.raise_for_status()
         data = r.json()
@@ -585,9 +592,9 @@ def main() -> None:
     p_plan.add_argument("--repo-url", default="", help="GitHub repo URL (optional)")
     p_plan.add_argument(
         "--mode",
-        choices=["normal", "ahorro"],
+        choices=["normal", "save", "ahorro"],
         default="normal",
-        help="normal = full context; 'ahorro' = reduced-token (save) mode",
+        help="normal = full context; save = reduced-token mode (alias: 'ahorro')",
     )
     p_plan.add_argument(
         "--watch",
