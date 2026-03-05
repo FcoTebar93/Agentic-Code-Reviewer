@@ -53,7 +53,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - Escucha `task.assigned` y genera:
     - Especificaciones de alto nivel y sugerencias de pruebas.
     - Evento `spec.generated` con esa información.
-  - En modo “ahorro” puede evitar gastar tokens en tareas triviales.
+  - En modo “save” puede evitar gastar tokens en tareas triviales (por ejemplo, tareas muy cortas).
 
 - **Dev Service (`dev_service`)**
   - Agente “desarrollador”.

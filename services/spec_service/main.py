@@ -117,9 +117,10 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         )
         return
 
-    if mode == "ahorro" and len((task.description or "").strip()) < 60:
+    normalized_mode = (mode or "normal").strip().lower()
+    if normalized_mode in {"save", "ahorro"} and len((task.description or "").strip()) < 60:
         logger.info(
-            "Skipping spec generation for simple task %s (plan %s) in ahorro mode",
+            "Skipping spec generation for simple task %s (plan %s) in save mode",
             task.task_id[:8],
             plan_id[:8],
         )

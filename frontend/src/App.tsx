@@ -75,7 +75,6 @@ export default function App() {
           return typeof mode === "string" && mode.trim() ? mode : null;
         })();
 
-  // Mantener visibleEvents sincronizado con los eventos del socket
   useEffect(() => {
     setVisibleEvents(events);
 
@@ -182,12 +181,12 @@ export default function App() {
                   value={
                     <span
                       className={
-                        activePlanMode === "ahorro"
+                        activePlanMode === "save" || activePlanMode === "ahorro"
                           ? "text-emerald-400"
                           : "text-neutral-300"
                       }
                     >
-                      {activePlanMode}
+                      {activePlanMode === "ahorro" ? "save" : activePlanMode}
                     </span>
                   }
                 />

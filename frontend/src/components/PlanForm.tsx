@@ -36,7 +36,7 @@ export function PlanForm() {
       if (repoUrl.trim()) {
         body.repo_url = repoUrl.trim();
       }
-      body.mode = mode === "save" ? "ahorro" : "normal";
+      body.mode = mode;
 
       const resp = await fetch(`${HTTP_URL}/api/plan`, {
         method: "POST",
@@ -85,8 +85,8 @@ export function PlanForm() {
             onChange={(e) => setMode(e.target.value as "normal" | "save")}
             className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
           >
-            <option value="normal">normal (más contexto, más tokens)</option>
-            <option value="save">ahorro (contexto reducido, menos tokens)</option>
+            <option value="normal">normal (more context, more tokens)</option>
+            <option value="save">save (reduced context, fewer tokens)</option>
           </select>
         </div>
 

@@ -78,12 +78,13 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 "security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
             )
 
-        mode = getattr(payload, "mode", "normal") or "normal"
-        if mode == "ahorro" and not _has_severe_static_issues(static_issues):
+        raw_mode = getattr(payload, "mode", "normal") or "normal"
+        mode = str(raw_mode).strip().lower()
+        if mode in {"save", "ahorro"} and not _has_severe_static_issues(static_issues):
             auto_reason = (
-                "Aprobado en modo ahorro: los linters y herramientas de seguridad "
-                "no han encontrado problemas de severidad alta. Se permite PASS sin "
-                "ejecutar la revisión LLM completa."
+                "Approved in save mode: linters and security tools did not find "
+                "high-severity issues. PASS is allowed without running the full "
+                "LLM review."
             )
             result = ReviewResult(
                 passed=True,
