@@ -1,5 +1,3 @@
-// TypeScript mirror of shared/contracts/events.py
-// Keep in sync when adding new EventType values in Python.
 
 export type EventType =
   | "plan.requested"
@@ -19,7 +17,9 @@ export type EventType =
   | "security.approved"
   | "security.blocked"
   | "pipeline.conclusion"
-  | "plan.revision_suggested";
+  | "plan.revision_suggested"
+  | "plan.revision_confirmed"
+  | "metrics.tokens_used";
 
 export interface BaseEvent {
   event_id: string;
@@ -42,14 +42,12 @@ export interface PrApproval {
   reviewer: string;
 }
 
-// Messages sent by the gateway over WebSocket
 export type WsMessage =
   | { type: "event"; event: BaseEvent }
   | { type: "history"; event: Record<string, unknown> }
   | { type: "approval"; approval: PrApproval }
   | { type: "approval_decided"; approval: PrApproval };
 
-// Which service produced which event (for graph highlighting)
 export const PRODUCER_FOR_EVENT: Record<EventType, string> = {
   "plan.requested": "meta_planner",
   "plan.created": "meta_planner",
@@ -69,6 +67,8 @@ export const PRODUCER_FOR_EVENT: Record<EventType, string> = {
   "security.blocked": "security_service",
   "pipeline.conclusion": "gateway_service",
   "plan.revision_suggested": "replanner_service",
+  "plan.revision_confirmed": "gateway_service",
+  "metrics.tokens_used": "meta_planner",
 };
 
 export const EVENT_COLORS: Record<EventType, string> = {
@@ -90,6 +90,8 @@ export const EVENT_COLORS: Record<EventType, string> = {
   "security.blocked": "#ef4444",
   "pipeline.conclusion": "#6366f1",
   "plan.revision_suggested": "#facc15",
+  "plan.revision_confirmed": "#a3e635",
+  "metrics.tokens_used": "#6b7280",
 };
 
 export const EVENT_LABELS: Record<EventType, string> = {
@@ -111,4 +113,6 @@ export const EVENT_LABELS: Record<EventType, string> = {
   "security.blocked": "Security Blocked",
   "pipeline.conclusion": "Pipeline Conclusion",
   "plan.revision_suggested": "Plan Revision Suggested",
+  "plan.revision_confirmed": "Plan Revision Confirmed",
+  "metrics.tokens_used": "Tokens Used",
 };
