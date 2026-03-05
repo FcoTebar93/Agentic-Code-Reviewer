@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BaseEvent } from "../types/events";
 import { EVENT_COLORS, EVENT_LABELS } from "../types/events";
+import { Card, SectionHeader } from "./ui/Card";
+import { CodePanel } from "./ui/CodePanel";
 
 interface Props {
   events: BaseEvent[];
@@ -69,7 +71,6 @@ function extractReasoning(payload: Record<string, unknown>, eventType?: string):
   return "";
 }
 
-/** Code from code.generated or qa.passed */
 function extractCode(
   eventType: string,
   payload: Record<string, unknown>
@@ -84,7 +85,6 @@ function extractCode(
   };
 }
 
-/** File list for pr.requested / security.approved / pipeline.conclusion */
 function extractFiles(
   eventType: string,
   payload: Record<string, unknown>
@@ -104,7 +104,6 @@ function extractFiles(
     .filter((fp): fp is string => typeof fp === "string");
 }
 
-/** Planned file paths from plan.created */
 function extractPlannedFiles(payload: Record<string, unknown>): string[] {
   const tasks = payload["tasks"];
   if (!Array.isArray(tasks)) return [];
@@ -118,36 +117,6 @@ function extractPrUrl(eventType: string, payload: Record<string, unknown>): stri
   const url = payload["pr_url"];
   if (typeof url === "string" && url.startsWith("http")) return url;
   return "";
-}
-
-function CodeBlock({ code, language }: { code: string; language: string }) {
-  const [copied, setCopied] = useState(false);
-
-  function copy() {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }
-
-  return (
-    <div className="relative">
-      <div className="flex items-center justify-between bg-slate-950 rounded-t px-3 py-1 border border-slate-700/60">
-        <span className="text-slate-500 text-[10px] uppercase tracking-widest">
-          {language}
-        </span>
-        <button
-          onClick={(e) => { e.stopPropagation(); copy(); }}
-          className="text-slate-600 hover:text-slate-400 text-[10px] transition-colors"
-        >
-          {copied ? "copied ✓" : "copy"}
-        </button>
-      </div>
-      <pre className="bg-slate-950 border border-t-0 border-slate-700/60 rounded-b px-3 py-2 overflow-x-auto max-h-64 text-[11px] leading-relaxed text-slate-300 whitespace-pre">
-        {code}
-      </pre>
-    </div>
-  );
 }
 
 interface EventRowProps {
@@ -194,12 +163,12 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
   }
 
   return (
-    <div className="bg-slate-800 rounded-lg overflow-hidden text-xs font-mono border border-slate-700/40">
+    <div className="bg-neutral-900 rounded-lg overflow-hidden text-xs font-mono border border-neutral-800">
       <div
-        className={`flex items-start gap-2 px-3 py-2 ${expandable ? "cursor-pointer select-none hover:bg-slate-750/50" : ""}`}
+        className={`flex items-start gap-2 px-3 py-2 ${expandable ? "cursor-pointer select-none hover:bg-neutral-800/80" : ""}`}
         onClick={() => expandable && onToggle()}
       >
-        <span className="text-slate-500 flex-none w-20 pt-px">
+        <span className="text-neutral-500 flex-none w-20 pt-px">
           {formatTime(evt.timestamp)}
         </span>
         <span
@@ -208,28 +177,28 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
         >
           {label}
         </span>
-        <span className="text-slate-400 truncate flex-1">
+        <span className="text-neutral-300 truncate flex-1">
           {evt.producer}
           {inlineFilePath && (
-            <span className="text-indigo-400 ml-2">{inlineFilePath}</span>
+            <span className="text-emerald-400 ml-2">{inlineFilePath}</span>
           )}
-          <span className="text-slate-600 ml-2">#{shortId(evt.event_id)}</span>
+          <span className="text-neutral-600 ml-2">#{shortId(evt.event_id)}</span>
         </span>
         {prUrl && !open && (
-          <span className="text-green-500 flex-none ml-1">↗</span>
+          <span className="text-emerald-400 flex-none ml-1">↗</span>
         )}
         {expandable && (
-          <span className="text-slate-600 flex-none ml-1">
+          <span className="text-neutral-600 flex-none ml-1">
             {open ? "▾" : "▸"}
           </span>
         )}
       </div>
 
       {expandable && open && (
-        <div className="border-t border-slate-700/60 space-y-3 px-3 pt-2 pb-3">
+        <div className="border-t border-neutral-800 space-y-3 px-3 pt-2 pb-3">
           {isPlanRevision && (
             <div className="flex items-center justify-between gap-2">
-              <p className="text-slate-500 text-[10px] uppercase tracking-widest">
+              <p className="text-neutral-500 text-[10px] uppercase tracking-widest">
                 Replanner suggestion
               </p>
               <button
@@ -242,14 +211,14 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
           )}
           {prUrl && (
             <div>
-              <p className="text-slate-500 text-[10px] uppercase tracking-widest mb-1">
+              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1">
                 Pull Request
               </p>
               <a
                 href={prUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-indigo-400 hover:text-indigo-300 underline break-all"
+                className="text-emerald-400 hover:text-emerald-300 underline break-all"
                 onClick={(e) => e.stopPropagation()}
               >
                 {prUrl}
@@ -259,13 +228,13 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
 
           {plannedFiles.length > 0 && (
             <div>
-              <p className="text-slate-500 text-[10px] uppercase tracking-widest mb-1.5">
+              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
                 Planned files ({plannedFiles.length})
               </p>
               <div className="space-y-0.5">
                 {plannedFiles.map((fp) => (
-                  <div key={fp} className="text-indigo-400 flex items-center gap-1">
-                    <span className="text-slate-600">→</span> {fp}
+                  <div key={fp} className="text-emerald-400 flex items-center gap-1">
+                    <span className="text-neutral-600">→</span> {fp}
                   </div>
                 ))}
               </div>
@@ -274,13 +243,13 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
 
           {fileList.length > 0 && (
             <div>
-              <p className="text-slate-500 text-[10px] uppercase tracking-widest mb-1.5">
+              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
                 {isConclusion ? "Files changed" : "Files in PR"} ({fileList.length})
               </p>
               <div className="space-y-0.5">
                 {fileList.map((fp) => (
-                  <div key={fp} className="text-indigo-400 flex items-center gap-1">
-                    <span className="text-slate-600">+</span> {fp}
+                  <div key={fp} className="text-emerald-400 flex items-center gap-1">
+                    <span className="text-neutral-600">+</span> {fp}
                   </div>
                 ))}
               </div>
@@ -289,19 +258,19 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
 
           {codeInfo && (
             <div>
-              <p className="text-slate-500 text-[10px] uppercase tracking-widest mb-1.5">
+              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
                 {evt.event_type === "qa.passed" ? "Reviewed code" : "Generated code"} — {codeInfo.filePath}
               </p>
-              <CodeBlock code={codeInfo.code} language={codeInfo.language} />
+              <CodePanel code={codeInfo.code} language={codeInfo.language} />
             </div>
           )}
 
           {reasoning && (
             <div>
-              <p className="text-slate-500 text-[10px] uppercase tracking-widest mb-1.5">
+              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
                 {isConclusion ? "Conclusion" : "Agent reasoning"}
               </p>
-              <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">
+              <p className="text-neutral-200 leading-relaxed whitespace-pre-wrap">
                 {reasoning}
               </p>
             </div>
@@ -347,25 +316,26 @@ export function EventFeed({ events }: Props) {
   const isExpanded = (eventId: string) => !collapseAll && expandedIds.has(eventId);
 
   return (
-    <div className="bg-slate-900 rounded-xl border border-slate-700 p-4 flex flex-col h-full">
-      <div className="flex items-center justify-between mb-3 flex-none">
-        <h2 className="text-slate-400 text-xs font-mono uppercase tracking-widest">
-          Event Feed{" "}
-          <span className="text-slate-600 normal-case">({events.length} events)</span>
-        </h2>
-        {events.length > 0 && (
-          <button
-            onClick={handleCollapseExpandAll}
-            className="text-slate-600 hover:text-slate-400 text-[10px] font-mono transition-colors"
-          >
-            {collapseAll ? "expand all" : "collapse all"}
-          </button>
-        )}
-      </div>
+    <Card className="flex flex-col h-full">
+      <SectionHeader
+        right={
+          events.length > 0 && (
+            <button
+              onClick={handleCollapseExpandAll}
+              className="text-neutral-500 hover:text-neutral-300 text-[10px] font-mono transition-colors"
+            >
+              {collapseAll ? "expand all" : "collapse all"}
+            </button>
+          )
+        }
+      >
+        Event Feed{" "}
+        <span className="text-neutral-600 normal-case">({events.length} events)</span>
+      </SectionHeader>
 
       <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
         {events.length === 0 && (
-          <p className="text-slate-600 text-sm font-mono">Waiting for events...</p>
+          <p className="text-neutral-600 text-sm font-mono">Waiting for events...</p>
         )}
         {events.map((evt) => (
           <EventRow
@@ -376,6 +346,6 @@ export function EventFeed({ events }: Props) {
           />
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

@@ -4,11 +4,12 @@ interface ServiceNodeProps {
   x: number;
   y: number;
   active: boolean;
+  activeColor?: string;
   width?: number;
   height?: number;
 }
 
-const NODE_W = 130;
+const NODE_W = 110;
 const NODE_H = 44;
 
 export function ServiceNode({
@@ -17,6 +18,7 @@ export function ServiceNode({
   x,
   y,
   active,
+  activeColor = "#6366f1",
   width = NODE_W,
   height = NODE_H,
 }: ServiceNodeProps) {
@@ -29,12 +31,12 @@ export function ServiceNode({
         height={height}
         rx={8}
         ry={8}
-        fill={active ? "#6366f1" : "#1e293b"}
-        stroke={active ? "#a5b4fc" : "#334155"}
+        fill={active ? activeColor : "#020617"}
+        stroke={active ? _lighten(activeColor, 1.35) : "#27272a"}
         strokeWidth={active ? 2 : 1}
         style={{
           transition: "fill 0.4s ease, stroke 0.4s ease",
-          filter: active ? "drop-shadow(0 0 8px #6366f1)" : "none",
+          filter: active ? `drop-shadow(0 0 8px ${activeColor})` : "none",
         }}
       />
       <text
@@ -42,7 +44,7 @@ export function ServiceNode({
         y={y + 1}
         textAnchor="middle"
         dominantBaseline="middle"
-        fill={active ? "#e0e7ff" : "#94a3b8"}
+        fill={active ? "#f8fafc" : "#94a3b8"}
         fontSize={11}
         fontFamily="monospace"
         style={{ transition: "fill 0.4s ease" }}
@@ -51,4 +53,12 @@ export function ServiceNode({
       </text>
     </g>
   );
+}
+
+function _lighten(hex: string, factor: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.min(255, Math.round(((n >> 16) & 0xff) * factor));
+  const g = Math.min(255, Math.round(((n >> 8) & 0xff) * factor));
+  const b = Math.min(255, Math.round((n & 0xff) * factor));
+  return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, "0")}`;
 }
