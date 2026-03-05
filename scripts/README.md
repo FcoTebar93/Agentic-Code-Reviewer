@@ -34,6 +34,7 @@ Optional config file for profiles:
 | Command | Description |
 |--------|-------------|
 | `python scripts/admadc_cli.py status` | Gateway status (WS connections, pending approvals) |
+| `python scripts/admadc_cli.py shell` | Start an interactive ADMADC shell (REPL-style CLI) |
 | `python scripts/admadc_cli.py health` | Basic health for core services (`/health` on gateway, meta_planner, dev, qa, etc.) |
 | `python scripts/admadc_cli.py doctor` | Quick diagnostic (shows gateway `/api/status` and runs `health` for services) |
 | `python scripts/admadc_cli.py plan --prompt "..."` | Create a plan (options: `--project`, `--repo-url`, `--mode normal\|ahorro`, `--watch`) |

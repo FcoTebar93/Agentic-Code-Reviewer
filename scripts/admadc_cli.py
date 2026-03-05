@@ -67,38 +67,42 @@ def _build_ws_url(base: str) -> str:
 
 def _load_base_from_profile(profile: str | None, base_arg: str | None) -> str:
     """
-    Resolve the final base URL combining, in order:
-    - --profile (if provided)
-    - ~/.admadc/config.json
-    - --base
-    - DEFAULT_BASE
-    """
-    if not profile:
-        return (base_arg or DEFAULT_BASE).rstrip("/")
+    Resolve the final base URL combining configuration and flags.
 
+    Priority order:
+    1) If --profile is provided, use profiles[profile].base from ~/.admadc/config.json.
+    2) Else, if ~/.admadc/config.json has "default_profile", use that profile's base.
+    3) Else, fall back to --base (if provided).
+    4) Else, fall back to DEFAULT_BASE / ADMADC_GATEWAY_URL.
+    """
+    cfg: dict[str, Any] | None = None
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             cfg = json.load(f)
     except FileNotFoundError:
-        print(
-            f"[profiles] Config file {CONFIG_PATH} not found. "
-            "Using --base or ADMADC_GATEWAY_URL instead.",
-            file=sys.stderr,
-        )
-        return (base_arg or DEFAULT_BASE).rstrip("/")
+        cfg = None
     except Exception as exc:
         print(
             f"[profiles] Could not read {CONFIG_PATH}: {exc}. "
             "Using --base or ADMADC_GATEWAY_URL instead.",
             file=sys.stderr,
         )
+        cfg = None
+
+    selected_profile = profile
+    if cfg is not None and not selected_profile:
+        default_profile = cfg.get("default_profile")
+        if isinstance(default_profile, str) and default_profile:
+            selected_profile = default_profile
+
+    if not cfg or not selected_profile:
         return (base_arg or DEFAULT_BASE).rstrip("/")
 
     profiles = cfg.get("profiles") or {}
-    profile_cfg = profiles.get(profile)
+    profile_cfg = profiles.get(selected_profile)
     if not isinstance(profile_cfg, dict) or "base" not in profile_cfg:
         print(
-            f"[profiles] Profile '{profile}' not found or missing 'base' in {CONFIG_PATH}. "
+            f"[profiles] Profile '{selected_profile}' not found or missing 'base' in {CONFIG_PATH}. "
             "Using --base or ADMADC_GATEWAY_URL instead.",
             file=sys.stderr,
         )
@@ -107,13 +111,13 @@ def _load_base_from_profile(profile: str | None, base_arg: str | None) -> str:
     base = str(profile_cfg.get("base") or "").strip()
     if not base:
         print(
-            f"[profiles] Profile '{profile}' has empty 'base' in {CONFIG_PATH}. "
+            f"[profiles] Profile '{selected_profile}' has empty 'base' in {CONFIG_PATH}. "
             "Using --base or ADMADC_GATEWAY_URL instead.",
             file=sys.stderr,
         )
         return (base_arg or DEFAULT_BASE).rstrip("/")
 
-    print(f"[profiles] Using profile '{profile}' with base={base}", file=sys.stderr)
+    print(f"[profiles] Using profile '{selected_profile}' with base={base}", file=sys.stderr)
     return base.rstrip("/")
 
 
@@ -434,6 +438,125 @@ async def _watch_plan_async(
                     print(f"[HITL] approval {a_id} -> {status}")
 
 
+def cmd_shell(base: str) -> None:
+    """
+    Minimal interactive shell so you don't have to repeat flags.
+
+    Commands (type 'help' inside the shell for a summary):
+      status
+      plan <prompt...>
+      events [plan_id]
+      tasks <plan_id>
+      metrics [plan_id]
+      approvals
+      approve <approval_id>
+      reject <approval_id>
+      watch-plan [plan_id]
+      quit / exit
+    """
+    last_plan_id: str | None = None
+    print(f"# ADMADC shell (base={base})")
+    print("# Type 'help' for commands, 'quit' or 'exit' to leave.\n")
+
+    while True:
+        try:
+            line = input("admadc> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n# Leaving shell.", file=sys.stderr)
+            break
+
+        if not line:
+            continue
+        if line in {"quit", "exit"}:
+            print("# Bye.")
+            break
+        if line == "help":
+            print(
+                "Commands:\n"
+                "  status                       - show gateway status\n"
+                "  plan <prompt...>             - create a plan (remembers plan_id)\n"
+                "  events [plan_id]             - list recent events (optionally for a plan)\n"
+                "  tasks <plan_id>              - list tasks for a plan\n"
+                "  metrics [plan_id]            - show metrics for a plan (defaults to last plan)\n"
+                "  approvals                    - list pending approvals\n"
+                "  approve <approval_id>        - approve a PR\n"
+                "  reject <approval_id>         - reject a PR\n"
+                "  watch-plan [plan_id]         - stream events for a plan (defaults to last plan)\n"
+                "  help                         - show this help\n"
+                "  quit / exit                  - leave the shell\n"
+            )
+            continue
+
+        parts = line.split()
+        cmd = parts[0]
+        args = parts[1:]
+
+        try:
+            if cmd == "status":
+                cmd_status(base)
+            elif cmd == "plan":
+                if not args:
+                    print("usage: plan <prompt...>", file=sys.stderr)
+                    continue
+                prompt = " ".join(args)
+                plan_id = cmd_plan(base, prompt=prompt)
+                if plan_id:
+                    last_plan_id = plan_id
+            elif cmd == "events":
+                plan_id = args[0] if args else None
+                cmd_events(base, plan_id=plan_id)
+            elif cmd == "tasks":
+                if not args:
+                    print("usage: tasks <plan_id>", file=sys.stderr)
+                    continue
+                cmd_tasks(base, args[0])
+            elif cmd == "metrics":
+                plan_id = args[0] if args else last_plan_id
+                if not plan_id:
+                    print(
+                        "metrics: no plan_id provided and no last plan_id known.",
+                        file=sys.stderr,
+                    )
+                    continue
+                cmd_metrics(base, plan_id)
+            elif cmd == "approvals":
+                cmd_approvals(base)
+            elif cmd == "approve":
+                if not args:
+                    print("usage: approve <approval_id>", file=sys.stderr)
+                    continue
+                cmd_approve(base, args[0])
+            elif cmd == "reject":
+                if not args:
+                    print("usage: reject <approval_id>", file=sys.stderr)
+                    continue
+                cmd_reject(base, args[0])
+            elif cmd == "watch-plan":
+                plan_id = args[0] if args else last_plan_id
+                if not plan_id:
+                    print(
+                        "watch-plan: no plan_id provided and no last plan_id known.",
+                        file=sys.stderr,
+                    )
+                    continue
+                try:
+                    asyncio.run(
+                        _watch_plan_async(
+                            base,
+                            plan_id=plan_id,
+                            include_history=True,
+                            raw=False,
+                            event_types=None,
+                        )
+                    )
+                except KeyboardInterrupt:
+                    print("\n# watch-plan stopped by user", file=sys.stderr)
+            else:
+                print(f"unknown command: {cmd!r}. Type 'help' for a list of commands.")
+        except Exception as exc:
+            print(f"[shell] error running '{cmd}': {exc}", file=sys.stderr)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="ADMADC CLI — gateway API client",
@@ -454,6 +577,7 @@ def main() -> None:
     sub.add_parser("status", help="Show gateway status (connections, pending approvals)")
     sub.add_parser("health", help="Check /health for core services (gateway, meta_planner, dev, qa, etc.)")
     sub.add_parser("doctor", help="Run a quick diagnostic over gateway and core services")
+    sub.add_parser("shell", help="Start an interactive ADMADC shell (REPL-style CLI)")
 
     p_plan = sub.add_parser("plan", help="Create a new plan (POST /api/plan)")
     p_plan.add_argument("--prompt", required=True, help="User prompt for the plan")
@@ -563,6 +687,8 @@ def main() -> None:
         cmd_health(base)
     elif args.command == "doctor":
         cmd_doctor(base)
+    elif args.command == "shell":
+        cmd_shell(base)
     elif args.command == "plan":
         plan_id = cmd_plan(
             base,
