@@ -20,9 +20,9 @@ Variable de entorno opcional:
 |--------|-------------|
 | `python scripts/admadc_cli.py status` | Estado del gateway (conexiones WS, aprobaciones pendientes) |
 | `python scripts/admadc_cli.py plan --prompt "..."` | Crear un plan (opciones: `--project`, `--repo-url`, `--mode normal\|ahorro`, `--watch`) |
-| `python scripts/admadc_cli.py events [--limit 20]` | Listar eventos recientes |
+| `python scripts/admadc_cli.py events [--limit 20] [--plan-id ...] [--event-type ...]` | Listar eventos recientes, con filtros opcionales |
 | `python scripts/admadc_cli.py tasks <plan_id>` | Tareas de un plan |
-| `python scripts/admadc_cli.py metrics <plan_id>` | Métricas del plan (tokens, estado del pipeline, duración) |
+| `python scripts/admadc_cli.py metrics <plan_id> [--watch] [--interval 5]` | Métricas del plan (tokens, estado del pipeline, duración), con modo seguimiento opcional |
 | `python scripts/admadc_cli.py approvals` | Listar aprobaciones PR pendientes (HITL) |
 | `python scripts/admadc_cli.py approve <approval_id>` | Aprobar un PR |
 | `python scripts/admadc_cli.py reject <approval_id>` | Rechazar un PR |
@@ -46,4 +46,13 @@ echo '{"original_plan_id":"...", "new_plan_id":"...", "reason":"...", "severity"
 
 # Seguir en tiempo real un plan concreto
 python scripts/admadc_cli.py watch-plan abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# Ver solo eventos de un plan concreto
+python scripts/admadc_cli.py events --plan-id abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# Ver solo eventos de tipo QA fallida para un plan
+python scripts/admadc_cli.py events --plan-id abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx --event-type qa.failed
+
+# Vigilar las métricas de un plan hasta que termine
+python scripts/admadc_cli.py metrics abc12345-xxxx-xxxx-xxxx-xxxxxxxxxxxx --watch --interval 3
 ```

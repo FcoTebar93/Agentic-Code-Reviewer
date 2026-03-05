@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -84,9 +85,19 @@ def cmd_plan(
         return plan_id
 
 
-def cmd_events(base: str, limit: int = 50) -> None:
+def cmd_events(
+    base: str,
+    limit: int = 50,
+    plan_id: str | None = None,
+    event_type: str | None = None,
+) -> None:
     with _get_client(base) as client:
-        r = client.get("/api/events", params={"limit": limit})
+        params: dict[str, Any] = {"limit": limit}
+        if plan_id:
+            params["plan_id"] = plan_id
+        if event_type:
+            params["event_type"] = event_type
+        r = client.get("/api/events", params=params)
         r.raise_for_status()
         events = r.json()
         if isinstance(events, list):
@@ -102,11 +113,45 @@ def cmd_tasks(base: str, plan_id: str) -> None:
         print(json.dumps(r.json(), indent=2))
 
 
-def cmd_metrics(base: str, plan_id: str) -> None:
+def cmd_metrics(base: str, plan_id: str, watch: bool = False, interval: float = 5.0) -> None:
+    if not watch:
+        with _get_client(base) as client:
+            r = client.get(f"/api/plan_metrics/{plan_id}")
+            r.raise_for_status()
+            print(json.dumps(r.json(), indent=2))
+        return
+
     with _get_client(base) as client:
-        r = client.get(f"/api/plan_metrics/{plan_id}")
-        r.raise_for_status()
-        print(json.dumps(r.json(), indent=2))
+        print(
+            f"# Watching metrics for plan {plan_id} (every {interval:.1f}s). Ctrl+C to stop.",
+            file=sys.stderr,
+        )
+        while True:
+            try:
+                r = client.get(f"/api/plan_metrics/{plan_id}")
+                r.raise_for_status()
+                data = r.json()
+            except Exception as exc:  # noqa: BLE001
+                print(f"[metrics] error: {exc}", file=sys.stderr)
+                time.sleep(interval)
+                continue
+
+            status = data.get("pipeline_status", "unknown")
+            total_tokens = data.get("total_tokens", 0)
+            cost = data.get("estimated_cost_total_usd", 0.0)
+            qa_failed = data.get("qa_failed_count", 0)
+            security_blocked = data.get("security_blocked_count", 0)
+            ts = time.strftime("%H:%M:%S")
+            print(
+                f"[{ts}] status={status} tokens={total_tokens} "
+                f"cost=${cost:.4f} qa_failed={qa_failed} security_blocked={security_blocked}"
+            )
+
+            if status in {"approved", "security_blocked", "qa_failed"}:
+                print("# Pipeline finished, stopping metrics watch.", file=sys.stderr)
+                break
+
+            time.sleep(interval)
 
 
 def cmd_approvals(base: str) -> None:
@@ -245,6 +290,16 @@ def main() -> None:
 
     p_events = sub.add_parser("events", help="List recent events (GET /api/events)")
     p_events.add_argument("--limit", type=int, default=50, help="Max events to return")
+    p_events.add_argument(
+        "--plan-id",
+        default=None,
+        help="Filter events by plan_id",
+    )
+    p_events.add_argument(
+        "--event-type",
+        default=None,
+        help="Filter events by event_type (e.g. code.generated, qa.failed)",
+    )
 
     p_tasks = sub.add_parser("tasks", help="Get tasks for a plan (GET /api/tasks/{plan_id})")
     p_tasks.add_argument("plan_id", help="Plan ID")
@@ -254,6 +309,17 @@ def main() -> None:
         help="Get plan metrics: tokens, pipeline status, duration (GET /api/plan_metrics/{plan_id})",
     )
     p_metrics.add_argument("plan_id", help="Plan ID")
+    p_metrics.add_argument(
+        "--watch",
+        action="store_true",
+        help="Watch metrics in a loop until the pipeline finishes",
+    )
+    p_metrics.add_argument(
+        "--interval",
+        type=float,
+        default=5.0,
+        help="Seconds between metrics refreshes when using --watch (default: 5.0)",
+    )
 
     sub.add_parser("approvals", help="List pending human approvals")
     p_approve = sub.add_parser("approve", help="Approve a PR (human-in-the-loop)")
@@ -321,11 +387,11 @@ def main() -> None:
             except KeyboardInterrupt:
                 print("\n# watch-plan terminado por el usuario", file=sys.stderr)
     elif args.command == "events":
-        cmd_events(base, limit=args.limit)
+        cmd_events(base, limit=args.limit, plan_id=args.plan_id, event_type=args.event_type)
     elif args.command == "tasks":
         cmd_tasks(base, args.plan_id)
     elif args.command == "metrics":
-        cmd_metrics(base, args.plan_id)
+        cmd_metrics(base, args.plan_id, watch=args.watch, interval=args.interval)
     elif args.command == "approvals":
         cmd_approvals(base)
     elif args.command == "approve":
