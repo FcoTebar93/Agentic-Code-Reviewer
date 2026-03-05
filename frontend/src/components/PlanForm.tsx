@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { Card, SectionHeader } from "./ui/Card";
 
 const HTTP_URL = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
 
@@ -58,33 +59,31 @@ export function PlanForm() {
   }
 
   return (
-    <div className="bg-slate-900 rounded-xl border border-slate-700 p-4">
-      <h2 className="text-slate-400 text-xs font-mono uppercase tracking-widest mb-3">
-        Launch Plan
-      </h2>
+    <Card>
+      <SectionHeader>Launch Plan</SectionHeader>
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-slate-500 text-xs font-mono mb-1">
+          <label className="block text-neutral-500 text-xs font-mono mb-1">
             Project name
           </label>
           <input
             type="text"
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-indigo-500"
+            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors"
             placeholder="my-project"
           />
         </div>
 
         <div>
-          <label className="block text-slate-500 text-xs font-mono mb-1">
+          <label className="block text-neutral-500 text-xs font-mono mb-1">
             Mode
           </label>
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as "normal" | "save")}
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-xs font-mono focus:outline-none focus:border-indigo-500"
+            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
           >
             <option value="normal">normal (más contexto, más tokens)</option>
             <option value="save">ahorro (contexto reducido, menos tokens)</option>
@@ -92,36 +91,36 @@ export function PlanForm() {
         </div>
 
         <div>
-          <label className="block text-slate-500 text-xs font-mono mb-1">
+          <label className="block text-neutral-500 text-xs font-mono mb-1">
             Prompt
           </label>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             rows={3}
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-indigo-500 resize-none"
+            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 resize-none transition-colors"
             placeholder="Create a Python REST API with FastAPI..."
           />
         </div>
 
         <div>
-          <label className="block text-slate-500 text-xs font-mono mb-1">
+          <label className="block text-neutral-500 text-xs font-mono mb-1">
             GitHub repo URL{" "}
-            <span className="text-slate-600">(optional — required for real PR)</span>
+            <span className="text-neutral-600">(optional — required for real PR)</span>
           </label>
           <input
             type="url"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-indigo-500"
+            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors"
             placeholder="https://github.com/your-org/your-repo"
           />
           {repoUrl.trim() ? (
-            <p className="text-green-500 text-xs font-mono mt-1">
+            <p className="text-emerald-400 text-xs font-mono mt-1">
               ✓ PR will be created on GitHub after human approval
             </p>
           ) : (
-            <p className="text-slate-600 text-xs font-mono mt-1">
+            <p className="text-neutral-600 text-xs font-mono mt-1">
               Without a repo URL, files are written locally in the container
             </p>
           )}
@@ -130,34 +129,34 @@ export function PlanForm() {
         <button
           type="submit"
           disabled={loading || !prompt.trim()}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-mono text-sm rounded-lg px-4 py-2.5 transition-colors"
+          className="w-full bg-white hover:bg-neutral-200 disabled:bg-neutral-800 disabled:text-neutral-500 text-black font-mono text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
         >
           {loading ? "Launching..." : "Launch Pipeline"}
         </button>
       </form>
 
       {error && (
-        <div className="mt-3 bg-red-900/40 border border-red-700 rounded-lg px-3 py-2 text-red-300 text-xs font-mono">
+        <div className="mt-3 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2 text-red-300 text-xs font-mono">
           {error}
         </div>
       )}
 
       {result && (
-        <div className="mt-3 bg-slate-800 rounded-lg px-3 py-2 space-y-1">
-          <p className="text-green-400 text-xs font-mono">
+        <div className="mt-3 bg-black border border-neutral-800 rounded-lg px-3 py-2 space-y-1">
+          <p className="text-emerald-400 text-xs font-mono">
             Plan created — {result.task_count} task
             {result.task_count !== 1 ? "s" : ""}
           </p>
-          <p className="text-slate-500 text-xs font-mono break-all">
+          <p className="text-neutral-500 text-xs font-mono break-all">
             plan_id: {result.plan_id}
           </p>
           {result.tasks?.map((t) => (
-            <p key={t.task_id} className="text-slate-400 text-xs font-mono truncate">
+            <p key={t.task_id} className="text-neutral-400 text-xs font-mono truncate">
               → {t.file_path}
             </p>
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
