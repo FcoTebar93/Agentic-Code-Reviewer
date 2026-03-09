@@ -33,6 +33,8 @@ http_client: httpx.AsyncClient | None = None
 cfg: ReplannerConfig | None = None
 tool_registry: ToolRegistry | None = None
 
+_replan_suggested_for_plan: dict[str, bool] = {}
+
 def _infer_group_id(file_path: str) -> str:
     """
     Deriva un identificador de grupo/módulo a partir del file_path.
@@ -198,6 +200,15 @@ async def _analyse_and_emit_revision(
         )
         return
 
+    # Only emit ONE plan.revision_suggested per plan id to avoid flooding
+    # when multiple qa.failed / security.blocked events occur.
+    if _replan_suggested_for_plan.get(plan_id):
+        logger.info(
+            "Replanner already emitted a plan.revision_suggested for plan %s; skipping.",
+            plan_id[:8],
+        )
+        return
+
     revision_payload = PlanRevisionPayload(
         original_plan_id=plan_id,
         reason=result.reason,
@@ -223,6 +234,7 @@ async def _analyse_and_emit_revision(
         revision_payload.new_plan_id[:8],
         revision_payload.severity,
     )
+    _replan_suggested_for_plan[plan_id] = True
 
 
 async def _fetch_memory_context(plan_id: str, limit: int = 5) -> str:
