@@ -146,8 +146,12 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
 
   const open = expandable ? isExpanded : true;
 
+  const [replanLoading, setReplanLoading] = useState(false);
+
   async function handleReplanClick(e: React.MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
+    if (replanLoading) return;
+    setReplanLoading(true);
     try {
       const resp = await fetch(`${HTTP_BASE}/api/replan`, {
         method: "POST",
@@ -156,9 +160,11 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
       });
       if (!resp.ok) {
         console.error("Replan request failed", resp.status);
+        setReplanLoading(false);
       }
     } catch (err) {
       console.error("Replan request error", err);
+      setReplanLoading(false);
     }
   }
 
@@ -203,9 +209,12 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
               </p>
               <button
                 onClick={handleReplanClick}
-                className="text-[10px] font-mono px-2 py-0.5 rounded border border-amber-400/60 text-amber-300 hover:bg-amber-400/10 transition-colors"
+                disabled={replanLoading}
+                className={`text-[10px] font-mono px-2 py-0.5 rounded border border-amber-400/60 text-amber-300 transition-colors ${
+                  replanLoading ? "opacity-60 cursor-default" : "hover:bg-amber-400/10"
+                }`}
               >
-                confirm replan
+                {replanLoading ? "confirming..." : "confirm replan"}
               </button>
             </div>
           )}

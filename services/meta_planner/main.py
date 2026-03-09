@@ -384,22 +384,23 @@ async def _consume_plan_revisions() -> None:
     """
     Listen for plan.revision_suggested and plan.revision_confirmed events.
 
-    - plan.revision_suggested: auto-replan only when severity is high|critical.
+    - plan.revision_suggested: suggestion only (no automatic replanning).
     - plan.revision_confirmed: always replan (human confirmed in the UI).
     """
 
     async def handler(event: BaseEvent) -> None:
         payload = PlanRevisionPayload.model_validate(event.payload)
         if event.event_type == EventType.PLAN_REVISION_SUGGESTED:
-            severity = (payload.severity or "medium").lower()
-            if severity not in {"high", "critical"}:
-                logger.info(
-                    "Ignoring plan.revision_suggested for %s with non-critical severity %s",
-                    payload.original_plan_id[:8],
-                    severity,
-                )
-                return
-        await _handle_plan_revision(payload)
+            logger.info(
+                "Received plan.revision_suggested for %s (severity=%s) - waiting for human confirmation.",
+                payload.original_plan_id[:8],
+                (payload.severity or "medium"),
+            )
+            # No automatic replanning on suggestions anymore; wait for plan.revision_confirmed.
+            return
+
+        if event.event_type == EventType.PLAN_REVISION_CONFIRMED:
+            await _handle_plan_revision(payload)
 
     await event_bus.subscribe(
         queue_name="meta_planner.plan_revisions",
