@@ -14,6 +14,8 @@ export function PlanForm() {
   const [projectName, setProjectName] = useState("my-project");
   const [repoUrl, setRepoUrl] = useState("");
   const [mode, setMode] = useState<"normal" | "save">("normal");
+  const [replannerAggressiveness, setReplannerAggressiveness] = useState<"0" | "1" | "2">("1");
+  const [plannerProvider, setPlannerProvider] = useState<string>("default");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +39,10 @@ export function PlanForm() {
         body.repo_url = repoUrl.trim();
       }
       body.mode = mode;
+      body.replanner_aggressiveness = replannerAggressiveness;
+      if (plannerProvider !== "default") {
+        body.llm_provider = plannerProvider;
+      }
 
       const resp = await fetch(`${HTTP_URL}/api/plan`, {
         method: "POST",
@@ -88,6 +94,42 @@ export function PlanForm() {
             <option value="normal">normal (more context, more tokens)</option>
             <option value="save">save (reduced context, fewer tokens)</option>
           </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-neutral-500 text-xs font-mono mb-1">
+              Replanner aggressiveness
+            </label>
+            <select
+              value={replannerAggressiveness}
+              onChange={(e) =>
+                setReplannerAggressiveness(e.target.value as "0" | "1" | "2")
+              }
+              className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
+            >
+              <option value="0">0 — off (no auto-replan)</option>
+              <option value="1">1 — normal (current behaviour)</option>
+              <option value="2">2 — more aggressive (prioritise replans)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-neutral-500 text-xs font-mono mb-1">
+              Planner LLM provider
+            </label>
+            <select
+              value={plannerProvider}
+              onChange={(e) => setPlannerProvider(e.target.value)}
+              className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
+            >
+              <option value="default">auto (from backend)</option>
+              <option value="groq">Groq (llama-3.3-70b)</option>
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+              <option value="local">Local (Ollama / LM Studio)</option>
+            </select>
+          </div>
         </div>
 
         <div>
