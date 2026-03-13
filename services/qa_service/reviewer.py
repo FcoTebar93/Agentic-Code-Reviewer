@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Literal
 
 from shared.llm_adapter import LLMProvider, LLMResponse
 from shared.observability.metrics import llm_tokens
@@ -27,6 +28,7 @@ class ReviewResult:
     passed: bool
     issues: list[str] = field(default_factory=list)
     reasoning: str = ""
+    structured_feedback: dict | None = None
 
 
 SERVICE_NAME = "qa_service"
@@ -53,7 +55,26 @@ async def review_code(
             "developer's stated rationale."
         )
         logger.warning("Static check FAILED for %s: %s", file_path, static_issues)
-        return ReviewResult(passed=False, issues=static_issues, reasoning=reasoning), 0, 0
+        return (
+            ReviewResult(
+                passed=False,
+                issues=static_issues,
+                reasoning=reasoning,
+                structured_feedback={
+                    "functionality": [],
+                    "style": [],
+                    "security": [
+                        {
+                            "severity": "critical",
+                            "title": "Patrones estáticos peligrosos detectados antes del QA LLM",
+                            "details": "; ".join(static_issues),
+                        }
+                    ],
+                },
+            ),
+            0,
+            0,
+        )
 
     return await _llm_review(
         llm,
@@ -69,11 +90,48 @@ async def review_code(
 
 def _static_check(code: str) -> list[str]:
     """Detect known dangerous patterns. O(n*m) but code is small."""
-    issues = []
+    issues: list[str] = []
     for pattern in DANGEROUS_PATTERNS:
         if pattern in code:
             issues.append(f"Dangerous pattern detected: `{pattern}`")
+
+    suspicious_snippets = _heuristic_suspicious_snippets(code)
+    issues.extend(suspicious_snippets)
     return issues
+
+
+def _heuristic_suspicious_snippets(code: str) -> list[str]:
+    """
+    Heurística ligera de \"código sospechoso\" independiente de linters:
+    - accesos a red,
+    - acceso directo a sistema de ficheros,
+    - acceso a variables de entorno/secrets.
+    Esto NO bloquea por sí solo, pero se adjunta como issue de seguridad de alta prioridad.
+    """
+    lowered = code.lower()
+    findings: list[str] = []
+
+    network_markers = ("requests.", "httpx.", "fetch(", "axios.", "urlopen(")
+    if any(m in lowered for m in network_markers):
+        findings.append(
+            "Suspicious network access detected (HTTP client usage). "
+            "Verifica timeouts, validación de entradas y manejo de errores."
+        )
+
+    fs_markers = ("open(", "os.remove(", "os.unlink(", "shutil.", "fs.", "pathlib.")
+    if any(m in lowered for m in fs_markers):
+        findings.append(
+            "Suspicious filesystem access detected. Comprueba rutas, permisos y riesgos de path traversal."
+        )
+
+    secrets_markers = ("os.environ", "process.env", "secret", "api_key", "password")
+    if any(m in lowered for m in secrets_markers):
+        findings.append(
+            "Possible secrets or environment variable usage detected. "
+            "Asegura que no se exponen credenciales ni se registran valores sensibles."
+        )
+
+    return findings
 
 
 async def _llm_review(
@@ -139,12 +197,18 @@ def _build_qa_rules_block(language: str) -> str:
 
 
 def _parse_review_response(content: str) -> ReviewResult:
-    """Parse the structured LLM response into a ReviewResult with reasoning."""
+    """Parse the structured LLM response into a ReviewResult with reasoning and sections."""
     lines = content.strip().splitlines()
     passed = True
     issues: list[str] = []
     reasoning = ""
     in_issues = False
+    current_section: Literal["functionality", "style", "security", "other"] = "other"
+    structured: dict[str, list[dict]] = {
+        "functionality": [],
+        "style": [],
+        "security": [],
+    }
 
     for line in lines:
         stripped = line.strip()
@@ -166,12 +230,53 @@ def _parse_review_response(content: str) -> ReviewResult:
             issue = stripped.lstrip("- ").strip()
             if issue.lower() not in ("none", ""):
                 issues.append(issue)
+                sev = "info"
+                category = "other"
+                if issue.startswith("[") and "]" in issue:
+                    header, _, rest = issue[1:].partition("]")
+                    parts = header.split("|", 1)
+                    if parts:
+                        sev = parts[0].strip().lower() or "info"
+                    if len(parts) > 1:
+                        category = parts[1].strip().lower() or "other"
+                    title = rest.strip() or issue
+                else:
+                    title = issue
+
+                if "seguridad" in category or "security" in category:
+                    current_section = "security"
+                elif "funcional" in category or "functional" in category:
+                    current_section = "functionality"
+                elif "estilo" in category or "style" in category:
+                    current_section = "style"
+                else:
+                    current_section = "other"
+
+                target_key = (
+                    current_section
+                    if current_section in {"functionality", "style", "security"}
+                    else "security" if "sec" in category else "functionality"
+                )
+                structured.setdefault(target_key, []).append(
+                    {
+                        "severity": sev,
+                        "category": category,
+                        "title": title,
+                    }
+                )
 
     if not passed and not issues:
         issues.append("LLM reviewer returned FAIL without specific issues")
 
     logger.info(
         "LLM review result: %s, issues=%d. Reasoning: %s",
-        "PASS" if passed else "FAIL", len(issues), reasoning[:80],
+        "PASS" if passed else "FAIL",
+        len(issues),
+        reasoning[:80],
     )
-    return ReviewResult(passed=passed, issues=issues, reasoning=reasoning)
+    return ReviewResult(
+        passed=passed,
+        issues=issues,
+        reasoning=reasoning,
+        structured_feedback=structured,
+    )
