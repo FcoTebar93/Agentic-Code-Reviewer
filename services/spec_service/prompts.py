@@ -25,6 +25,11 @@ PLAN CONTEXT (if provided, summarised and possibly incomplete):
 REPO TEST LAYOUT (heuristic, may be approximate):
 {test_layout}
 
+If the target file clearly belongs to a known framework, adapt your spec and tests:
+- For FastAPI/Django/FastAPI-style APIs (Python): think in terms of endpoints, HTTP methods, request/response models,
+  validation, auth and error handling.
+- For React/Next.js components (JS/TS): think in terms of props/state, rendered output, user interactions and side effects.
+
 Instructions:
 1. Derive a concise, concrete specification of what the code must do.
 2. Think in terms of inputs, outputs, preconditions, postconditions and main edge cases.
@@ -32,6 +37,14 @@ Instructions:
    but DO NOT write full test code, only short, actionable descriptions.
 4. Para cada test, indica si es CRÍTICO (rompe funcionalidad o seguridad si falla) u OPCIONAL
    (mejora robustez, mantenibilidad o cobertura pero no es bloqueante).
+5. Si se trata de un endpoint HTTP (FastAPI/Django/Flask), incluye al menos tests para:
+   - status code esperado (2xx/4xx/5xx),
+   - validación de entradas (casos válidos y no válidos),
+   - permisos/autenticación si aplica.
+6. Si se trata de un componente React/Next.js, incluye al menos tests para:
+   - render básico con props mínimas,
+   - interacción principal (click/input),
+   - estados de carga/errores si existen.
 
 Write everything in Spanish.
 

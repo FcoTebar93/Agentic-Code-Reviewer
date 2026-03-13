@@ -32,6 +32,12 @@ Now review the following {language} code intended for file `{file_path}`:
 The original task description was:
 {description}
 
+If the code clearly belongs to a known framework, apply additional checks:
+- For FastAPI/Django/Flask APIs (Python): pay special attention to request/response models, validation, auth,
+  error handling and HTTP status codes.
+- For React/Next.js components (JS/TS): pay attention to props/state design, side effects in hooks,
+  accessibility and predictable rendering.
+
 You must:
 1. Explicitly respond to the developer's reasoning — do you agree with their approach? Are there concerns?
 2. Check that the code correctly implements the described task, including edge cases and error conditions.

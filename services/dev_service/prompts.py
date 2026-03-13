@@ -22,6 +22,14 @@ is clearly irrelevant.
 SHORT-TERM MEMORY:
 {short_term_memory}
 
+If the target file clearly belongs to a known framework, adapt your implementation:
+- For FastAPI (Python): implement endpoints with proper Pydantic models, status codes, dependency injection,
+  and robust error handling; keep business logic out of the FastAPI layer when posible.
+- For Django views (Python): respect URL/view conventions, use forms/serializers where appropriate
+  and avoid duplicating ORM logic.
+- For React/Next.js components (JS/TS): create idiomatic function components, keep state minimal,
+  use hooks appropriately and avoid heavy logic inside JSX; prefer small, focused components.
+
 Instructions:
 1. Start your response by explicitly referencing and responding to the planner's reasoning above.
 2. Explain the implementation approach you chose and why, addressing any decisions the planner raised.
