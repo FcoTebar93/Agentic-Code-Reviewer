@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+from typing import Optional
 
 import httpx
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
+from shared.observability.metrics import llm_requests, llm_latency
 
 _BASE_URLS: dict[str, str] = {
     "openai":     "https://api.openai.com/v1",
@@ -58,8 +60,6 @@ class OpenAIProvider(LLMProvider):
             or os.environ.get("LLM_API_KEY", "")
             or os.environ.get("OPENAI_API_KEY", "")
         )
-        # Local providers (e.g. Ollama / LM Studio) often don't require a key.
-        # In that case we generate a dummy one so the OpenAI client is happy.
         if not self._api_key and provider_name == "local":
             self._api_key = "local-placeholder-key"
         elif not self._api_key:
@@ -82,14 +82,8 @@ class OpenAIProvider(LLMProvider):
 
         timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT", "120"))
 
-        # Para el proveedor "local" usamos httpx directamente contra un servidor
-        # OpenAI-compatible (Ollama / LM Studio), evitando así problemas de
-        # encoding en cabeceras del cliente oficial.
         if provider_name == "local":
             self._use_raw_http = True
-            # Los servidores locales tipo Ollama/LM Studio normalmente no
-            # requieren cabeceras especiales. No pasamos headers aquí para
-            # evitar problemas de encoding con httpx.
             self._http_client = httpx.AsyncClient(
                 base_url=self._base_url,
                 timeout=timeout,
@@ -110,54 +104,118 @@ class OpenAIProvider(LLMProvider):
             )
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
+        """
+        Generate a completion with basic retry/backoff and outcome metrics.
+
+        Outcomes:
+        - ok:      request succeeded
+        - timeout: HTTP/transport timeout
+        - error:   non-timeout error (4xx/5xx or client error)
+        """
         prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
-
         model = self._model if request.model in ("", "gpt-4o") else request.model
+        provider = self._provider_name
 
-        if getattr(self, "_use_raw_http", False):
-            # Llamada HTTP directa al endpoint /chat/completions de un servidor
-            # local OpenAI-compatible (por ejemplo Ollama).
-            resp = await self._http_client.post(
-                "/chat/completions",
-                json={
-                    "model": model,
-                    "temperature": 0.0,
-                    "max_tokens": request.max_tokens,
-                    "messages": [{"role": "user", "content": request.prompt}],
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        max_retries = int(os.environ.get("LLM_MAX_RETRIES", "2"))
+        base_delay = float(os.environ.get("LLM_RETRY_DELAY_S", "1.0"))
 
-            choice = data["choices"][0]
-            usage = data.get("usage") or {}
+        attempt = 0
+        last_exc: Optional[Exception] = None
 
-            return LLMResponse(
-                content=choice["message"]["content"] or "",
-                model=data.get("model", model),
-                prompt_tokens=usage.get("prompt_tokens", 0),
-                completion_tokens=usage.get("completion_tokens", 0),
-                total_tokens=usage.get("total_tokens", 0),
-                cached=False,
-                prompt_hash=prompt_hash,
-            )
+        with llm_latency.labels(service=provider).time():
+            while attempt <= max_retries:
+                try:
+                    if getattr(self, "_use_raw_http", False):
+                        resp = await self._http_client.post(
+                            "/chat/completions",
+                            json={
+                                "model": model,
+                                "temperature": 0.0,
+                                "max_tokens": request.max_tokens,
+                                "messages": [
+                                    {"role": "user", "content": request.prompt}
+                                ],
+                            },
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
 
-        response = await self._client.chat.completions.create(
-            model=model,
-            temperature=0.0,
-            max_tokens=request.max_tokens,
-            messages=[{"role": "user", "content": request.prompt}],
-        )
+                        choice = data["choices"][0]
+                        usage = data.get("usage") or {}
 
-        choice = response.choices[0]
-        usage = response.usage
+                        llm_requests.labels(
+                            provider=provider,
+                            model=model,
+                            service=provider,
+                            outcome="ok",
+                        ).inc()
 
-        return LLMResponse(
-            content=choice.message.content or "",
-            model=response.model,
-            prompt_tokens=usage.prompt_tokens if usage else 0,
-            completion_tokens=usage.completion_tokens if usage else 0,
-            total_tokens=usage.total_tokens if usage else 0,
-            cached=False,
-            prompt_hash=prompt_hash,
-        )
+                        return LLMResponse(
+                            content=choice["message"]["content"] or "",
+                            model=data.get("model", model),
+                            prompt_tokens=usage.get("prompt_tokens", 0),
+                            completion_tokens=usage.get("completion_tokens", 0),
+                            total_tokens=usage.get("total_tokens", 0),
+                            cached=False,
+                            prompt_hash=prompt_hash,
+                        )
+
+                    response = await self._client.chat.completions.create(
+                        model=model,
+                        temperature=0.0,
+                        max_tokens=request.max_tokens,
+                        messages=[{"role": "user", "content": request.prompt}],
+                    )
+
+                    choice = response.choices[0]
+                    usage = response.usage
+
+                    llm_requests.labels(
+                        provider=provider,
+                        model=model,
+                        service=provider,
+                        outcome="ok",
+                    ).inc()
+
+                    return LLMResponse(
+                        content=choice.message.content or "",
+                        model=response.model,
+                        prompt_tokens=usage.prompt_tokens if usage else 0,
+                        completion_tokens=usage.completion_tokens if usage else 0,
+                        total_tokens=usage.total_tokens if usage else 0,
+                        cached=False,
+                        prompt_hash=prompt_hash,
+                    )
+                except (httpx.TimeoutException, TimeoutError) as exc:
+                    last_exc = exc
+                    llm_requests.labels(
+                        provider=provider,
+                        model=model,
+                        service=provider,
+                        outcome="timeout",
+                    ).inc()
+                    if attempt >= max_retries:
+                        raise
+                except Exception as exc:
+                    last_exc = exc
+                    llm_requests.labels(
+                        provider=provider,
+                        model=model,
+                        service=provider,
+                        outcome="error",
+                    ).inc()
+                    if attempt >= max_retries:
+                        raise
+
+                attempt += 1
+                delay = base_delay * attempt
+                try:
+                    import asyncio
+
+                    await asyncio.sleep(delay)
+                except Exception:
+                    pass
+
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("LLM generate failed without explicit error")
