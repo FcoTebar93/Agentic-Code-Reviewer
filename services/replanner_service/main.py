@@ -150,6 +150,9 @@ async def _analyse_and_emit_revision(
     """
     Run the replanner LLM on a failing outcome and, if it decides that a
     revision is needed, emit a plan.revision_suggested event.
+
+    Degradación controlada: si algo falla (LLM, memory_service, etc.), el
+    pipeline continúa sin replanning para este plan.
     """
     if cfg is None:
         return
@@ -160,37 +163,46 @@ async def _analyse_and_emit_revision(
         if fp:
             target_group_ids.append(_infer_group_id(fp))
 
-    with agent_execution_time.labels(
-        service=SERVICE_NAME, operation=f"replan_{outcome_type}"
-    ).time():
-        llm = get_llm_provider(provider_name=cfg.llm_provider)
-        memory_context = await _fetch_memory_context(plan_id)
+    try:
+        with agent_execution_time.labels(
+            service=SERVICE_NAME, operation=f"replan_{outcome_type}"
+        ).time():
+            llm = get_llm_provider(provider_name=cfg.llm_provider)
+            memory_context = await _fetch_memory_context(plan_id)
 
-        result, prompt_tokens, completion_tokens = await analyse_outcome(
-            llm=llm,
-            agent_goal=cfg.agent_goal,
-            plan_id=plan_id,
-            outcome=outcome,
-            memory_context=memory_context,
-            outcome_type=outcome_type,
+            result, prompt_tokens, completion_tokens = await analyse_outcome(
+                llm=llm,
+                agent_goal=cfg.agent_goal,
+                plan_id=plan_id,
+                outcome=outcome,
+                memory_context=memory_context,
+                outcome_type=outcome_type,
+            )
+
+            if prompt_tokens or completion_tokens:
+                tok_event = metrics_tokens_used(
+                    SERVICE_NAME,
+                    TokensUsedPayload(
+                        plan_id=plan_id,
+                        service=SERVICE_NAME,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                    ),
+                )
+                await store_event(
+                    http_client,
+                    tok_event,
+                    logger=logger,
+                    error_message="Failed to store replanner event %s",
+                )
+    except Exception:
+        logger.exception(
+            "Replanner failed while analysing outcome for plan %s (type=%s). "
+            "Skipping replanning but keeping pipeline running.",
+            plan_id[:8],
+            outcome_type,
         )
-
-        if prompt_tokens or completion_tokens:
-            tok_event = metrics_tokens_used(
-                SERVICE_NAME,
-                TokensUsedPayload(
-                    plan_id=plan_id,
-                    service=SERVICE_NAME,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                ),
-            )
-            await store_event(
-                http_client,
-                tok_event,
-                logger=logger,
-                error_message="Failed to store replanner event %s",
-            )
+        return
 
     if not result.revision_needed:
         logger.info(
@@ -199,9 +211,6 @@ async def _analyse_and_emit_revision(
             result.severity,
         )
         return
-
-    # Only emit ONE plan.revision_suggested per plan id to avoid flooding
-    # when multiple qa.failed / security.blocked events occur.
     if _replan_suggested_for_plan.get(plan_id):
         logger.info(
             "Replanner already emitted a plan.revision_suggested for plan %s; skipping.",

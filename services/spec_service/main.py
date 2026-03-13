@@ -126,38 +126,47 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         )
         return
 
-    with agent_execution_time.labels(service=SERVICE_NAME, operation="spec_gen").time():
-        llm = get_llm_provider(
-            provider_name=cfg.llm_provider,
-            redis_url=cfg.redis_url,
-        )
-        plan_context = await _build_plan_context(plan_id, task.task_id, task.file_path)
-        test_layout = _infer_test_layout(task.file_path, task.language)
-        spec_result, prompt_tokens, completion_tokens = await _generate_spec(
-            llm=llm,
-            description=task.description,
-            file_path=task.file_path,
-            language=task.language,
-            plan_context=plan_context,
-            test_layout=test_layout,
-        )
+    try:
+        with agent_execution_time.labels(service=SERVICE_NAME, operation="spec_gen").time():
+            llm = get_llm_provider(
+                provider_name=cfg.llm_provider,
+                redis_url=cfg.redis_url,
+            )
+            plan_context = await _build_plan_context(plan_id, task.task_id, task.file_path)
+            test_layout = _infer_test_layout(task.file_path, task.language)
+            spec_result, prompt_tokens, completion_tokens = await _generate_spec(
+                llm=llm,
+                description=task.description,
+                file_path=task.file_path,
+                language=task.language,
+                plan_context=plan_context,
+                test_layout=test_layout,
+            )
 
-        if prompt_tokens or completion_tokens:
-            tok_event = metrics_tokens_used(
-                SERVICE_NAME,
-                TokensUsedPayload(
-                    plan_id=plan_id,
-                    service=SERVICE_NAME,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                ),
-            )
-            await store_event(
-                http_client,
-                tok_event,
-                logger=logger,
-                error_message="Failed to store spec_service metrics event %s",
-            )
+            if prompt_tokens or completion_tokens:
+                tok_event = metrics_tokens_used(
+                    SERVICE_NAME,
+                    TokensUsedPayload(
+                        plan_id=plan_id,
+                        service=SERVICE_NAME,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                    ),
+                )
+                await store_event(
+                    http_client,
+                    tok_event,
+                    logger=logger,
+                    error_message="Failed to store spec_service metrics event %s",
+                )
+    except Exception:
+        logger.exception(
+            "Spec Service failed while generating spec for task %s (plan %s). "
+            "Continuing pipeline without spec/tests suggestions.",
+            task.task_id[:8],
+            plan_id[:8],
+        )
+        return
 
     spec_payload = SpecGeneratedPayload(
         plan_id=plan_id,
