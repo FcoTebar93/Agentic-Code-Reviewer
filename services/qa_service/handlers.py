@@ -29,6 +29,7 @@ from shared.tools import ToolRegistry, execute_tool
 from shared.utils import EventBus, build_short_term_memory_window, store_event
 from services.qa_service.config import QAConfig
 from services.qa_service.reviewer import review_code, ReviewResult
+from shared.utils import infer_framework_hint
 
 
 @dataclass
@@ -110,8 +111,13 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                     repo_context = repo_context + "\n\n" + patterns_context
                 else:
                     repo_context = patterns_context
+            framework_hint = infer_framework_hint(payload.language, payload.file_path)
+            stm_block = short_term_memory.strip()
+            if framework_hint:
+                prefix = f"FRAMEWORK HINT: {framework_hint}\n\n"
+                stm_block = prefix + (stm_block or "")
             qa_context = _build_qa_context(
-                short_term_memory=short_term_memory,
+                short_term_memory=stm_block,
                 repo_context=repo_context,
             )
             result, prompt_tokens, completion_tokens = await review_code(

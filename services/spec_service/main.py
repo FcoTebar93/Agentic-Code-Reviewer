@@ -19,7 +19,7 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider, LLMProvider, LLMResponse
-from shared.utils import EventBus, IdempotencyStore, store_event
+from shared.utils import EventBus, IdempotencyStore, store_event, infer_framework_hint
 from services.spec_service.config import SpecConfig
 from services.spec_service.prompts import SPEC_PROMPT
 
@@ -193,11 +193,16 @@ async def _generate_spec(
     Call the LLM once to produce SPEC and TESTS sections.
     Returns ({spec: str, tests: str}, prompt_tokens, completion_tokens).
     """
+    fw_hint = infer_framework_hint(language, file_path)
+    ctx_block = plan_context.strip()
+    if fw_hint:
+        prefix = f"FRAMEWORK HINT: {fw_hint}\n\n"
+        ctx_block = prefix + (ctx_block or "")
     prompt = SPEC_PROMPT.format(
         language=language or "python",
         description=description,
         file_path=file_path,
-        plan_context=plan_context.strip() or "None.",
+        plan_context=ctx_block or "None.",
         test_layout=test_layout.strip() or "None.",
     )
     response: LLMResponse = await llm.generate_text(prompt)

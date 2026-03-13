@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from shared.contracts.events import TaskSpec
 from shared.llm_adapter import LLMProvider, LLMResponse
 from shared.observability.metrics import llm_tokens
+from shared.utils import infer_framework_hint
 from services.dev_service.prompts import CODE_GEN_PROMPT, CODE_GEN_PROMPT_NO_PRIOR
 
 logger = logging.getLogger(__name__)
@@ -39,13 +40,18 @@ async def generate_code(
 ) -> tuple[CodeResult, int, int]:
     """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
     is_patch_like = getattr(task, "edit_scope", "file") != "file"
+    framework_hint = infer_framework_hint(task.language, task.file_path)
+    stm_block = short_term_memory.strip()
+    if framework_hint:
+        prefix = f"FRAMEWORK HINT: {framework_hint}\n\n"
+        stm_block = prefix + (stm_block or "")
     if plan_reasoning.strip():
         prompt = CODE_GEN_PROMPT.format(
             language=task.language,
             plan_reasoning=plan_reasoning,
             description=task.description,
             file_path=task.file_path,
-            short_term_memory=short_term_memory.strip() or "None.",
+            short_term_memory=stm_block or "None.",
         )
     else:
         prompt = CODE_GEN_PROMPT_NO_PRIOR.format(
