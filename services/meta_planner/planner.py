@@ -23,8 +23,12 @@ logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "meta_planner"
 
-PLANNING_PROMPT_TEMPLATE = """You are a senior software architect. Given the following user request,
-decompose it into a list of concrete development tasks.
+PLANNING_PROMPT_TEMPLATE = """You are a senior software architect acting as the PLANNER in a multi-agent CI pipeline.
+
+Given the following user request, decompose it into a list of concrete development tasks that are:
+- SMALL and FOCUSED (each task should have a single clear goal).
+- SCOPED to a TINY set of files (ideally 1 file, exceptionally up to 3 closely-related files inside the same module/directory).
+- HOMOGENEOUS in shape so that downstream agents can process, test and review them independently.
 
 You also have access to selected memories from past plans and pipeline runs.
 These may include previous user prompts, planner reasoning, pipeline conclusions,
@@ -36,18 +40,34 @@ you MUST explicitly understand what failed (which QA or security rules were viol
 and adjust the new plan so that future Dev/QA/Security steps fix those issues and
 comply with the referenced rules. Avoid repeating the same mistakes across plans.
 
+If the MEMORY CONTEXT contains aggregated "Historical failure patterns" by module,
+you MUST:
+- Treat modules with frequent QA_FAILED / SECURITY_BLOCKED counts as HOT SPOTS.
+- Prefer creating explicit tasks to add or harden tests and safeguards around those modules
+  (for example: more unit/integration tests, stricter input validation, better error handling).
+- Avoid introducing new cross-cutting changes that touch many unrelated modules at once.
+
+For large or cross-cutting changes, break the work into several smaller tasks grouped
+by module/directory, instead of a single huge task that touches many different parts
+of the repository.
+
 MEMORY CONTEXT:
 {memory_context}
 
 First, explain your reasoning: why these tasks, what architectural decisions you made,
-and how they relate to each other.
+how you are using MEMORY CONTEXT (especially failure patterns), and how tasks relate
+to each other.
 
 Then output the task list. For simple requests (e.g. "create a Hello World in X"),
 output a SINGLE task with one file_path. Do not duplicate the same file_path.
 
 Format your response EXACTLY as:
 REASONING: <your architectural reasoning in 2-3 sentences>
-TASKS: <JSON array of objects with keys: description, file_path, language>
+TASKS: <JSON array of objects with keys: description, file_path, language and, optionally, edit_scope and group_id>
+
+Conventions:
+- Use edit_scope=\"file\" when possible, or \"module\" when a change spans a small, coherent package.
+- Use group_id to group related tasks by module/directory (for example: \"services/dev_service\", \"frontend/src/components\").
 
 User request:
 {prompt}
@@ -117,6 +137,8 @@ def _parse_response(raw: str) -> tuple[str, list[TaskSpec]]:
                     description=item.get("description", ""),
                     file_path=item.get("file_path", "unknown.py"),
                     language=item.get("language", "python"),
+                    edit_scope=item.get("edit_scope", "file"),
+                    group_id=item.get("group_id", "") or "",
                 )
                 for item in items
             ]
