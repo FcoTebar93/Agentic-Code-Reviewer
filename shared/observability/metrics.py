@@ -26,6 +26,19 @@ llm_tokens = Counter(
     ["service", "direction"],
 )
 
+llm_requests = Counter(
+    "llm_requests_total",
+    "Total LLM requests by provider/model/service and outcome",
+    ["provider", "model", "service", "outcome"],
+)
+
+llm_latency = Histogram(
+    "llm_latency_seconds",
+    "Latency of LLM calls by service",
+    ["service"],
+    buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+
 pr_creation_latency = Histogram(
     "pr_creation_latency_seconds",
     "Latency of pull request creation",

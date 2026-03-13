@@ -182,8 +182,10 @@ class PrApprovalPayload(BaseModel):
 class PipelineConclusionPayload(BaseModel):
     """
     Dedicated event emitted by the gateway when the agent pipeline reaches
-    a conclusion (after security.approved). Summarises the full chain and
-    the list of changes for the feed.
+    a conclusion (after security.approved or security.blocked). Summarises
+    the full chain and the list of changes for the feed.
+
+    It also captures a compact per-service summary to improve observability.
     """
 
     plan_id: str
@@ -191,6 +193,13 @@ class PipelineConclusionPayload(BaseModel):
     conclusion_text: str = ""
     files_changed: list[str] = Field(default_factory=list)
     approved: bool = True
+    services: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Mapa opcional service -> summary (duración aproximada, estado, "
+            "contadores de QA/security, etc.). No se usa para lógica crítica."
+        ),
+    )
 
 
 class PlanRevisionPayload(BaseModel):
