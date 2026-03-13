@@ -22,6 +22,7 @@ You are analysing the outcome of a previous plan with id {plan_id}.
 You receive:
 - The final QA and/or Security result.
 - A compact semantic memory window with past decisions and conclusions.
+- Aggregated historical failure patterns by module (qa.failed / security.blocked hot spots).
 
 MEMORY CONTEXT:
 {memory_context}
@@ -32,8 +33,10 @@ CURRENT OUTCOME SUMMARY:
 
 Your job:
 1. Decide whether the existing plan needs revision.
-2. If yes, propose the smallest set of concrete, high-leverage adjustments.
-3. Focus on structural changes to the plan, not line-by-line code fixes.
+2. If yes, propose the SMALLEST set of concrete, high-leverage adjustments.
+3. Prioritise changes in modules/directories that appear as hot spots in the failure patterns.
+4. Prefer adding or hardening tests, safeguards and small refactors in those modules over broad, cross-cutting rewrites.
+5. Focus on structural changes to the plan and task graph (what to re-run, what new tasks/tests to add), not line-by-line code fixes.
 
 Respond EXACTLY in this format:
 REASON: <1-3 sentences explaining why a revision is or is not needed>

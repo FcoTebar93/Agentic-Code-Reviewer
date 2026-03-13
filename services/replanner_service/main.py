@@ -240,40 +240,80 @@ async def _analyse_and_emit_revision(
 async def _fetch_memory_context(plan_id: str, limit: int = 5) -> str:
     """
     Retrieve semantic memory focused on this plan id to provide context
-    to the replanner (previous conclusions, QA failures, security blocks).
+    to the replanner (previous conclusions, QA failures, security blocks),
+    as well as aggregated historical failure patterns by module.
     """
     global tool_registry
     if tool_registry is None:
         return ""
 
     try:
-        result = await execute_tool(
+        semantic_result = await execute_tool(
             tool_registry,
             "semantic_outcome_memory",
             {"plan_id": plan_id, "limit": limit},
         )
-        if not result.success:
+        if not semantic_result.success:
             logger.warning(
                 "Replanner semantic search tool failed for plan %s: %s",
                 plan_id[:8],
-                result.error,
+                semantic_result.error,
             )
-            return ""
+            semantic_lines: list[str] = []
+        else:
+            payload = semantic_result.output or {}
+            results = payload.get("results") or []
+            semantic_lines: list[str] = []
+            if isinstance(results, list) and results:
+                for item in results[:limit]:
+                    p = item.get("payload") or {}
+                    score = item.get("heuristic_score", item.get("score", 0.0))
+                    text = str(p.get("text", ""))[:400].replace("\n", " ")
+                    etype = p.get("event_type", "")
+                    semantic_lines.append(f"- [{etype}] score={score:.3f}: {text}")
 
-        payload = result.output or {}
-        results = payload.get("results") or []
-        if not isinstance(results, list) or not results:
-            return ""
+        patterns_lines: list[str] = []
+        patterns_result = await execute_tool(
+            tool_registry,
+            "failure_patterns",
+            {"module_prefix": None, "limit": 200},
+        )
+        if patterns_result.success and isinstance(patterns_result.output, dict):
+            raw_patterns = patterns_result.output.get("patterns") or []
+            for p in raw_patterns[:4]:
+                if not isinstance(p, dict):
+                    continue
+                module = str(p.get("module", ""))
+                qa_n = int(p.get("qa_failed", 0) or 0)
+                sec_n = int(p.get("security_blocked", 0) or 0)
+                if qa_n == 0 and sec_n == 0:
+                    continue
+                pieces: list[str] = []
+                if qa_n:
+                    pieces.append(f"QA_FAILED x{qa_n}")
+                if sec_n:
+                    pieces.append(f"SEC_BLOCKED x{sec_n}")
+                sample = ", ".join(p.get("sample_issues", [])[:2])
+                if sample:
+                    patterns_lines.append(
+                        f"- {module}: " + ", ".join(pieces) + f" | samples: {sample}"
+                    )
+                else:
+                    patterns_lines.append(f"- {module}: " + ", ".join(pieces))
 
-        lines: list[str] = []
-        for item in results[:limit]:
-            payload = item.get("payload") or {}
-            score = item.get("heuristic_score", item.get("score", 0.0))
-            text = str(payload.get("text", ""))[:400].replace("\n", " ")
-            etype = payload.get("event_type", "")
-            lines.append(f"- [{etype}] score={score:.3f}: {text}")
+        blocks: list[str] = []
+        if semantic_lines:
+            blocks.append(
+                "SEMANTIC OUTCOME MEMORY (pipeline conclusions, QA/SEC results):\n"
+                + "\n".join(semantic_lines)
+            )
+        if patterns_lines:
+            blocks.append(
+                "HISTORICAL FAILURE PATTERNS (hot modules with frequent qa.failed/security.blocked):\n"
+                + "\n".join(patterns_lines)
+            )
 
-        return "\n".join(lines)
+        return "\n\n".join(blocks).strip()
     except Exception:
         logger.exception(
             "Failed to fetch memory context for replanner (plan %s)",
