@@ -152,6 +152,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 language=task.language,
                 plan_context=plan_context,
                 test_layout=test_layout,
+                mode=normalized_mode,
             )
 
             if prompt_tokens or completion_tokens:
@@ -208,6 +209,7 @@ async def _generate_spec(
     language: str,
     plan_context: str,
     test_layout: str,
+    mode: str,
 ) -> tuple[dict[str, str], int, int]:
     """
     Call the LLM once to produce SPEC and TESTS sections.
@@ -224,6 +226,7 @@ async def _generate_spec(
         file_path=file_path,
         plan_context=ctx_block or "None.",
         test_layout=test_layout.strip() or "None.",
+        mode=(mode or "normal").strip().lower(),
     )
     response: LLMResponse = await llm.generate_text(prompt)
 

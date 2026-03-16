@@ -305,10 +305,14 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
                     file_path=fp,
                     code=t["code"],
                     reasoning=_build_chain_reasoning(
-                        t["task_id"], deps.dev_reasoning_cache, deps.qa_reasoning_cache
+                        t["task_id"],
+                        deps.dev_reasoning_cache,
+                        deps.qa_reasoning_cache,
                     ),
                 )
             )
+
+        plan_mode = await _infer_plan_mode(plan_id, deps)
 
         deps.pr_requested_plan_ids.add(plan_id)
         repo_url = next((t.get("repo_url", "") for t in all_tasks), "")
@@ -319,6 +323,7 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
             files=files,
             commit_message=f"feat: implement plan {plan_id[:8]} (QA approved)",
             security_approved=False,
+            mode=plan_mode,
         )
         pr_event = pr_requested("qa_service", pr_payload)
         await deps.event_bus.publish(pr_event)
@@ -329,12 +334,43 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
             error_message="Failed to store event %s",
         )
         deps.logger.info(
-            "All tasks QA-passed for plan %s, pr.requested published (%d file(s))",
+            "All tasks QA-passed for plan %s, pr.requested published (%d file(s)), mode=%s",
             plan_id[:8],
             len(files),
+            plan_mode,
         )
     except Exception:
         deps.logger.exception("Error checking plan QA completion for %s", plan_id[:8])
+
+
+async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
+    """
+    Best-effort retrieval of the original plan mode from memory_service.
+
+    Falls back to \"normal\" if anything goes wrong so that downstream services
+    never depend critically on this lookup.
+    """
+    try:
+        resp = await deps.http_client.get(
+            "/events",
+            params={
+                "event_type": EventType.PLAN_CREATED.value,
+                "plan_id": plan_id,
+                "limit": 1,
+            },
+        )
+        if resp.status_code != 200:
+            return "normal"
+        events = resp.json()
+        if not isinstance(events, list) or not events:
+            return "normal"
+        evt = events[0] or {}
+        payload = evt.get("payload") or {}
+        raw_mode = payload.get("mode", "normal") or "normal"
+        return str(raw_mode).strip().lower() or "normal"
+    except Exception:
+        deps.logger.exception("Error inferring plan mode for %s", plan_id[:8])
+        return "normal"
 
 
 def _build_chain_reasoning(

@@ -102,8 +102,13 @@ async def _consume_pr_requests() -> None:
 
 async def _handle_security_scan(payload: PRRequestedPayload) -> None:
     plan_id = payload.plan_id
+    raw_mode = getattr(payload, "mode", "normal") or "normal"
+    mode = str(raw_mode).strip().lower() or "normal"
     logger.info(
-        "Security scan for plan %s (%d files)", plan_id[:8], len(payload.files)
+        "Security scan for plan %s (%d files, mode=%s)",
+        plan_id[:8],
+        len(payload.files),
+        mode,
     )
 
     with agent_execution_time.labels(service=SERVICE_NAME, operation="security_scan").time():
@@ -114,6 +119,14 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
     if not result.approved and result.violations:
         severity_hint = "high"
 
+    reasoning = result.reasoning or ""
+    if not result.approved and mode == "strict":
+        ctx = await _fetch_security_memory_context(plan_id)
+        if ctx:
+            reasoning = (reasoning + "\n\n" if reasoning else "") + (
+                "Contexto histórico de seguridad relevante:\n" + ctx
+            )
+
     sec_payload = SecurityResultPayload(
         plan_id=plan_id,
         branch_name=payload.branch_name,
@@ -121,7 +134,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         violations=result.violations,
         files_scanned=result.files_scanned,
         pr_context=payload.model_dump(),
-        reasoning=result.reasoning,
+        reasoning=reasoning,
         severity_hint=severity_hint,
     )
 

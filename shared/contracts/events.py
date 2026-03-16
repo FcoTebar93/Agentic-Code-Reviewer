@@ -117,6 +117,7 @@ class PRRequestedPayload(BaseModel):
     files: list[CodeGeneratedPayload]
     commit_message: str
     security_approved: bool = False
+    mode: str = "normal"
 
 
 class PRCreatedPayload(BaseModel):

@@ -13,12 +13,16 @@ Input:
 - Optional plan context (planner reasoning, related tasks, past specs and QA results).
 - Optional lightweight repository context around the target file (file preview, neighbour files, related usages).
 - Optional repo test layout hints (where tests usually live and how they are named).
+ - Pipeline mode: strict / normal / save (ahorro).
 
 TASK DESCRIPTION:
 {description}
 
 TARGET FILE:
 {file_path}
+
+PIPELINE MODE:
+{mode}
 
 PLAN CONTEXT (if provided, summarised and possibly incomplete):
 {plan_context}
@@ -51,6 +55,10 @@ Instructions:
    - render básico con props mínimas,
    - interacción principal (click/input),
    - estados de carga/errores si existen.
+9. Ten en cuenta el PIPELINE MODE:
+   - En modo STRICT: prioriza casos borde y tests CRÍTICOS adicionales, incluso si el cambio parece pequeño.
+   - En modo NORMAL: equilibra cobertura y coste de mantenimiento de tests.
+   - En modo SAVE/AHORRO: céntrate en los casos más importantes y evita sobre-diseñar tests opcionales.
 
 Write everything in Spanish.
 
