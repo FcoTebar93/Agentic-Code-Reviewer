@@ -381,6 +381,56 @@ async def get_plan_metrics(plan_id: str):
         return JSONResponse(content={"error": str(exc)}, status_code=502)
 
 
+@app.get("/api/plan_detail/{plan_id}")
+async def get_plan_detail(plan_id: str):
+    """
+    Aggregate plan-level information (metrics, tasks, key QA/Security outcomes and replans)
+    into a single JSON payload convenient for the frontend.
+    """
+    try:
+        metrics_resp = await get_plan_metrics(plan_id)
+        if isinstance(metrics_resp, JSONResponse) and metrics_resp.status_code != 200:
+            metrics_data: dict[str, Any] = {}
+        else:
+            metrics_data = (
+                metrics_resp
+                if isinstance(metrics_resp, dict)
+                else getattr(metrics_resp, "body", None)
+            )
+            if not isinstance(metrics_data, dict):
+                try:
+                    import json as _json
+
+                    metrics_data = (
+                        _json.loads(metrics_resp.body)
+                        if isinstance(metrics_resp, JSONResponse)
+                        else {}
+                    )
+                except Exception:
+                    metrics_data = {}
+
+        try:
+            tasks_http = await http_client.get(f"{cfg.memory_service_url}/tasks/{plan_id}")
+            tasks_data = tasks_http.json() if tasks_http.status_code == 200 else []
+        except Exception:
+            tasks_data = []
+
+        try:
+            events_http = await http_client.get(
+                f"{cfg.memory_service_url}/events",
+                params={"plan_id": plan_id, "limit": 500},
+            )
+            events_data = events_http.json() if events_http.status_code == 200 else []
+        except Exception:
+            events_data = []
+
+        detail = _build_plan_detail_json(plan_id, metrics_data, tasks_data, events_data)
+        return JSONResponse(content=detail, status_code=200)
+    except Exception as exc:
+        logger.exception("Failed to build plan_detail for %s", plan_id[:8])
+        return JSONResponse(content={"error": str(exc)}, status_code=502)
+
+
 def _aggregate_token_usage(
     token_events: list[dict[str, Any]],
     prompt_price: float,
@@ -521,6 +571,102 @@ def _count_replans_for_plan(
         if str(payload.get("original_plan_id", "")) == plan_id:
             count += 1
     return count
+
+
+def _build_plan_detail_json(
+    plan_id: str,
+    metrics: dict[str, Any],
+    tasks: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Compose a high-level "plan detail" JSON document from raw metrics, tasks and events.
+
+    This is intentionally conservative: it avoids heavy processing and focuses on
+    the most useful signals for the frontend (prompt, planner reasoning, tasks,
+    QA/Security outcomes, replans and a small event sample).
+    """
+    original_prompt = ""
+    planner_reasoning = ""
+    created_at = None
+
+    qa_outcomes: list[dict[str, Any]] = []
+    security_outcome: dict[str, Any] | None = None
+    replans: list[dict[str, Any]] = []
+
+    for ev in events or []:
+        etype = str(ev.get("event_type", ""))
+        payload = ev.get("payload") or {}
+        if not created_at and isinstance(ev.get("created_at"), str):
+            created_at = ev["created_at"]
+
+        if etype == "plan.created":
+            original_prompt = str(payload.get("original_prompt", "")).strip()
+            planner_reasoning = str(payload.get("reasoning", "")).strip()
+        elif etype == "qa.failed":
+            qa_outcomes.append(
+                {
+                    "task_id": payload.get("task_id"),
+                    "module": payload.get("module", ""),
+                    "severity_hint": payload.get("severity_hint", "medium"),
+                    "issues": payload.get("issues") or [],
+                    "reasoning": payload.get("reasoning", ""),
+                    "qa_attempt": payload.get("qa_attempt", 0),
+                }
+            )
+        elif etype == "security.approved" or etype == "security.blocked":
+            security_outcome = {
+                "approved": bool(payload.get("approved", False)),
+                "severity_hint": payload.get("severity_hint", "medium"),
+                "violations": payload.get("violations") or [],
+                "reasoning": payload.get("reasoning", ""),
+                "files_scanned": payload.get("files_scanned", 0),
+            }
+        elif etype == "plan.revision_suggested" or etype == "plan.revision_confirmed":
+            replans.append(
+                {
+                    "event_type": etype,
+                    "severity": payload.get("severity", "medium"),
+                    "reason": payload.get("reason", ""),
+                    "summary": payload.get("summary", ""),
+                    "target_group_ids": payload.get("target_group_ids") or [],
+                    "suggestions": payload.get("suggestions") or [],
+                    "original_plan_id": payload.get("original_plan_id", ""),
+                    "new_plan_id": payload.get("new_plan_id", ""),
+                }
+            )
+
+    task_summaries: list[dict[str, Any]] = []
+    for t in tasks or []:
+        task_summaries.append(
+            {
+                "task_id": t.get("task_id"),
+                "file_path": t.get("file_path", ""),
+                "language": t.get("language", ""),
+                "group_id": t.get("group_id", ""),
+                "status": t.get("status", ""),
+                "qa_attempt": t.get("qa_attempt", 0),
+            }
+        )
+
+    max_events = 80
+    events_sample = events[:max_events] if isinstance(events, list) else []
+
+    detail: dict[str, Any] = {
+        "plan_id": plan_id,
+        "created_at": created_at,
+        "status": metrics.get("pipeline_status", "unknown"),
+        "original_prompt": original_prompt,
+        "planner_reasoning": planner_reasoning,
+        "mode": metrics.get("mode", "normal"),
+        "metrics": metrics,
+        "tasks": task_summaries,
+        "qa_outcomes": qa_outcomes,
+        "security_outcome": security_outcome or {},
+        "replans": {"items": replans},
+        "events": events_sample,
+    }
+    return detail
 
 
 @app.get("/api/status")
