@@ -591,6 +591,7 @@ def _build_plan_detail_json(
     created_at = None
 
     qa_outcomes: list[dict[str, Any]] = []
+    code_snapshots: dict[str, dict[str, Any]] = {}
     security_outcome: dict[str, Any] | None = None
     replans: list[dict[str, Any]] = []
 
@@ -603,6 +604,19 @@ def _build_plan_detail_json(
         if etype == "plan.created":
             original_prompt = str(payload.get("original_prompt", "")).strip()
             planner_reasoning = str(payload.get("reasoning", "")).strip()
+        elif etype == "code.generated":
+            task_id = str(payload.get("task_id", ""))
+            file_path = str(payload.get("file_path", "") or "")
+            language = str(payload.get("language", "") or "")
+            code = str(payload.get("code", "") or "")
+            reasoning = str(payload.get("reasoning", "") or "")
+            code_snapshots[task_id] = {
+                "task_id": task_id,
+                "file_path": file_path,
+                "language": language,
+                "code": code,
+                "reasoning": reasoning,
+            }
         elif etype == "qa.failed":
             qa_outcomes.append(
                 {
@@ -638,6 +652,7 @@ def _build_plan_detail_json(
 
     task_summaries: list[dict[str, Any]] = []
     for t in tasks or []:
+        snapshot = code_snapshots.get(str(t.get("task_id", ""))) or {}
         task_summaries.append(
             {
                 "task_id": t.get("task_id"),
@@ -646,6 +661,8 @@ def _build_plan_detail_json(
                 "group_id": t.get("group_id", ""),
                 "status": t.get("status", ""),
                 "qa_attempt": t.get("qa_attempt", 0),
+                "code": snapshot.get("code", ""),
+                "dev_reasoning": snapshot.get("reasoning", ""),
             }
         )
 

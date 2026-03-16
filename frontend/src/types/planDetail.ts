@@ -35,6 +35,8 @@ export interface PlanTaskSummary {
   group_id: string;
   status: string;
   qa_attempt: number;
+  code?: string;
+  dev_reasoning?: string;
 }
 
 export interface QAOutcome {

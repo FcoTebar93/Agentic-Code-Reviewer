@@ -46,6 +46,10 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
 
   const hasSecurity = Object.keys(data.security_outcome || {}).length > 0;
 
+  const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(null);
+  const selectedTask =
+    data.tasks.find((t) => t.task_id === selectedTaskId) ?? data.tasks[0] ?? null;
+
   const statusBadgeClass =
     pipelineStatus === "approved"
       ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
@@ -117,7 +121,13 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
         )}
       </dl>
 
-      <TaskList tasks={data.tasks} qaOutcomes={data.qa_outcomes} />
+      <TaskList
+        tasks={data.tasks}
+        qaOutcomes={data.qa_outcomes}
+        selectedTaskId={selectedTaskId}
+        onSelectTask={setSelectedTaskId}
+      />
+      <CodePreview task={selectedTask} />
       <QAList qaOutcomes={data.qa_outcomes} />
       <SecuritySummary security={data.security_outcome} />
       <ManualReplanSection plan={data} />
@@ -128,7 +138,9 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
 const TaskList: React.FC<{
   tasks: PlanDetail["tasks"];
   qaOutcomes: PlanDetail["qa_outcomes"];
-}> = ({ tasks, qaOutcomes }) => {
+  selectedTaskId: string | null;
+  onSelectTask: (taskId: string) => void;
+}> = ({ tasks, qaOutcomes, selectedTaskId, onSelectTask }) => {
   if (!tasks.length) return null;
 
   const qaByTask = new Map(
@@ -147,10 +159,16 @@ const TaskList: React.FC<{
             qa?.severity_hint && qa.severity_hint !== "medium"
               ? qa.severity_hint
               : null;
+          const isActive = selectedTaskId === t.task_id;
           return (
             <div
               key={t.task_id}
-              className="text-xs border border-neutral-800 rounded px-2 py-1.5 flex flex-col gap-0.5"
+              onClick={() => onSelectTask(t.task_id)}
+              className={`text-xs border rounded px-2 py-1.5 flex flex-col gap-0.5 cursor-pointer ${
+                isActive
+                  ? "border-neutral-300 bg-neutral-900/60"
+                  : "border-neutral-800 hover:border-neutral-600"
+              }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate max-w-[160px]">
@@ -175,6 +193,45 @@ const TaskList: React.FC<{
           );
         })}
       </div>
+    </div>
+  );
+};
+
+const CodePreview: React.FC<{ task: PlanDetail["tasks"][number] | null }> = ({
+  task,
+}) => {
+  if (!task) return null;
+
+  const hasCode = typeof task.code === "string" && task.code.trim().length > 0;
+
+  if (!hasCode) {
+    return (
+      <div className="mt-3 border-t border-neutral-800 pt-2">
+        <p className="text-neutral-500 text-[10px] font-mono mb-1">
+          Code preview
+        </p>
+        <p className="text-[10px] text-neutral-600 font-mono">
+          No hay snapshot de código almacenado para esta tarea (puede que sea
+          anterior a esta versión del gateway).
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 border-t border-neutral-800 pt-2">
+      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+        Code preview · {task.file_path || "(sin ruta)"}
+      </p>
+      <div className="mb-1 flex justify-between items-center text-[10px] text-neutral-500 font-mono">
+        <span>
+          {task.language} · group {task.group_id || "root"}
+        </span>
+        <span>qa_attempt: {task.qa_attempt}</span>
+      </div>
+      <pre className="max-h-56 overflow-auto bg-black border border-neutral-800 rounded px-2 py-2 text-[11px] font-mono text-neutral-100 whitespace-pre">
+        {task.code}
+      </pre>
     </div>
   );
 };
