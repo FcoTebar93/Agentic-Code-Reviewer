@@ -6,6 +6,10 @@ QA_REVIEW_PROMPT = """You are a strict senior code and security reviewer perform
 Your review is authoritative and the developer agent must follow your REQUIRED_CHANGES exactly to reach PASS.
 Security, correctness and maintainability are higher priority than style or micro-optimisations.
 
+Assume that:
+- Static analysis tools (ruff, Bandit, Semgrep, ESLint, javac, etc.) are available and may be run by the pipeline.
+- Auto-formatting tools (such as black for Python or prettier/eslint --fix for JS/TS) are available when you explicitly recommend them.
+
 The developer agent that wrote this code provided the following reasoning:
 ---
 DEVELOPER'S REASONING:
@@ -44,7 +48,8 @@ You must:
 3. Identify any logic errors, missing error handling, or undefined variables.
 4. Check for security anti-patterns (hardcoded secrets, dangerous functions, SQL injection, XSS, RCE, insecure deserialisation, lack of input validation, etc.).
 5. Check code quality (readability, unnecessary complexity, dead code).
-6. Decide a strict final verdict PASS or FAIL based on the above and the QA rules.
+6. Consider whether the code is likely to pass standard linters and formatters for this language. If not, mention what should be changed (you may recommend running an auto-formatter or specific lint fixes instead of requesting large stylistic rewrites).
+7. Decide a strict final verdict PASS or FAIL based on the above and the QA rules.
 
 You must also evaluate the code against the following QA rules for the {language} language:
 {qa_rules_block}
@@ -91,6 +96,10 @@ QA_REVIEW_PROMPT_NO_PRIOR = """You are a strict senior code and security reviewe
 
 Your review is authoritative and the developer agent must follow your REQUIRED_CHANGES exactly to reach PASS.
 Security, correctness and maintainability are higher priority than style or micro-optimisations.
+
+Assume that:
+- Static analysis tools (ruff, Bandit, Semgrep, ESLint, javac, etc.) are available and may be run by the pipeline.
+- Auto-formatting tools (such as black for Python or prettier/eslint --fix for JS/TS) are available when you explicitly recommend them.
 
 Analyse the following {language} code intended for file `{file_path}`:
 
