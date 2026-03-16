@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +66,55 @@ class RunTestsInput(ToolInput):
     )
 
 
+class RunLintsInput(ToolInput):
+    command: str = Field(
+        default="ruff .",
+        description=(
+            "Comando de linting a ejecutar (relativo al repo), por ejemplo "
+            "'ruff .', 'npm run lint' o 'npx eslint .'."
+        ),
+        examples=["ruff .", "npm run lint"],
+    )
+    timeout_s: float = Field(
+        default=180.0,
+        ge=1.0,
+        le=600.0,
+        description="Timeout máximo para la ejecución del linter",
+    )
+
+
+class SearchInRepoInput(ToolInput):
+    pattern: str = Field(
+        description="Patrón de texto o regex a buscar en el repo",
+        examples=["def my_function", "useUserStore"],
+    )
+    directory: str = Field(
+        default=".",
+        description="Directorio base relativo al repo donde buscar",
+        examples=["services/dev_service", "frontend/src"],
+    )
+    max_results: int = Field(
+        default=100,
+        ge=1,
+        le=2000,
+        description="Máximo de coincidencias a devolver",
+    )
+
+
+class FormatCodeInput(ToolInput):
+    language: str = Field(
+        default="python",
+        description="Lenguaje del código a formatear. Actualmente soportado: python.",
+    )
+    code: str = Field(
+        description="Código fuente completo a formatear",
+    )
+    file_path: str = Field(
+        default="tmp.py",
+        description="Ruta lógica del archivo (para mensajes y heurísticas del formateador)",
+    )
+
+
 def _safe_join(path: str) -> Path:
     """Join a user-provided path to REPO_ROOT, preventing escapes."""
     p = (REPO_ROOT / path).resolve()
@@ -115,6 +166,132 @@ def list_project_files_tool(args: ListProjectFilesInput) -> dict[str, Any]:
     return {"directory": str(base_dir), "pattern": args.pattern, "files": matches}
 
 
+def _search_in_file(
+    path: Path,
+    pattern: re.Pattern,
+    max_results: int,
+    matches: list[dict[str, Any]],
+) -> None:
+    if len(matches) >= max_results:
+        return
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return
+    for i, line in enumerate(text.splitlines(), start=1):
+        if pattern.search(line):
+            try:
+                rel = path.relative_to(REPO_ROOT)
+            except ValueError:
+                rel = path
+            matches.append(
+                {
+                    "file": str(rel),
+                    "line": i,
+                    "snippet": line.strip(),
+                }
+            )
+            if len(matches) >= max_results:
+                break
+
+
+def search_in_repo_tool(args: SearchInRepoInput) -> dict[str, Any]:
+    """
+    Buscar un patrón de texto/regex en los archivos del repositorio.
+    Útil para localizar usos de funciones, clases o rutas antes de editar código.
+    """
+    base_dir = _safe_join(args.directory)
+    if not base_dir.exists() or not base_dir.is_dir():
+        return {"directory": str(base_dir), "matches": []}
+
+    try:
+        pattern = re.compile(args.pattern)
+    except re.error:
+        pattern = re.compile(re.escape(args.pattern))
+
+    matches: list[dict[str, Any]] = []
+    for path in base_dir.rglob("*"):
+        if len(matches) >= args.max_results:
+            break
+        if not path.is_file():
+            continue
+        _search_in_file(path, pattern, args.max_results, matches)
+
+    return {
+        "directory": str(base_dir),
+        "pattern": args.pattern,
+        "matches": matches,
+    }
+
+
+def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
+    """
+    Formatea código en un lenguaje dado usando herramientas estándar del entorno.
+
+    De momento solo se soporta Python vía 'python -m black'.
+    Para otros lenguajes se devuelve supported=False.
+    """
+    lang = (args.language or "python").lower()
+    if lang not in {"python", "py"}:
+        return {
+            "supported": False,
+            "language": args.language,
+            "formatted_code": args.code,
+            "note": "Solo se soporta formateo automático para Python por ahora",
+        }
+
+    try:
+        try:
+            subprocess.run(
+                ["python", "-m", "black", "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception:
+            return {
+                "supported": False,
+                "language": args.language,
+                "formatted_code": args.code,
+                "note": "black no está instalado; se omite el formateo automático",
+            }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            target = tmp_path / (args.file_path or "tmp.py")
+            if not str(target).endswith(".py"):
+                target = target.with_suffix(".py")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(args.code, encoding="utf-8")
+
+            proc = subprocess.run(
+                ["python", "-m", "black", str(target)],
+                cwd=str(tmp_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            formatted = target.read_text(encoding="utf-8", errors="replace")
+            return {
+                "supported": True,
+                "language": "python",
+                "formatted_code": formatted,
+                "exit_code": proc.returncode,
+                "stdout": proc.stdout[-4000:],
+                "stderr": proc.stderr[-2000:],
+            }
+    except Exception as exc:
+        return {
+            "supported": True,
+            "language": "python",
+            "formatted_code": args.code,
+            "exit_code": -1,
+            "stdout": "",
+            "stderr": f"format_code_tool failed: {exc}",
+        }
+
+
 async def run_tests_tool(args: RunTestsInput) -> dict[str, Any]:
     """
     Ejecuta un comando de tests dentro del repo de forma controlada.
@@ -155,6 +332,48 @@ async def run_tests_tool(args: RunTestsInput) -> dict[str, Any]:
             "timed_out": False,
             "stdout": "",
             "stderr": f"run_tests_tool failed: {exc}",
+        }
+
+
+async def run_lints_tool(args: RunLintsInput) -> dict[str, Any]:
+    """
+    Ejecuta un comando de linting dentro del repo de forma controlada.
+
+    Pensado para comandos como 'ruff .', 'npm run lint' o 'npx eslint .'.
+    """
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            args.command,
+            cwd=str(REPO_ROOT),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=args.timeout_s
+            )
+            exit_code = proc.returncode
+            timed_out = False
+        except asyncio.TimeoutError:
+            proc.kill()
+            stdout, stderr = await proc.communicate()
+            exit_code = -1
+            timed_out = True
+
+        return {
+            "command": args.command,
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "stdout": (stdout or b"").decode("utf-8", errors="replace")[-8000:],
+            "stderr": (stderr or b"").decode("utf-8", errors="replace")[-8000:],
+        }
+    except Exception as exc:
+        return {
+            "command": args.command,
+            "exit_code": -1,
+            "timed_out": False,
+            "stdout": "",
+            "stderr": f"run_lints_tool failed: {exc}",
         }
 
 
@@ -200,6 +419,51 @@ def build_dev_tool_registry() -> ToolRegistry:
             max_retries=0,
             sandboxed=False,
             tags=["tests", "ci"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="run_lints",
+            description=(
+                "Ejecutar un comando de linting (ruff, eslint, npm run lint, etc.) "
+                "sobre el repositorio"
+            ),
+            input_model=RunLintsInput,
+            func=run_lints_tool,
+            timeout_s=600.0,
+            max_retries=0,
+            sandboxed=False,
+            tags=["lint", "ci"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="search_in_repo",
+            description="Buscar un patrón de texto/regex en los archivos del repositorio",
+            input_model=SearchInRepoInput,
+            func=search_in_repo_tool,
+            timeout_s=10.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["search", "repo"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="format_code",
+            description=(
+                "Formatear código fuente (actualmente solo Python) usando black. "
+                "Devuelve el código formateado sin modificar archivos en disco."
+            ),
+            input_model=FormatCodeInput,
+            func=format_code_tool,
+            timeout_s=30.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["format", "style"],
         )
     )
 
