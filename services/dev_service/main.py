@@ -125,6 +125,9 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         f" (QA feedback present)" if qa_feedback else "",
     )
 
+    raw_mode = getattr(payload, "mode", "normal") or "normal"
+    mode = str(raw_mode).strip().lower()
+
     with agent_execution_time.labels(service=SERVICE_NAME, operation="code_gen").time():
         await _update_task_state(task.task_id, plan_id, "in_progress")
 
@@ -175,8 +178,8 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         except Exception:
             pass
 
-        tests_summary = await _maybe_run_auto_tests(task)
-        lints_summary = await _maybe_run_auto_lints(task, qa_feedback)
+        tests_summary = await _maybe_run_auto_tests(task, mode)
+        lints_summary = await _maybe_run_auto_lints(task, qa_feedback, mode)
 
         combined_reasoning = code_result.reasoning
         if tests_summary:
@@ -186,15 +189,42 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             suffix = f"\n[Dev Service] Automated lints summary: {lints_summary}"
             combined_reasoning = (combined_reasoning + suffix).strip()
 
+        formatted_code = code_result.code
+        if mode == "strict" and tool_registry is not None:
+            try:
+                lang = (task.language or "").lower()
+                if lang in ("python", "py", "javascript", "js", "typescript", "ts"):
+                    fmt_result = await execute_tool(
+                        tool_registry,
+                        "format_code",
+                        {
+                            "language": task.language,
+                            "code": formatted_code,
+                            "file_path": task.file_path or "tmp",
+                        },
+                    )
+                    if fmt_result.success and isinstance(fmt_result.output, dict):
+                        out = fmt_result.output
+                        if out.get("supported") and isinstance(
+                            out.get("formatted_code"), str
+                        ):
+                            formatted_code = out["formatted_code"]
+                            combined_reasoning = (
+                                combined_reasoning
+                                + "\n[Dev Service] Code was auto-formatted before QA."
+                            ).strip()
+            except Exception:
+                pass
+
         cg_payload = CodeGeneratedPayload(
             plan_id=plan_id,
             task_id=task.task_id,
             file_path=task.file_path,
-            code=code_result.code,
+            code=formatted_code,
             language=task.language,
             qa_attempt=current_attempt,
             reasoning=combined_reasoning,
-            mode=getattr(payload, "mode", "normal"),
+            mode=raw_mode,
         )
         step_delay = float(cfg.step_delay)
         if step_delay > 0:
@@ -276,7 +306,7 @@ async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str
     return False
 
 
-async def _maybe_run_auto_tests(task) -> str:
+async def _maybe_run_auto_tests(task, mode: str) -> str:
     """
     Optionally run configured automated tests for the task's language.
 
@@ -284,6 +314,7 @@ async def _maybe_run_auto_tests(task) -> str:
     are disabled or fail in a non-critical way.
     """
     try:
+        normalized_mode = (mode or "normal").strip().lower()
         test_cmd = ""
         lang = (task.language or "").lower()
         if cfg and cfg.enable_auto_tests and tool_registry is not None:
@@ -322,7 +353,7 @@ async def _maybe_run_auto_tests(task) -> str:
     return ""
 
 
-async def _maybe_run_auto_lints(task, qa_feedback: str) -> str:
+async def _maybe_run_auto_lints(task, qa_feedback: str, mode: str) -> str:
     """
     Optionally run configured automated linters for the task's language.
 
@@ -338,10 +369,9 @@ async def _maybe_run_auto_lints(task, qa_feedback: str) -> str:
             return ""
 
         lang = (getattr(task, "language", "") or "").lower()
-        mode = str(getattr(task, "edit_scope", "file") or "").lower()
+        edit_scope = str(getattr(task, "edit_scope", "file") or "").lower()
+        normalized_mode = (mode or "normal").strip().lower()
 
-        # Heurística simple para decidir comando por lenguaje.
-        # Se puede ajustar vía convención del repo (package.json, etc.) si hace falta.
         lint_cmd = ""
         if lang in ("python", "py"):
             lint_cmd = os.environ.get("DEV_LINT_COMMAND_PYTHON", "ruff .")
@@ -356,7 +386,7 @@ async def _maybe_run_auto_lints(task, qa_feedback: str) -> str:
             return ""
 
         has_feedback = bool((qa_feedback or "").strip())
-        if not has_feedback and mode == "file":
+        if normalized_mode != "strict" and not has_feedback and edit_scope == "file":
             return ""
 
         lints_result = await execute_tool(

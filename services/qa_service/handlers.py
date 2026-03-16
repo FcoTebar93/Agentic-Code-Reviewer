@@ -164,7 +164,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         file_path=payload.file_path,
         qa_attempt=payload.qa_attempt,
         reasoning=result.reasoning,
-        mode=getattr(payload, "mode", "normal"),
+        mode=raw_mode,
         module=module,
         severity_hint=severity_hint,
     )
