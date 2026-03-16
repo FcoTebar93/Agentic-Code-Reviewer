@@ -10,7 +10,8 @@ Your goal:
 Input:
 - High-level task description from the planner.
 - Target file path in the repo.
-- Optional plan context (planner reasoning and related tasks).
+- Optional plan context (planner reasoning, related tasks, past specs and QA results).
+- Optional lightweight repository context around the target file (file preview, neighbour files, related usages).
 - Optional repo test layout hints (where tests usually live and how they are named).
 
 TASK DESCRIPTION:
@@ -32,16 +33,21 @@ If the target file clearly belongs to a known framework, adapt your spec and tes
 
 Instructions:
 1. Derive a concise, concrete specification of what the code must do.
-2. Think in terms of inputs, outputs, preconditions, postconditions and main edge cases.
-3. Propose tests that could be implemented in this repo (unit tests or integration tests),
+2. Use the PLAN CONTEXT to stay aligned with the overall plan (other tasks, planner reasoning, historical specs/QA failures).
+3. Use the implicit REPOSITORY CONTEXT contained in PLAN CONTEXT to:
+   - Respect existing module boundaries and file organisation.
+   - Propose test locations and names consistent with the repo's current structure.
+   - Avoid suggesting tests or changes that contradict nearby files/usages.
+4. Think in terms of inputs, outputs, preconditions, postconditions and main edge cases.
+5. Propose tests that could be implemented in this repo (unit tests or integration tests),
    but DO NOT write full test code, only short, actionable descriptions.
-4. Para cada test, indica si es CRÍTICO (rompe funcionalidad o seguridad si falla) u OPCIONAL
+6. Para cada test, indica si es CRÍTICO (rompe funcionalidad o seguridad si falla) u OPCIONAL
    (mejora robustez, mantenibilidad o cobertura pero no es bloqueante).
-5. Si se trata de un endpoint HTTP (FastAPI/Django/Flask), incluye al menos tests para:
+7. Si se trata de un endpoint HTTP (FastAPI/Django/Flask), incluye al menos tests para:
    - status code esperado (2xx/4xx/5xx),
    - validación de entradas (casos válidos y no válidos),
    - permisos/autenticación si aplica.
-6. Si se trata de un componente React/Next.js, incluye al menos tests para:
+8. Si se trata de un componente React/Next.js, incluye al menos tests para:
    - render básico con props mínimas,
    - interacción principal (click/input),
    - estados de carga/errores si existen.
