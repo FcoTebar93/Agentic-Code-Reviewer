@@ -5,6 +5,7 @@ import { EventFeed } from "./components/EventFeed";
 import { PlanForm } from "./components/PlanForm";
 import { ApprovalQueue } from "./components/ApprovalQueue";
 import { PlanMetrics } from "./components/PlanMetrics";
+import { PlanDetailCard } from "./components/PlanDetailCard";
 import { Card, SectionHeader } from "./components/ui/Card";
 import { StatRow } from "./components/ui/StatRow";
 import { HeaderBar } from "./components/ui/HeaderBar";
@@ -150,6 +151,8 @@ export default function App() {
           <PlanForm />
 
           <PlanMetrics planId={activePlanId} />
+
+          <PlanDetailCard planId={activePlanId} />
 
           <ApprovalQueue
             approvals={pendingApprovals}
