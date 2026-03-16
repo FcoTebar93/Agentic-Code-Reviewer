@@ -120,7 +120,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         approved=result.approved,
         violations=result.violations,
         files_scanned=result.files_scanned,
-        pr_context=payload.model_dump() if result.approved else {},
+        pr_context=payload.model_dump(),
         reasoning=result.reasoning,
         severity_hint=severity_hint,
     )

@@ -162,6 +162,20 @@ async def _analyse_and_emit_revision(
         fp = (outcome.file_path or "").strip()
         if fp:
             target_group_ids.append(_infer_group_id(fp))
+    elif isinstance(outcome, SecurityResultPayload):
+        ctx = getattr(outcome, "pr_context", {}) or {}
+        files = ctx.get("files") or []
+        modules: set[str] = set()
+        if isinstance(files, list):
+            for f in files:
+                if not isinstance(f, dict):
+                    continue
+                fp = (f.get("file_path") or "").strip()
+                if not fp:
+                    continue
+                modules.add(_infer_group_id(fp))
+        if modules:
+            target_group_ids.extend(list(modules)[:5])
 
     try:
         with agent_execution_time.labels(
