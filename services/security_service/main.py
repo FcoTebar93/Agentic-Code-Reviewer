@@ -110,6 +110,10 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         files_data = [f.model_dump() for f in payload.files]
         result = scan_files(files_data, cfg)
 
+    severity_hint = "low"
+    if not result.approved and result.violations:
+        severity_hint = "high"
+
     sec_payload = SecurityResultPayload(
         plan_id=plan_id,
         branch_name=payload.branch_name,
@@ -118,6 +122,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         files_scanned=result.files_scanned,
         pr_context=payload.model_dump() if result.approved else {},
         reasoning=result.reasoning,
+        severity_hint=severity_hint,
     )
 
     if result.approved:

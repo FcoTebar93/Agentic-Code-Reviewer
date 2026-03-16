@@ -152,6 +152,9 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
 
     deps.qa_reasoning_cache[task_id] = result.reasoning or ""
 
+    module = _infer_module_from_path(payload.file_path)
+    severity_hint = _infer_severity_hint(result.issues)
+
     qa_payload = QAResultPayload(
         plan_id=plan_id,
         task_id=task_id,
@@ -162,6 +165,8 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         qa_attempt=payload.qa_attempt,
         reasoning=result.reasoning,
         mode=getattr(payload, "mode", "normal"),
+        module=module,
+        severity_hint=severity_hint,
     )
 
     if result.passed:
@@ -746,4 +751,39 @@ def _has_severe_static_issues(issues: list[str]) -> bool:
         if any(kw in upper for kw in severe_keywords):
             return True
     return False
+
+
+def _infer_module_from_path(file_path: str) -> str:
+    """
+    Deriva un identificador de módulo/directorio a partir del file_path.
+
+    Heurística similar a la usada por el replanner para group_id, para que
+    Planner/Replanner puedan alinear fácilmente tareas futuras con estas zonas.
+    """
+    norm = (file_path or "").replace("\\", "/").strip()
+    if not norm:
+        return "root"
+    parts = norm.split("/")
+    if len(parts) >= 3:
+        return "/".join(parts[:3])
+    if len(parts) >= 2:
+        return "/".join(parts[:2])
+    return norm
+
+
+def _infer_severity_hint(issues: list[str]) -> str:
+    """
+    Calcula una severidad QA heurística (low|medium|high|critical)
+    a partir de las issues estáticas y su texto.
+    """
+    if not issues:
+        return "low"
+    text = " ".join(issues).upper()
+    if any(word in text for word in ("CRITICAL", "RCE", "SQL INJECTION", "XSS")):
+        return "critical"
+    if any(word in text for word in ("HIGH", "ERROR", "SECURITY", "BANDIT")):
+        return "high"
+    if any(word in text for word in ("WARNING", "MEDIUM")):
+        return "medium"
+    return "medium"
 

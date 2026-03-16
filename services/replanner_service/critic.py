@@ -104,14 +104,19 @@ def _summarise_outcome(outcome: QAResultPayload | SecurityResultPayload) -> str:
     if isinstance(outcome, QAResultPayload):
         status = "PASSED" if outcome.passed else "FAILED"
         issues = ", ".join(outcome.issues) if outcome.issues else "none"
+        module = getattr(outcome, "module", "") or "unknown_module"
+        severity = getattr(outcome, "severity_hint", "") or "medium"
         return (
             f"QA RESULT ({status}) for task {outcome.task_id} in plan {outcome.plan_id}. "
+            f"Module: {module}. Severity hint: {severity}. "
             f"Issues: {issues}. Reasoning: {outcome.reasoning}"
         )
 
     status = "APPROVED" if outcome.approved else "BLOCKED"
+    severity = getattr(outcome, "severity_hint", "") or "medium"
     lines = [
         f"SECURITY RESULT: {status} for plan {outcome.plan_id}, branch {outcome.branch_name}.",
+        f"Severity hint: {severity}.",
         f"Files scanned: {outcome.files_scanned}.",
     ]
     if outcome.violations:

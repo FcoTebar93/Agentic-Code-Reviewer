@@ -138,6 +138,14 @@ class QAResultPayload(BaseModel):
     qa_attempt: int
     reasoning: str = ""
     mode: str = "normal"
+    module: str = Field(
+        default="",
+        description="Módulo/directorio lógico asociado al archivo (para agrupar fallos por zona caliente).",
+    )
+    severity_hint: str = Field(
+        default="medium",
+        description="Severidad heurística del resultado QA (low|medium|high|critical) basada en issues estáticos y contexto.",
+    )
 
 
 class SpecGeneratedPayload(BaseModel):
@@ -161,6 +169,10 @@ class SecurityResultPayload(BaseModel):
     files_scanned: int
     pr_context: dict[str, Any] = Field(default_factory=dict)
     reasoning: str = ""
+    severity_hint: str = Field(
+        default="medium",
+        description="Severidad heurística del resultado de seguridad (low|medium|high|critical) basada en violaciones.",
+    )
 
 
 class PrApprovalPayload(BaseModel):
