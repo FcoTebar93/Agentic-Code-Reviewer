@@ -28,7 +28,13 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider
-from shared.utils import EventBus, IdempotencyStore, build_short_term_memory_window, store_event
+from shared.utils import (
+    EventBus,
+    IdempotencyStore,
+    build_short_term_memory_window,
+    store_event,
+    guarded_http_get,
+)
 from services.dev_service.config import DevConfig
 from services.dev_service.generator import generate_code
 from services.dev_service.tools import build_dev_tool_registry, ReadFileInput
@@ -394,10 +400,15 @@ async def _build_short_term_memory(plan_id: str, limit: int = 15) -> str:
         return ""
 
     try:
-        resp = await http_client.get(
+        resp = await guarded_http_get(
+            http_client,
             "/events",
+            logger,
+            key="memory_service:/events",
             params={"plan_id": plan_id, "limit": limit},
         )
+        if resp is None:
+            return ""
         if resp.status_code != 200:
             logger.warning(
                 "Failed to fetch short-term memory for plan %s (status=%s)",

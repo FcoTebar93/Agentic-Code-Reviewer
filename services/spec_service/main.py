@@ -19,7 +19,13 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider, LLMProvider, LLMResponse
-from shared.utils import EventBus, IdempotencyStore, store_event, infer_framework_hint
+from shared.utils import (
+    EventBus,
+    IdempotencyStore,
+    store_event,
+    infer_framework_hint,
+    guarded_http_get,
+)
 from services.spec_service.config import SpecConfig
 from services.spec_service.prompts import SPEC_PROMPT
 
@@ -270,14 +276,19 @@ async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str
         return ""
 
     try:
-        resp = await http_client.get(
+        resp = await guarded_http_get(
+            http_client,
             "/events",
+            logger,
+            key="memory_service:/events",
             params={
                 "event_type": "plan.created",
                 "plan_id": plan_id,
                 "limit": 1,
             },
         )
+        if resp is None:
+            return ""
         if resp.status_code != 200:
             return ""
 
@@ -344,14 +355,19 @@ async def _has_existing_spec(plan_id: str, task_id: str, limit: int = 20) -> boo
     if http_client is None:
         return False
     try:
-        resp = await http_client.get(
+        resp = await guarded_http_get(
+            http_client,
             "/events",
+            logger,
+            key="memory_service:/events",
             params={
                 "plan_id": plan_id,
                 "event_type": EventType.SPEC_GENERATED.value,
                 "limit": limit,
             },
         )
+        if resp is None:
+            return False
         if resp.status_code != 200:
             return False
         events = resp.json()
@@ -411,13 +427,18 @@ async def _build_spec_history_for_file(file_path: str, limit: int = 20) -> str:
     if http_client is None or not file_path.strip():
         return ""
     try:
-        resp = await http_client.get(
+        resp = await guarded_http_get(
+            http_client,
             "/events",
+            logger,
+            key="memory_service:/events",
             params={
                 "event_type": EventType.SPEC_GENERATED.value,
                 "limit": limit,
             },
         )
+        if resp is None:
+            return ""
         if resp.status_code != 200:
             return ""
         events = resp.json()
@@ -453,13 +474,18 @@ async def _build_qa_history_for_file(file_path: str, limit: int = 20) -> str:
     if http_client is None or not file_path.strip():
         return ""
     try:
-        resp = await http_client.get(
+        resp = await guarded_http_get(
+            http_client,
             "/events",
+            logger,
+            key="memory_service:/events",
             params={
                 "event_type": EventType.QA_FAILED.value,
                 "limit": limit,
             },
         )
+        if resp is None:
+            return ""
         if resp.status_code != 200:
             return ""
         events = resp.json()

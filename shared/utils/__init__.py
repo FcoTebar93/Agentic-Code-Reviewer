@@ -1,4 +1,6 @@
 import logging
+import time
+from typing import Any
 
 from shared.utils.rabbitmq import EventBus
 from shared.utils.memory_window import build_short_term_memory_window
@@ -8,6 +10,7 @@ __all__ = [
     "build_short_term_memory_window",
     "store_event",
     "infer_framework_hint",
+    "guarded_http_get",
 ]
 
 
@@ -73,3 +76,50 @@ def infer_framework_hint(language: str, file_path: str | None) -> str:
             return "Posible controlador HTTP en una API Java (Spring o similar)."
 
     return ""
+
+
+_CB_STATE: dict[str, dict[str, Any]] = {}
+_CB_MAX_ERRORS = 3
+_CB_OPEN_SECONDS = 30.0
+
+
+async def guarded_http_get(http_client, path: str, logger: logging.Logger | None, *, key: str, **kwargs):
+    """
+    Small in-process circuit breaker wrapper around http_client.get.
+
+    - key: logical target, e.g. "memory_service:/events"
+    - On repeated failures, opens the circuit for a short cool-down period
+      and returns None immediately instead of hitting the remote service.
+    """
+    if http_client is None:
+        return None
+
+    now = time.monotonic()
+    state = _CB_STATE.get(key) or {"errors": 0, "open_until": 0.0}
+
+    if state["open_until"] > now:
+        if logger:
+            logger.warning(
+                "Circuit breaker OPEN for %s (skipping GET %s)", key, path
+            )
+        return None
+
+    try:
+        resp = await http_client.get(path, **kwargs)
+        # Éxito o fallo controlado: reseteamos contador si la llamada respondió.
+        state["errors"] = 0
+        state["open_until"] = 0.0
+        _CB_STATE[key] = state
+        return resp
+    except Exception:
+        state["errors"] = int(state.get("errors", 0)) + 1
+        if state["errors"] >= _CB_MAX_ERRORS:
+            state["open_until"] = now + _CB_OPEN_SECONDS
+            if logger:
+                logger.warning(
+                    "Circuit breaker OPEN for %s after %d error(s)", key, state["errors"]
+                )
+        _CB_STATE[key] = state
+        if logger:
+            logger.exception("guarded_http_get failed for %s", key)
+        return None
