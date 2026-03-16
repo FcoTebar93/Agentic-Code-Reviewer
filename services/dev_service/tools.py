@@ -104,7 +104,10 @@ class SearchInRepoInput(ToolInput):
 class FormatCodeInput(ToolInput):
     language: str = Field(
         default="python",
-        description="Lenguaje del código a formatear. Actualmente soportado: python.",
+        description=(
+            "Lenguaje del código a formatear. "
+            "Actualmente soportado: python, javascript, typescript."
+        ),
     )
     code: str = Field(
         description="Código fuente completo a formatear",
@@ -228,68 +231,131 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
     """
     Formatea código en un lenguaje dado usando herramientas estándar del entorno.
 
-    De momento solo se soporta Python vía 'python -m black'.
-    Para otros lenguajes se devuelve supported=False.
+    Soporta:
+    - Python vía 'python -m black'
+    - JavaScript/TypeScript vía 'npx prettier' (cuando está disponible)
     """
     lang = (args.language or "python").lower()
-    if lang not in {"python", "py"}:
-        return {
-            "supported": False,
-            "language": args.language,
-            "formatted_code": args.code,
-            "note": "Solo se soporta formateo automático para Python por ahora",
-        }
 
-    try:
+    if lang in {"python", "py"}:
         try:
-            subprocess.run(
-                ["python", "-m", "black", "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-        except Exception:
-            return {
-                "supported": False,
-                "language": args.language,
-                "formatted_code": args.code,
-                "note": "black no está instalado; se omite el formateo automático",
-            }
+            try:
+                subprocess.run(
+                    ["python", "-m", "black", "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            except Exception:
+                return {
+                    "supported": False,
+                    "language": args.language,
+                    "formatted_code": args.code,
+                    "note": "black no está instalado; se omite el formateo automático para Python",
+                }
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_path = Path(tmpdir)
-            target = tmp_path / (args.file_path or "tmp.py")
-            if not str(target).endswith(".py"):
-                target = target.with_suffix(".py")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(args.code, encoding="utf-8")
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_path = Path(tmpdir)
+                target = tmp_path / (args.file_path or "tmp.py")
+                if not str(target).endswith(".py"):
+                    target = target.with_suffix(".py")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(args.code, encoding="utf-8")
 
-            proc = subprocess.run(
-                ["python", "-m", "black", str(target)],
-                cwd=str(tmp_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+                proc = subprocess.run(
+                    ["python", "-m", "black", str(target)],
+                    cwd=str(tmp_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
 
-            formatted = target.read_text(encoding="utf-8", errors="replace")
+                formatted = target.read_text(encoding="utf-8", errors="replace")
+                return {
+                    "supported": True,
+                    "language": "python",
+                    "formatted_code": formatted,
+                    "exit_code": proc.returncode,
+                    "stdout": proc.stdout[-4000:],
+                    "stderr": proc.stderr[-2000:],
+                }
+        except Exception as exc:
             return {
                 "supported": True,
                 "language": "python",
-                "formatted_code": formatted,
-                "exit_code": proc.returncode,
-                "stdout": proc.stdout[-4000:],
-                "stderr": proc.stderr[-2000:],
+                "formatted_code": args.code,
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": f"format_code_tool (python) failed: {exc}",
             }
-    except Exception as exc:
-        return {
-            "supported": True,
-            "language": "python",
-            "formatted_code": args.code,
-            "exit_code": -1,
-            "stdout": "",
-            "stderr": f"format_code_tool failed: {exc}",
-        }
+
+    if lang in {"javascript", "js", "typescript", "ts"}:
+        try:
+            try:
+                subprocess.run(
+                    ["npx", "prettier", "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            except Exception:
+                return {
+                    "supported": False,
+                    "language": args.language,
+                    "formatted_code": args.code,
+                    "note": "prettier (npx prettier) no está disponible; se omite el formateo automático para JS/TS",
+                }
+
+            ext = ".ts" if lang in {"typescript", "ts"} else ".js"
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_path = Path(tmpdir)
+                target = tmp_path / (args.file_path or f"tmp{ext}")
+                if not str(target).endswith(ext):
+                    target = target.with_suffix(ext)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(args.code, encoding="utf-8")
+
+                proc = subprocess.run(
+                    [
+                        "npx",
+                        "prettier",
+                        "--write",
+                        str(target),
+                    ],
+                    cwd=str(tmp_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+
+                formatted = target.read_text(encoding="utf-8", errors="replace")
+                return {
+                    "supported": True,
+                    "language": "typescript" if ext == ".ts" else "javascript",
+                    "formatted_code": formatted,
+                    "exit_code": proc.returncode,
+                    "stdout": proc.stdout[-4000:],
+                    "stderr": proc.stderr[-2000:],
+                }
+        except Exception as exc:
+            return {
+                "supported": True,
+                "language": args.language,
+                "formatted_code": args.code,
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": f"format_code_tool (js/ts) failed: {exc}",
+            }
+
+    return {
+        "supported": False,
+        "language": args.language,
+        "formatted_code": args.code,
+        "note": (
+            "Formateo automático solo soportado para Python (black) y "
+            "JavaScript/TypeScript (prettier) por ahora"
+        ),
+    }
 
 
 async def run_tests_tool(args: RunTestsInput) -> dict[str, Any]:
