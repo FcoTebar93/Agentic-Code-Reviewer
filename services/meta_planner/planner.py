@@ -43,6 +43,8 @@ comply with the referenced rules. Avoid repeating the same mistakes across plans
 If the MEMORY CONTEXT contains aggregated "Historical failure patterns" by module,
 you MUST:
 - Treat modules with frequent QA_FAILED / SECURITY_BLOCKED counts as HOT SPOTS.
+- Pay attention to any severity hints (for example: low/medium/high/critical) and prioritise
+  HOT SPOTS with higher severity when deciding where to add new tasks.
 - Prefer creating explicit tasks to add or harden tests and safeguards around those modules
   (for example: more unit/integration tests, stricter input validation, better error handling).
 - Avoid introducing new cross-cutting changes that touch many unrelated modules at once.
@@ -55,7 +57,7 @@ MEMORY CONTEXT:
 {memory_context}
 
 First, explain your reasoning: why these tasks, what architectural decisions you made,
-how you are using MEMORY CONTEXT (especially failure patterns), and how tasks relate
+how you are using MEMORY CONTEXT (especially failure patterns and severity hints), and how tasks relate
 to each other.
 
 Then output the task list. For simple requests (e.g. "create a Hello World in X"),
