@@ -1,7 +1,9 @@
+import React from "react";
 import { Card, SectionHeader } from "./ui/Card";
 import { StatRow } from "./ui/StatRow";
 import { Badge } from "./ui/Badge";
 import { usePlanDetail } from "../hooks/usePlanDetail";
+import type { PlanDetail } from "../types/planDetail";
 
 export function PlanDetailCard({ planId }: { planId: string | null }) {
   const { data, loading, error } = usePlanDetail(planId);
@@ -70,7 +72,7 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
           {pipelineStatus.replace(/_/g, " ")}
         </Badge>
       </div>
-      <dl className="space-y-2">
+      <dl className="space-y-2 mb-3">
         <StatRow
           label="Tareas"
           value={data.tasks.length}
@@ -114,7 +116,308 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
           />
         )}
       </dl>
+
+      <TaskList tasks={data.tasks} qaOutcomes={data.qa_outcomes} />
+      <QAList qaOutcomes={data.qa_outcomes} />
+      <SecuritySummary security={data.security_outcome} />
+      <ManualReplanSection plan={data} />
     </Card>
   );
 }
+
+const TaskList: React.FC<{
+  tasks: PlanDetail["tasks"];
+  qaOutcomes: PlanDetail["qa_outcomes"];
+}> = ({ tasks, qaOutcomes }) => {
+  if (!tasks.length) return null;
+
+  const qaByTask = new Map(
+    qaOutcomes.map((o) => [o.task_id, o] as const),
+  );
+
+  return (
+    <div className="mt-3 border-t border-neutral-800 pt-2">
+      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+        Tareas por archivo
+      </p>
+      <div className="space-y-1 max-h-40 overflow-auto pr-1">
+        {tasks.map((t) => {
+          const qa = qaByTask.get(t.task_id);
+          const severity =
+            qa?.severity_hint && qa.severity_hint !== "medium"
+              ? qa.severity_hint
+              : null;
+          return (
+            <div
+              key={t.task_id}
+              className="text-xs border border-neutral-800 rounded px-2 py-1.5 flex flex-col gap-0.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate max-w-[160px]">
+                  {t.file_path || "(sin ruta)"}
+                </span>
+                <span className="text-[10px] text-neutral-500">
+                  {t.status || "unknown"}
+                </span>
+              </div>
+              <div className="text-[10px] text-neutral-500 flex justify-between gap-2">
+                <span className="truncate max-w-[130px]">
+                  {t.language} · {t.group_id || "root"}
+                </span>
+                <span>qa_attempt: {t.qa_attempt}</span>
+              </div>
+              {severity && (
+                <div className="text-[10px] text-red-400">
+                  QA severidad: {severity}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const QAList: React.FC<{ qaOutcomes: PlanDetail["qa_outcomes"] }> = ({
+  qaOutcomes,
+}) => {
+  if (!qaOutcomes.length) return null;
+  return (
+    <div className="mt-3 border-t border-neutral-800 pt-2">
+      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+        QA outcomes
+      </p>
+      <div className="space-y-1 max-h-40 overflow-auto pr-1">
+        {qaOutcomes.map((o) => (
+          <div
+            key={o.task_id}
+            className="text-xs border border-neutral-800 rounded px-2 py-1.5"
+          >
+            <div className="flex justify-between text-[10px] text-neutral-500 mb-0.5">
+              <span>
+                task {o.task_id.slice(0, 8)} · módulo {o.module || "unknown"}
+              </span>
+              <span>intento {o.qa_attempt}</span>
+            </div>
+            <div className="text-[10px] mb-0.5">
+              severidad:{" "}
+              <span className="font-medium">{o.severity_hint}</span>
+            </div>
+            <ul className="list-disc ml-4 text-[10px] space-y-0.5">
+              {o.issues.slice(0, 3).map((iss, idx) => (
+                <li key={idx}>{iss}</li>
+              ))}
+              {o.issues.length > 3 && (
+                <li>… {o.issues.length - 3} issues más.</li>
+              )}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const SecuritySummary: React.FC<{
+  security: PlanDetail["security_outcome"];
+}> = ({ security }) => {
+  const hasSecurity = Object.keys(security || {}).length > 0;
+  if (!hasSecurity) return null;
+  return (
+    <div className="mt-3 border-t border-neutral-800 pt-2">
+      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+        Seguridad
+      </p>
+      <div className="text-xs space-y-0.5">
+        <div>
+          Aprobado:{" "}
+          <span className="font-medium">
+            {security.approved ? "sí" : "no"}
+          </span>{" "}
+          · severidad:{" "}
+          <span className="font-medium">
+            {security.severity_hint || "medium"}
+          </span>
+        </div>
+        <div>
+          Files escaneados: <span>{security.files_scanned}</span>
+        </div>
+        {security.violations && security.violations.length > 0 && (
+          <ul className="list-disc ml-4 text-[10px] space-y-0.5">
+            {security.violations.slice(0, 4).map((v, idx) => (
+              <li key={idx}>{v}</li>
+            ))}
+            {security.violations.length > 4 && (
+              <li>… {security.violations.length - 4} violaciones más.</li>
+            )}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const HTTP_BASE =
+  import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
+
+const ManualReplanSection: React.FC<{ plan: PlanDetail }> = ({ plan }) => {
+  const [severity, setSeverity] = React.useState<string>("medium");
+  const [selectedGroups, setSelectedGroups] = React.useState<string[]>([]);
+  const [reason, setReason] = React.useState<string>("");
+  const [suggestions, setSuggestions] = React.useState<string>("");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [message, setMessage] = React.useState<string | null>(null);
+
+  const uniqueGroups = Array.from(
+    new Set(
+      plan.tasks
+        .map((t) => t.group_id)
+        .filter((g) => typeof g === "string" && g.trim().length > 0),
+    ),
+  ).slice(0, 10);
+
+  if (!plan.plan_id || uniqueGroups.length === 0) {
+    return null;
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setMessage(null);
+
+    try {
+      const body = {
+        original_plan_id: plan.plan_id,
+        severity,
+        reason:
+          reason.trim() ||
+          "Manual replan triggered from UI based on QA/Security outcomes.",
+        summary: `Manual replanning requested for plan ${plan.plan_id.slice(
+          0,
+          8,
+        )}`,
+        suggestions: suggestions
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        target_group_ids: selectedGroups.length ? selectedGroups : uniqueGroups,
+      };
+      const resp = await fetch(`${HTTP_BASE}/api/replan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`${resp.status}: ${txt}`);
+      }
+      setMessage("Replan solicitado correctamente (esperando nuevo plan).");
+      setReason("");
+      setSuggestions("");
+    } catch (err) {
+      setMessage(
+        err instanceof Error ? err.message : "Error al solicitar replan.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function toggleGroup(groupId: string) {
+    setSelectedGroups((prev) =>
+      prev.includes(groupId)
+        ? prev.filter((g) => g !== groupId)
+        : [...prev, groupId],
+    );
+  }
+
+  return (
+    <div className="mt-3 border-t border-neutral-800 pt-2">
+      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+        Manual replan
+      </p>
+      <form onSubmit={handleSubmit} className="space-y-2 text-xs">
+        <div className="flex gap-2 items-center">
+          <label className="text-[10px] text-neutral-500 font-mono">
+            Severidad
+          </label>
+          <select
+            value={severity}
+            onChange={(e) => setSeverity(e.target.value)}
+            className="bg-black border border-neutral-700 rounded px-2 py-1 text-[11px] font-mono text-neutral-100 flex-1"
+          >
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="critical">critical</option>
+          </select>
+        </div>
+        <div>
+          <p className="text-[10px] text-neutral-500 font-mono mb-1">
+            Grupos objetivo (módulos)
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {uniqueGroups.map((g) => {
+              const active = selectedGroups.includes(g);
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => toggleGroup(g)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full border font-mono ${
+                    active
+                      ? "bg-neutral-100 text-black border-neutral-100"
+                      : "bg-black text-neutral-300 border-neutral-700 hover:border-neutral-500"
+                  }`}
+                >
+                  {g}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <label className="block text-[10px] text-neutral-500 font-mono mb-1">
+            Motivo (opcional)
+          </label>
+          <textarea
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full bg-black border border-neutral-700 rounded px-2 py-1 text-xs font-mono text-neutral-100 placeholder:text-neutral-600 resize-none"
+            placeholder="Ej: Fallos repetidos de QA en estos módulos, necesito reforzar tests y validación..."
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] text-neutral-500 font-mono mb-1">
+            Sugerencias (una por línea, opcional)
+          </label>
+          <textarea
+            rows={2}
+            value={suggestions}
+            onChange={(e) => setSuggestions(e.target.value)}
+            className="w-full bg-black border border-neutral-700 rounded px-2 py-1 text-xs font-mono text-neutral-100 placeholder:text-neutral-600 resize-none"
+            placeholder="- Añadir tests de validación de formularios&#10;- Endurecer controles de acceso en endpoints sensibles"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full bg-neutral-100 hover:bg-neutral-300 disabled:bg-neutral-800 disabled:text-neutral-500 text-black font-mono text-[11px] font-medium rounded px-3 py-1.5 transition-colors"
+        >
+          {submitting ? "Solicitando replan..." : "Solicitar replan para este plan"}
+        </button>
+        {message && (
+          <p className="text-[10px] font-mono mt-1 text-neutral-400">
+            {message}
+          </p>
+        )}
+      </form>
+    </div>
+  );
+};
+
+
 
