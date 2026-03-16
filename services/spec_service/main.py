@@ -19,6 +19,7 @@ from shared.contracts.events import (
     metrics_tokens_used,
 )
 from shared.llm_adapter import get_llm_provider, LLMProvider, LLMResponse
+from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
     IdempotencyStore,
@@ -28,21 +29,25 @@ from shared.utils import (
 )
 from services.spec_service.config import SpecConfig
 from services.spec_service.prompts import SPEC_PROMPT
+from services.spec_service.tools import build_spec_tool_registry
 
 
 SERVICE_NAME = "spec_service"
 event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: SpecConfig | None = None
+tool_registry: ToolRegistry | None = None
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global event_bus, http_client, cfg
+    global event_bus, http_client, cfg, tool_registry
     logger = setup_logging(SERVICE_NAME)
 
     cfg = SpecConfig.from_env()
     http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+
+    tool_registry = build_spec_tool_registry()
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
@@ -268,9 +273,10 @@ async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str
     Build a small textual context for the spec agent:
     - Planner reasoning for this plan (if available).
     - Other tasks/files in the same plan.
+    - Light repository context around the target file (preview + archivos cercanos + usos relacionados).
 
-    This avoids long histories while giving the LLM awareness of how this task
-    fits into the overall plan.
+    This evita historias largas pero da al LLM conciencia de cómo esta tarea
+    encaja en el plan y en el repositorio real.
     """
     if http_client is None:
         return ""
@@ -335,6 +341,12 @@ async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str
         if qa_hist:
             lines.append("Previous QA failures for this file (truncated):")
             lines.append(qa_hist)
+
+        repo_ctx = await _build_repo_context_for_spec(file_path)
+        if repo_ctx:
+            lines.append("")
+            lines.append("Repository context (truncated):")
+            lines.append(repo_ctx)
 
         return "\n".join(lines)
     except Exception:
@@ -512,4 +524,85 @@ async def _build_qa_history_for_file(file_path: str, limit: int = 20) -> str:
             (file_path or "")[:40],
         )
         return ""
+
+
+async def _build_repo_context_for_spec(file_path: str, max_chars: int = 800) -> str:
+    """
+    Usa las tools de spec_service (read_file, list_project_files, search_in_repo)
+    para construir un pequeño contexto de repositorio para el agente de SPEC:
+    - Preview del archivo objetivo si existe.
+    - Listado de otros archivos en el mismo directorio (para ver estructura).
+    - Usos relacionados del mismo "stem" en el directorio.
+    """
+    global tool_registry
+    if not tool_registry:
+        return ""
+    fp = (file_path or "").strip()
+    if not fp:
+        return ""
+
+    parts: list[str] = []
+
+    try:
+        read_result = await execute_tool(
+            tool_registry,
+            "read_file",
+            {"path": fp, "max_bytes": 4000},
+        )
+        if read_result.success and isinstance(read_result.output, dict):
+            payload = read_result.output
+            if payload.get("exists") and (payload.get("content") or "").strip():
+                content = str(payload.get("content", ""))[:4000]
+                parts.append("File preview:")
+                parts.append(content[:400])
+    except Exception:
+        pass
+
+    directory = fp.replace("\\", "/").rsplit("/", 1)[0] if "/" in fp.replace("\\", "/") else "."
+    try:
+        list_result = await execute_tool(
+            tool_registry,
+            "list_project_files",
+            {"directory": directory, "pattern": "*.*", "max_results": 40},
+        )
+        if list_result.success and isinstance(list_result.output, dict):
+            payload = list_result.output
+            files = payload.get("files") or []
+            if files:
+                parts.append("")
+                parts.append(f"Files in directory '{directory}':")
+                for name in files[:15]:
+                    parts.append(f"- {name}")
+    except Exception:
+        pass
+
+    base = fp.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    if stem and len(stem) >= 2:
+        try:
+            search_result = await execute_tool(
+                tool_registry,
+                "search_in_repo",
+                {"pattern": stem, "directory": directory, "max_results": 12},
+            )
+            if search_result.success and isinstance(search_result.output, dict):
+                payload = search_result.output
+                matches = payload.get("matches") or []
+                if matches:
+                    parts.append("")
+                    parts.append("Related usages in repo:")
+                    for m in matches[:8]:
+                        if not isinstance(m, dict):
+                            continue
+                        parts.append(
+                            f"  {m.get('file', '')}:L{m.get('line', 0)} "
+                            f"{str(m.get('snippet', ''))[:80]}"
+                        )
+        except Exception:
+            pass
+
+    text = "\n".join(p for p in parts if p is not None)
+    if len(text) > max_chars:
+        text = text[:max_chars]
+    return text.strip()
 
