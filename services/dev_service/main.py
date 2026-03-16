@@ -176,10 +176,14 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             pass
 
         tests_summary = await _maybe_run_auto_tests(task)
+        lints_summary = await _maybe_run_auto_lints(task, qa_feedback)
 
         combined_reasoning = code_result.reasoning
         if tests_summary:
             suffix = f"\n[Dev Service] Automated tests summary: {tests_summary}"
+            combined_reasoning = (combined_reasoning + suffix).strip()
+        if lints_summary:
+            suffix = f"\n[Dev Service] Automated lints summary: {lints_summary}"
             combined_reasoning = (combined_reasoning + suffix).strip()
 
         cg_payload = CodeGeneratedPayload(
@@ -313,6 +317,66 @@ async def _maybe_run_auto_tests(task) -> str:
             )
         if not tests_result.success:
             return f"Automated tests failed to run: {tests_result.error}"
+    except Exception:
+        return ""
+    return ""
+
+
+async def _maybe_run_auto_lints(task, qa_feedback: str) -> str:
+    """
+    Optionally run configured automated linters for the task's language.
+
+    Estrategia:
+    - Solo corre si DEV_ENABLE_AUTO_LINTS está activo.
+    - Se da más prioridad cuando hay qa_feedback (reintento tras QA).
+    - Usa el tool run_lints con un comando apropiado por lenguaje.
+    """
+    try:
+        if not cfg or not getattr(cfg, "enable_auto_lints", False):
+            return ""
+        if tool_registry is None:
+            return ""
+
+        lang = (getattr(task, "language", "") or "").lower()
+        mode = str(getattr(task, "edit_scope", "file") or "").lower()
+
+        # Heurística simple para decidir comando por lenguaje.
+        # Se puede ajustar vía convención del repo (package.json, etc.) si hace falta.
+        lint_cmd = ""
+        if lang in ("python", "py"):
+            lint_cmd = os.environ.get("DEV_LINT_COMMAND_PYTHON", "ruff .")
+        elif lang in ("javascript", "js"):
+            lint_cmd = os.environ.get("DEV_LINT_COMMAND_JAVASCRIPT", "npm run lint")
+        elif lang in ("typescript", "ts"):
+            lint_cmd = os.environ.get("DEV_LINT_COMMAND_TYPESCRIPT", "npm run lint")
+        elif lang == "java":
+            lint_cmd = os.environ.get("DEV_LINT_COMMAND_JAVA", "")
+
+        if not lint_cmd:
+            return ""
+
+        has_feedback = bool((qa_feedback or "").strip())
+        if not has_feedback and mode == "file":
+            return ""
+
+        lints_result = await execute_tool(
+            tool_registry,
+            "run_lints",
+            {"command": lint_cmd, "timeout_s": 300.0},
+        )
+        if lints_result.success and isinstance(lints_result.output, dict):
+            lr = lints_result.output
+            status = (
+                "PASSED"
+                if lr.get("exit_code") == 0 and not lr.get("timed_out")
+                else "FAILED"
+            )
+            return (
+                f"Lints ({lr.get('command')}): {status}. "
+                f"exit_code={lr.get('exit_code')}, timed_out={lr.get('timed_out')}."
+            )
+        if not lints_result.success:
+            return f"Lints failed to run: {lints_result.error}"
     except Exception:
         return ""
     return ""
