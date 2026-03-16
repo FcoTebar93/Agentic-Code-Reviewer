@@ -47,6 +47,12 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
   const hasSecurity = Object.keys(data.security_outcome || {}).length > 0;
 
   const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(null);
+  const [replanPrefill, setReplanPrefill] = React.useState<{
+    severity: string;
+    targetGroupIds: string[];
+    reason: string;
+    suggestions: string;
+  } | null>(null);
   const selectedTask =
     data.tasks.find((t) => t.task_id === selectedTaskId) ?? data.tasks[0] ?? null;
 
@@ -128,9 +134,39 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
         onSelectTask={setSelectedTaskId}
       />
       <CodePreview task={selectedTask} />
-      <QAList qaOutcomes={data.qa_outcomes} />
+      <QAList
+        qaOutcomes={data.qa_outcomes}
+        onSuggestReplan={(module, severity, issues, qaAttempt) => {
+          const sev =
+            severity === "critical" || severity === "high" ? severity : "medium";
+          const cleanModule = module || "unknown";
+          const reasonLines: string[] = [];
+          reasonLines.push(
+            `Fallos de QA repetidos en módulo ${cleanModule} (intento ${qaAttempt}, severidad ${sev}).`,
+          );
+          if (issues.length) {
+            reasonLines.push(
+              `Ejemplos de issues detectados:\n${issues
+                .slice(0, 3)
+                .map((i) => `- ${i}`)
+                .join("\n")}`,
+            );
+          }
+          const reason = reasonLines.join("\n\n");
+          const suggestions = issues
+            .slice(0, 5)
+            .map((i) => `Revisar y cubrir en tests: ${i}`);
+
+          setReplanPrefill({
+            severity: sev,
+            targetGroupIds: cleanModule ? [cleanModule] : [],
+            reason,
+            suggestions: suggestions.join("\n"),
+          });
+        }}
+      />
       <SecuritySummary security={data.security_outcome} />
-      <ManualReplanSection plan={data} />
+      <ManualReplanSection plan={data} prefill={replanPrefill ?? undefined} />
     </Card>
   );
 }
@@ -236,9 +272,15 @@ const CodePreview: React.FC<{ task: PlanDetail["tasks"][number] | null }> = ({
   );
 };
 
-const QAList: React.FC<{ qaOutcomes: PlanDetail["qa_outcomes"] }> = ({
-  qaOutcomes,
-}) => {
+const QAList: React.FC<{
+  qaOutcomes: PlanDetail["qa_outcomes"];
+  onSuggestReplan: (
+    module: string,
+    severity: string,
+    issues: string[],
+    qaAttempt: number,
+  ) => void;
+}> = ({ qaOutcomes, onSuggestReplan }) => {
   if (!qaOutcomes.length) return null;
   return (
     <div className="mt-3 border-t border-neutral-800 pt-2">
@@ -260,6 +302,24 @@ const QAList: React.FC<{ qaOutcomes: PlanDetail["qa_outcomes"] }> = ({
             <div className="text-[10px] mb-0.5">
               severidad:{" "}
               <span className="font-medium">{o.severity_hint}</span>
+            </div>
+            <div className="flex justify-end mb-1">
+              {o.module && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSuggestReplan(
+                      o.module,
+                      o.severity_hint,
+                      o.issues ?? [],
+                      o.qa_attempt,
+                    )
+                  }
+                  className="text-[10px] font-mono px-2 py-0.5 rounded border border-amber-500/60 text-amber-300 hover:bg-amber-500/10 transition-colors"
+                >
+                  Replan módulo
+                </button>
+              )}
             </div>
             <ul className="list-disc ml-4 text-[10px] space-y-0.5">
               {o.issues.slice(0, 3).map((iss, idx) => (
@@ -318,13 +378,34 @@ const SecuritySummary: React.FC<{
 const HTTP_BASE =
   import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
 
-const ManualReplanSection: React.FC<{ plan: PlanDetail }> = ({ plan }) => {
+const ManualReplanSection: React.FC<{
+  plan: PlanDetail;
+  prefill?: {
+    severity: string;
+    targetGroupIds: string[];
+    reason: string;
+    suggestions: string;
+  };
+}> = ({ plan, prefill }) => {
   const [severity, setSeverity] = React.useState<string>("medium");
   const [selectedGroups, setSelectedGroups] = React.useState<string[]>([]);
   const [reason, setReason] = React.useState<string>("");
   const [suggestions, setSuggestions] = React.useState<string>("");
   const [submitting, setSubmitting] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!prefill) return;
+    setSeverity(prefill.severity || "medium");
+    setSelectedGroups(
+      Array.isArray(prefill.targetGroupIds) ? prefill.targetGroupIds : [],
+    );
+    setReason(prefill.reason || "");
+    setSuggestions(prefill.suggestions || "");
+    setMessage(
+      "Formulario de replan pre-rellenado desde QA (revisa y confirma si tiene sentido).",
+    );
+  }, [prefill?.severity, prefill?.reason, prefill?.suggestions, prefill?.targetGroupIds]);
 
   const uniqueGroups = Array.from(
     new Set(
