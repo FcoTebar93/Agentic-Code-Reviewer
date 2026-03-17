@@ -27,6 +27,12 @@ Your code MUST be:
 - Lint-clean as far as reasonably possible (avoid patterns that will trigger ruff/ESLint or security tools like Bandit/Semgrep).
 - Idiomatically formatted for the language (assume a formatter such as black/prettier may run, so avoid fighting its conventions).
 
+If the SHORT-TERM MEMORY or the HISTORICAL FAILURE PATTERNS tell you that this
+module/directory is a HOT SPOT (multiple qa.failed or security.blocked):
+- Strengthen input validation, error handling and edge cases in particular.
+- Avoid fragile solutions even if they appear to work in the happy path.
+- Explicitly think about how these functions could be broken and design the code to withstand that.
+
 SHORT-TERM MEMORY:
 {short_term_memory}
 
@@ -45,8 +51,8 @@ Instructions:
 4. Make sure the code would pass basic linters and security checks for this language (naming, unused variables, unreachable code, dangerous APIs, missing validation, etc.).
 5. If the SHORT-TERM MEMORY mentions previous QA or security failures, explicitly address each listed issue
    and adjust your implementation so it complies with the QA and security rules referenced there.
-6. If this task was created as a QA retry or patch, haz solo los cambios mínimos necesarios para corregir
-   los problemas indicados, manteniendo intacto el resto del archivo siempre que sea posible.
+6. If this task was created as a QA retry or patch, make the minimum necessary changes to fix
+   the problems indicated, keeping the rest of the file intact whenever possible.
 
 Format your response EXACTLY as:
 REASONING: <2-4 sentences that (a) acknowledge the planner's analysis, (b) explain your implementation decisions>
@@ -69,6 +75,12 @@ Downstream in this pipeline there are QA and CI agents that will:
 Your code must therefore be:
 - Correct and robust (with error handling and validation where appropriate).
 - Reasonably lint-clean and formatted according to common conventions for {language}.
+
+If you know (by recent memory or historic failure patterns) that the module where
+this file will fall has many previous failures, be especially strict with:
+- data validation, limits and types,
+- error handling and unexpected states,
+- avoid fragile implicit dependencies.
 
 First explain your reasoning: what approach you chose, why, and any trade-offs considered.
 Then provide the complete code.

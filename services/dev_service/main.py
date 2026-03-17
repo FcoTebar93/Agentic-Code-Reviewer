@@ -136,11 +136,13 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         existing_file_preview = await _maybe_read_existing_file(task.file_path)
         files_in_dir = await _list_files_in_task_directory(task)
         spec_block = await _fetch_task_spec(plan_id, task.task_id)
+        failure_patterns_block = await _build_failure_patterns_for_dev(task.file_path)
         dev_context = _build_dev_context(
             short_term_memory=short_term_memory,
             existing_file_preview=existing_file_preview,
             files_in_dir=files_in_dir,
             spec_block=spec_block,
+            failure_patterns_block=failure_patterns_block,
         )
         code_result, prompt_tokens, completion_tokens = await generate_code(
             llm,
@@ -524,6 +526,72 @@ async def _build_short_term_memory(plan_id: str, limit: int = 15) -> str:
         return ""
 
 
+async def _build_failure_patterns_for_dev(file_path: str, limit: int = 200) -> str:
+    """
+    Recupera patrones históricos agregados de fallos (qa.failed, security.blocked)
+    para el módulo/directorio del archivo objetivo, usando memory_service.
+
+    Esto permite al dev_service saber si está tocando una "zona caliente" del código
+    y reforzar validaciones, manejo de errores y tests en consecuencia.
+    """
+    if http_client is None or not file_path.strip():
+        return ""
+    try:
+        norm = file_path.replace("\\", "/").strip()
+        parts = norm.split("/")
+        if len(parts) >= 3:
+            module_prefix = "/".join(parts[:3])
+        elif len(parts) >= 2:
+            module_prefix = "/".join(parts[:2])
+        else:
+            module_prefix = norm
+
+        resp = await http_client.get(
+            "/patterns/failures",
+            params={"limit": limit},
+        )
+        if resp.status_code != 200:
+            return ""
+        data = resp.json()
+        patterns = data.get("patterns") or []
+        if not isinstance(patterns, list):
+            return ""
+
+        lines: list[str] = []
+        total = 0
+        for p in patterns:
+            if not isinstance(p, dict):
+                continue
+            mod = str(p.get("module", "") or "").replace("\\", "/")
+            if not mod.startswith(module_prefix):
+                continue
+            qa_n = int(p.get("qa_failed", 0) or 0)
+            sec_n = int(p.get("security_blocked", 0) or 0)
+            if not qa_n and not sec_n:
+                continue
+            total += qa_n + sec_n
+            pieces: list[str] = []
+            if qa_n:
+                pieces.append(f"QA_FAILED x{qa_n}")
+            if sec_n:
+                pieces.append(f"SECURITY_BLOCKED x{sec_n}")
+            lines.append(f"- {mod}: " + ", ".join(pieces))
+
+        if not lines:
+            return ""
+
+        header = (
+            "HISTORICAL FAILURE PATTERNS NEAR THIS MODULE "
+            f"(prefix '{module_prefix}', aggregated qa.failed/security.blocked):\n"
+        )
+        return header + "\n".join(lines[:5])
+    except Exception:
+        logger.exception(
+            "Error while building failure patterns context for dev_service (file %s)",
+            (file_path or "")[:40],
+        )
+        return ""
+
 async def _fetch_task_spec(plan_id: str, task_id: str, limit: int = 20) -> str:
     """
     Fetch spec/tests for a given task from memory_service (spec.generated events).
@@ -587,6 +655,7 @@ def _build_dev_context(
     existing_file_preview: str,
     files_in_dir: str,
     spec_block: str = "",
+    failure_patterns_block: str = "",
     max_chars: int = 2500,
 ) -> str:
     """
@@ -614,6 +683,10 @@ def _build_dev_context(
     listing = (files_in_dir or "").strip()
     if listing:
         blocks.append("FILES IN DIRECTORY:\n" + listing[:300])
+
+    fp_block = (failure_patterns_block or "").strip()
+    if fp_block:
+        blocks.append("HISTORICAL FAILURE PATTERNS:\n" + fp_block[:600])
 
     combined = "\n\n".join(blocks)
     if len(combined) > max_chars:
