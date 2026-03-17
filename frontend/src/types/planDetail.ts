@@ -37,6 +37,7 @@ export interface PlanTaskSummary {
   qa_attempt: number;
   code?: string;
   dev_reasoning?: string;
+   code_history?: { qa_attempt: number; code: string }[];
 }
 
 export interface QAOutcome {

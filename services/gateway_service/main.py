@@ -591,7 +591,7 @@ def _build_plan_detail_json(
     created_at = None
 
     qa_outcomes: list[dict[str, Any]] = []
-    code_snapshots: dict[str, dict[str, Any]] = {}
+    code_history: dict[str, list[dict[str, Any]]] = {}
     security_outcome: dict[str, Any] | None = None
     replans: list[dict[str, Any]] = []
 
@@ -610,13 +610,18 @@ def _build_plan_detail_json(
             language = str(payload.get("language", "") or "")
             code = str(payload.get("code", "") or "")
             reasoning = str(payload.get("reasoning", "") or "")
-            code_snapshots[task_id] = {
-                "task_id": task_id,
-                "file_path": file_path,
-                "language": language,
-                "code": code,
-                "reasoning": reasoning,
-            }
+            qa_attempt = int(payload.get("qa_attempt", 0) or 0)
+            if task_id:
+                history_list = code_history.setdefault(task_id, [])
+                history_list.append(
+                    {
+                        "qa_attempt": qa_attempt,
+                        "code": code,
+                        "reasoning": reasoning,
+                        "file_path": file_path,
+                        "language": language,
+                    }
+                )
         elif etype == "qa.failed":
             qa_outcomes.append(
                 {
@@ -652,7 +657,10 @@ def _build_plan_detail_json(
 
     task_summaries: list[dict[str, Any]] = []
     for t in tasks or []:
-        snapshot = code_snapshots.get(str(t.get("task_id", ""))) or {}
+        tid = str(t.get("task_id", ""))
+        history_list = code_history.get(tid) or []
+        history_list.sort(key=lambda h: int(h.get("qa_attempt", 0) or 0))
+        latest = history_list[-1] if history_list else {}
         task_summaries.append(
             {
                 "task_id": t.get("task_id"),
@@ -661,8 +669,9 @@ def _build_plan_detail_json(
                 "group_id": t.get("group_id", ""),
                 "status": t.get("status", ""),
                 "qa_attempt": t.get("qa_attempt", 0),
-                "code": snapshot.get("code", ""),
-                "dev_reasoning": snapshot.get("reasoning", ""),
+                "code": latest.get("code", ""),
+                "dev_reasoning": latest.get("reasoning", ""),
+                "code_history": history_list,
             }
         )
 
