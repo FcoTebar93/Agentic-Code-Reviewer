@@ -21,7 +21,12 @@ import httpx
 from fastapi import FastAPI
 
 from shared.logging.logger import setup_logging
-from shared.observability.metrics import metrics_response, agent_execution_time, tasks_completed
+from shared.observability.metrics import (
+    metrics_response,
+    agent_execution_time,
+    tasks_completed,
+    llm_tokens,
+)
 from shared.contracts.events import (
     BaseEvent,
     EventType,
@@ -34,6 +39,8 @@ from shared.contracts.events import (
 from shared.utils import EventBus, IdempotencyStore, store_event
 from services.security_service.config import SecurityConfig
 from services.security_service.scanner import scan_files
+from services.security_service.prompts import SECURITY_REVIEW_PROMPT
+from shared.llm_adapter import get_llm_provider, LLMResponse
 
 SERVICE_NAME = "security_service"
 event_bus: EventBus | None = None
@@ -111,7 +118,9 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         mode,
     )
 
-    with agent_execution_time.labels(service=SERVICE_NAME, operation="security_scan").time():
+    with agent_execution_time.labels(
+        service=SERVICE_NAME, operation="security_scan"
+    ).time():
         files_data = [f.model_dump() for f in payload.files]
         result = scan_files(files_data, cfg)
 
@@ -120,11 +129,50 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         severity_hint = "high"
 
     reasoning = result.reasoning or ""
+    memory_ctx = ""
     if not result.approved and mode == "strict":
-        ctx = await _fetch_security_memory_context(plan_id)
-        if ctx:
+        memory_ctx = await _fetch_security_memory_context(plan_id)
+        if memory_ctx:
             reasoning = (reasoning + "\n\n" if reasoning else "") + (
-                "Contexto histórico de seguridad relevante:\n" + ctx
+                "Contexto histórico de seguridad relevante:\n" + memory_ctx
+            )
+
+        try:
+            llm = get_llm_provider(
+                provider_name=cfg.llm_provider,
+                redis_url=cfg.redis_url,
+            )
+            violations_block = (
+                "\n".join(f"- {v}" for v in (result.violations or []))
+                if result.violations
+                else "none"
+            )
+            prompt = SECURITY_REVIEW_PROMPT.format(
+                plan_id=plan_id,
+                branch_name=payload.branch_name,
+                approved=result.approved,
+                scanner_reasoning=result.reasoning or "None.",
+                violations_block=violations_block,
+                memory_context=memory_ctx or "None.",
+            )
+            llm_resp: LLMResponse = await llm.generate_text(prompt)
+            pt = llm_resp.prompt_tokens or 0
+            ct = llm_resp.completion_tokens or 0
+            if pt or ct:
+                llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
+                llm_tokens.labels(
+                    service=SERVICE_NAME, direction="completion"
+                ).inc(ct)
+            summary = (llm_resp.content or "").strip()
+            if summary:
+                reasoning = (
+                    reasoning + "\n\n[Security reviewer LLM]\n" + summary
+                    if reasoning
+                    else "[Security reviewer LLM]\n" + summary
+                )
+        except Exception:
+            logger.exception(
+                "Lightweight security reviewer LLM failed; continuing with scanner output only"
             )
 
     sec_payload = SecurityResultPayload(
