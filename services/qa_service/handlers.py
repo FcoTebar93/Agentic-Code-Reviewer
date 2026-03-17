@@ -79,9 +79,16 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 "security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
             )
 
+        module = _infer_module_from_path(payload.file_path)
+        is_hot_module = await _is_hot_module(module, deps)
+
         raw_mode = getattr(payload, "mode", "normal") or "normal"
         mode = str(raw_mode).strip().lower()
-        if mode in {"save", "ahorro"} and not _has_severe_static_issues(static_issues):
+        if (
+            mode in {"save", "ahorro"}
+            and not _has_severe_static_issues(static_issues)
+            and not is_hot_module
+        ):
             auto_reason = (
                 "Approved in save mode: linters and security tools did not find "
                 "high-severity issues. PASS is allowed without running the full "
@@ -116,6 +123,15 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             if framework_hint:
                 prefix = f"FRAMEWORK HINT: {framework_hint}\n\n"
                 stm_block = prefix + (stm_block or "")
+            if is_hot_module:
+                hot_note = (
+                    "MODULO EN ZONA CALIENTE:\n"
+                    f"- Este archivo pertenece al módulo '{module}', que tiene un historial "
+                    "de fallos QA/seguridad según los patrones agregados.\n"
+                    "- Sé más estricto con validaciones de entrada, manejo de errores y "
+                    "casos borde, y NO aceptes soluciones frágiles aunque parezcan pasar tests simples.\n\n"
+                )
+                stm_block = hot_note + (stm_block or "")
             qa_context = _build_qa_context(
                 short_term_memory=stm_block,
                 repo_context=repo_context,
@@ -150,10 +166,19 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             error_message="Failed to store event %s",
         )
 
-    deps.qa_reasoning_cache[task_id] = result.reasoning or ""
+    reasoning = result.reasoning or ""
+    if is_hot_module:
+        suffix = (
+            "\n[QA] Esta revisión se ha aplicado con mayor rigor porque el módulo "
+            f"'{module}' aparece como zona caliente en patrones históricos de fallos."
+        )
+        reasoning = (reasoning + suffix).strip()
 
-    module = _infer_module_from_path(payload.file_path)
+    deps.qa_reasoning_cache[task_id] = reasoning
+
     severity_hint = _infer_severity_hint(result.issues)
+    if is_hot_module and severity_hint in {"low", "medium"}:
+        severity_hint = "high"
 
     qa_payload = QAResultPayload(
         plan_id=plan_id,
@@ -163,7 +188,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         code=payload.code,
         file_path=payload.file_path,
         qa_attempt=payload.qa_attempt,
-        reasoning=result.reasoning,
+        reasoning=reasoning,
         mode=raw_mode,
         module=module,
         severity_hint=severity_hint,
@@ -822,4 +847,46 @@ def _infer_severity_hint(issues: list[str]) -> str:
     if any(word in text for word in ("WARNING", "MEDIUM")):
         return "medium"
     return "medium"
+
+
+async def _is_hot_module(module: str, deps: QADeps) -> bool:
+    """
+    Determina si un módulo/directorio se considera \"zona caliente\" en base a
+    patrones históricos agregados de qa.failed/security.blocked.
+
+    Heurística:
+    - Usa la tool failure_patterns para recuperar patrones filtrados por prefijo.
+    - Si para este módulo (o submódulos) la suma qa_failed+security_blocked >= 3,
+      se considera hot.
+    """
+    if not deps.tool_registry:
+        return False
+    normalized = (module or "").replace("\\", "/").strip()
+    if not normalized:
+        return False
+    try:
+        result = await execute_tool(
+            deps.tool_registry,
+            "failure_patterns",
+            {"module_prefix": normalized, "limit": 200},
+        )
+        if not result.success:
+            return False
+        payload = result.output or {}
+        patterns = payload.get("patterns") or []
+        if not isinstance(patterns, list):
+            return False
+        total = 0
+        for p in patterns:
+            if not isinstance(p, dict):
+                continue
+            mod = str(p.get("module", "") or "").replace("\\", "/")
+            if not mod.startswith(normalized):
+                continue
+            qa_n = int(p.get("qa_failed", 0) or 0)
+            sec_n = int(p.get("security_blocked", 0) or 0)
+            total += qa_n + sec_n
+        return total >= 3
+    except Exception:
+        return False
 
