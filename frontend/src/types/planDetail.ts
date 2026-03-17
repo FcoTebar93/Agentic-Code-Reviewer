@@ -37,7 +37,14 @@ export interface PlanTaskSummary {
   qa_attempt: number;
   code?: string;
   dev_reasoning?: string;
-   code_history?: { qa_attempt: number; code: string }[];
+  code_history?: { qa_attempt: number; code: string }[];
+}
+
+export interface PlanModuleSummary {
+  group_id: string;
+  tasks_count: number;
+  qa_failed_count: number;
+  max_severity_hint: string;
 }
 
 export interface QAOutcome {
@@ -88,6 +95,7 @@ export interface PlanDetail {
   mode: string;
   metrics: PlanMetrics;
   tasks: PlanTaskSummary[];
+  modules?: PlanModuleSummary[];
   qa_outcomes: QAOutcome[];
   security_outcome: SecurityOutcome | Record<string, never>;
   replans: PlanReplans;

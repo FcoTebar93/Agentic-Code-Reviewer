@@ -675,6 +675,45 @@ def _build_plan_detail_json(
             }
         )
 
+    modules_map: dict[str, dict[str, Any]] = {}
+    for t in task_summaries:
+        gid = str(t.get("group_id", "") or "root")
+        mod = modules_map.setdefault(
+            gid,
+            {
+                "group_id": gid,
+                "tasks_count": 0,
+                "qa_failed_count": 0,
+                "max_severity_hint": "low",
+            },
+        )
+        mod["tasks_count"] += 1
+
+    for qa in qa_outcomes:
+        task_id = qa.get("task_id")
+        severity = str(qa.get("severity_hint", "medium") or "medium")
+        group_id = "root"
+        for t in task_summaries:
+            if t.get("task_id") == task_id:
+                group_id = str(t.get("group_id", "") or "root")
+                break
+        mod = modules_map.setdefault(
+            group_id,
+            {
+                "group_id": group_id,
+                "tasks_count": 0,
+                "qa_failed_count": 0,
+                "max_severity_hint": "low",
+            },
+        )
+        mod["qa_failed_count"] += 1
+        order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+        current = str(mod.get("max_severity_hint", "low") or "low")
+        if order.get(severity, 1) > order.get(current, 0):
+            mod["max_severity_hint"] = severity
+
+    modules_summary = list(modules_map.values())
+
     max_events = 80
     events_sample = events[:max_events] if isinstance(events, list) else []
 
@@ -687,6 +726,7 @@ def _build_plan_detail_json(
         "mode": metrics.get("mode", "normal"),
         "metrics": metrics,
         "tasks": task_summaries,
+        "modules": modules_summary,
         "qa_outcomes": qa_outcomes,
         "security_outcome": security_outcome or {},
         "replans": {"items": replans},
