@@ -1,0 +1,16 @@
+{
+  "default_mode": "normal",
+  "paths": {
+    "frontend/src/auth/": {
+      "forced_mode": "strict",
+      "security_strict": true
+    },
+    "services/payments/": {
+      "forced_mode": "strict",
+      "enable_auto_tests": true
+    },
+    "services/dev_service/": {
+      "enable_auto_lints": true
+    }
+  }
+}

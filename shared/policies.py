@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
+from typing import Literal, TypedDict, Any
+
+import json
+import os
+from pathlib import Path
 
 
 Language = Literal["python", "java", "javascript", "typescript", "any"]
@@ -305,6 +309,21 @@ SECURITY_RULES: list[Rule] = [
 ]
 
 
+class PathPolicy(TypedDict, total=False):
+    forced_mode: str
+    enable_auto_tests: bool
+    enable_auto_lints: bool
+    security_strict: bool
+
+
+class ProjectPolicy(TypedDict, total=False):
+    default_mode: str
+    paths: dict[str, PathPolicy]
+
+
+_CACHED_POLICY: ProjectPolicy | None = None
+
+
 def rules_for_language(
     language: str,
     category: Literal["qa", "security"] | None = None,
@@ -318,4 +337,90 @@ def rules_for_language(
         if "any" in rule.languages or lang in rule.languages:
             result.append(rule)
     return result
+
+
+def load_project_policy(base_dir: str | os.PathLike[str]) -> ProjectPolicy:
+    """
+    Load project-wide policies from a JSON file at the repo root.
+
+    The file is optional; if it does not exist or is invalid, sensible defaults
+    are returned. Result is cached in-process.
+    """
+    global _CACHED_POLICY
+    if _CACHED_POLICY is not None:
+        return _CACHED_POLICY
+
+    base = Path(base_dir)
+    policy_path = base / "policies.json"
+    default: ProjectPolicy = {"default_mode": "normal", "paths": {}}
+
+    try:
+        if not policy_path.exists():
+            _CACHED_POLICY = default
+            return _CACHED_POLICY
+        raw = policy_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            _CACHED_POLICY = default
+            return _CACHED_POLICY
+        default_mode = str(data.get("default_mode", "normal") or "normal").strip()
+        paths_obj = data.get("paths") or {}
+        paths: dict[str, PathPolicy] = {}
+        if isinstance(paths_obj, dict):
+            for prefix, cfg in paths_obj.items():
+                if not isinstance(prefix, str) or not isinstance(cfg, dict):
+                    continue
+                pp: PathPolicy = {}
+                if "forced_mode" in cfg:
+                    pp["forced_mode"] = str(cfg["forced_mode"]).strip()
+                if "enable_auto_tests" in cfg:
+                    pp["enable_auto_tests"] = bool(cfg["enable_auto_tests"])
+                if "enable_auto_lints" in cfg:
+                    pp["enable_auto_lints"] = bool(cfg["enable_auto_lints"])
+                if "security_strict" in cfg:
+                    pp["security_strict"] = bool(cfg["security_strict"])
+                paths[prefix] = pp
+        _CACHED_POLICY = {"default_mode": default_mode, "paths": paths}
+        return _CACHED_POLICY
+    except Exception:
+        _CACHED_POLICY = default
+        return _CACHED_POLICY
+
+
+def policy_for_path(policy: ProjectPolicy, file_path: str) -> PathPolicy:
+    """
+    Resolve the most specific PathPolicy for a given file_path based on
+    prefix matching against policy['paths'] keys.
+    """
+    paths = policy.get("paths") or {}
+    if not isinstance(paths, dict) or not file_path:
+        return {}
+    norm = file_path.replace("\\", "/")
+    best_prefix = ""
+    best_policy: PathPolicy = {}
+    for prefix, cfg in paths.items():
+        if not isinstance(prefix, str) or not isinstance(cfg, dict):
+            continue
+        if not norm.startswith(prefix):
+            continue
+        # Prefer the longest matching prefix
+        if len(prefix) > len(best_prefix):
+            best_prefix = prefix
+            best_policy = cfg  # type: ignore[assignment]
+    return best_policy
+
+
+def effective_mode(plan_mode: str | None, path_policy: PathPolicy, default_mode: str) -> str:
+    """
+    Compute the effective mode for a task/plan combining:
+    - project default_mode,
+    - plan_mode (user-provided),
+    - path-specific forced_mode (highest precedence).
+    """
+    if "forced_mode" in path_policy:
+        m = str(path_policy["forced_mode"] or "").strip().lower()
+        return m or "normal"
+    if plan_mode:
+        return str(plan_mode or "").strip().lower() or "normal"
+    return str(default_mode or "").strip().lower() or "normal"
 
