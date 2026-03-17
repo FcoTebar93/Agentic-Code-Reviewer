@@ -27,6 +27,7 @@ from shared.llm_adapter import get_llm_provider
 from shared.observability.metrics import agent_execution_time, tasks_completed
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import EventBus, build_short_term_memory_window, store_event
+from shared.policies import load_project_policy, policy_for_path, effective_mode
 from services.qa_service.config import QAConfig
 from services.qa_service.reviewer import review_code, ReviewResult
 from shared.utils import infer_framework_hint
@@ -42,6 +43,7 @@ class QADeps:
     dev_reasoning_cache: dict[str, str]
     qa_reasoning_cache: dict[str, str]
     pr_requested_plan_ids: set[str]
+    project_policy: dict | None = None
 
 
 async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> None:
@@ -83,7 +85,20 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         is_hot_module = await _is_hot_module(module, deps)
 
         raw_mode = getattr(payload, "mode", "normal") or "normal"
-        mode = str(raw_mode).strip().lower()
+        try:
+            if deps.project_policy is None:
+                from services.qa_service.tools import REPO_ROOT
+
+                deps.project_policy = load_project_policy(REPO_ROOT)
+        except Exception:
+            deps.project_policy = {"default_mode": "normal", "paths": {}}
+        path_policy = (
+            policy_for_path(deps.project_policy or {}, payload.file_path or "")
+            if deps.project_policy
+            else {}
+        )
+        default_mode = (deps.project_policy or {}).get("default_mode", "normal")
+        mode = effective_mode(raw_mode, path_policy, default_mode)
         if (
             mode in {"save", "ahorro"}
             and not _has_severe_static_issues(static_issues)
@@ -189,7 +204,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         file_path=payload.file_path,
         qa_attempt=payload.qa_attempt,
         reasoning=reasoning,
-        mode=raw_mode,
+        mode=mode,
         module=module,
         severity_hint=severity_hint,
     )

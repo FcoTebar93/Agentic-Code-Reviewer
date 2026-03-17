@@ -17,7 +17,12 @@ import httpx
 from fastapi import FastAPI
 
 from shared.logging.logger import setup_logging
-from shared.observability.metrics import metrics_response, agent_execution_time, tasks_completed, llm_tokens
+from shared.observability.metrics import (
+    metrics_response,
+    agent_execution_time,
+    tasks_completed,
+    llm_tokens,
+)
 from shared.contracts.events import (
     BaseEvent,
     EventType,
@@ -37,26 +42,32 @@ from shared.utils import (
 )
 from services.dev_service.config import DevConfig
 from services.dev_service.generator import generate_code
-from services.dev_service.tools import build_dev_tool_registry, ReadFileInput
+from services.dev_service.tools import build_dev_tool_registry, ReadFileInput, REPO_ROOT
 from shared.tools import execute_tool, ToolRegistry
 from shared.contracts.events import EventType, SpecGeneratedPayload
+from shared.policies import load_project_policy, policy_for_path, effective_mode
 
 SERVICE_NAME = "dev_service"
 event_bus: EventBus | None = None
 http_client: httpx.AsyncClient | None = None
 cfg: DevConfig | None = None
 tool_registry: ToolRegistry | None = None
+project_policy = None
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global event_bus, http_client, cfg, tool_registry
+    global event_bus, http_client, cfg, tool_registry, project_policy
     logger = setup_logging(SERVICE_NAME)
 
     cfg = DevConfig.from_env()
     http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
 
     tool_registry = build_dev_tool_registry()
+    try:
+        project_policy = load_project_policy(REPO_ROOT)
+    except Exception:
+        project_policy = {"default_mode": "normal", "paths": {}}
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
@@ -126,7 +137,16 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     )
 
     raw_mode = getattr(payload, "mode", "normal") or "normal"
-    mode = str(raw_mode).strip().lower()
+
+    global project_policy
+    if project_policy is None:
+        try:
+            project_policy = load_project_policy(REPO_ROOT)
+        except Exception:
+            project_policy = {"default_mode": "normal", "paths": {}}
+    path_policy = policy_for_path(project_policy, task.file_path or "")
+    default_mode = project_policy.get("default_mode", "normal")
+    mode = effective_mode(raw_mode, path_policy, default_mode)
 
     with agent_execution_time.labels(service=SERVICE_NAME, operation="code_gen").time():
         await _update_task_state(task.task_id, plan_id, "in_progress")
@@ -180,8 +200,13 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         except Exception:
             pass
 
-        tests_summary = await _maybe_run_auto_tests(task, mode)
-        lints_summary = await _maybe_run_auto_lints(task, qa_feedback, mode)
+        run_tests = path_policy.get("enable_auto_tests", True)
+        run_lints = path_policy.get("enable_auto_lints", True)
+
+        tests_summary = await _maybe_run_auto_tests(task, mode) if run_tests else ""
+        lints_summary = (
+            await _maybe_run_auto_lints(task, qa_feedback, mode) if run_lints else ""
+        )
 
         combined_reasoning = code_result.reasoning
         if tests_summary:
@@ -226,7 +251,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             language=task.language,
             qa_attempt=current_attempt,
             reasoning=combined_reasoning,
-            mode=raw_mode,
+            mode=mode,
         )
         step_delay = float(cfg.step_delay)
         if step_delay > 0:

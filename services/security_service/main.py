@@ -41,6 +41,8 @@ from services.security_service.config import SecurityConfig
 from services.security_service.scanner import scan_files
 from services.security_service.prompts import SECURITY_REVIEW_PROMPT
 from shared.llm_adapter import get_llm_provider, LLMResponse
+from shared.policies import load_project_policy, policy_for_path, effective_mode
+from services.qa_service.tools import REPO_ROOT
 
 SERVICE_NAME = "security_service"
 event_bus: EventBus | None = None
@@ -110,7 +112,15 @@ async def _consume_pr_requests() -> None:
 async def _handle_security_scan(payload: PRRequestedPayload) -> None:
     plan_id = payload.plan_id
     raw_mode = getattr(payload, "mode", "normal") or "normal"
-    mode = str(raw_mode).strip().lower() or "normal"
+
+    try:
+        project_policy = load_project_policy(REPO_ROOT)
+    except Exception:
+        project_policy = {"default_mode": "normal", "paths": {}}
+    representative_path = payload.files[0].file_path if payload.files else ""
+    path_policy = policy_for_path(project_policy, representative_path or "")
+    default_mode = project_policy.get("default_mode", "normal")
+    mode = effective_mode(raw_mode, path_policy, default_mode)
     logger.info(
         "Security scan for plan %s (%d files, mode=%s)",
         plan_id[:8],
@@ -130,7 +140,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
 
     reasoning = result.reasoning or ""
     memory_ctx = ""
-    if not result.approved and mode == "strict":
+    if not result.approved and (mode == "strict" or path_policy.get("security_strict")):
         memory_ctx = await _fetch_security_memory_context(plan_id)
         if memory_ctx:
             reasoning = (reasoning + "\n\n" if reasoning else "") + (
