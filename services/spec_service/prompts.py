@@ -13,7 +13,7 @@ Input:
 - Optional plan context (planner reasoning, related tasks, past specs and QA results).
 - Optional lightweight repository context around the target file (file preview, neighbour files, related usages).
 - Optional repo test layout hints (where tests usually live and how they are named).
- - Pipeline mode: strict / normal / save (ahorro).
+- Pipeline mode: strict / normal / save (cost-saving).
 
 TASK DESCRIPTION:
 {description}
@@ -45,29 +45,29 @@ Instructions:
 4. Think in terms of inputs, outputs, preconditions, postconditions and main edge cases.
 5. Propose tests that could be implemented in this repo (unit tests or integration tests),
    but DO NOT write full test code, only short, actionable descriptions.
-6. Para cada test, indica si es CRÍTICO (rompe funcionalidad o seguridad si falla) u OPCIONAL
-   (mejora robustez, mantenibilidad o cobertura pero no es bloqueante).
-7. Si se trata de un endpoint HTTP (FastAPI/Django/Flask), incluye al menos tests para:
-   - status code esperado (2xx/4xx/5xx),
-   - validación de entradas (casos válidos y no válidos),
-   - permisos/autenticación si aplica.
-8. Si se trata de un componente React/Next.js, incluye al menos tests para:
-   - render básico con props mínimas,
-   - interacción principal (click/input),
-   - estados de carga/errores si existen.
-9. Ten en cuenta el PIPELINE MODE:
-   - En modo STRICT: prioriza casos borde y tests CRÍTICOS adicionales, incluso si el cambio parece pequeño.
-   - En modo NORMAL: equilibra cobertura y coste de mantenimiento de tests.
-   - En modo SAVE/AHORRO: céntrate en los casos más importantes y evita sobre-diseñar tests opcionales.
+6. For each test, indicate whether it is CRITICAL (it breaks functionality or security if it fails) or OPTIONAL
+   (it improves robustness, maintainability or coverage but is not strictly blocking).
+7. If this is an HTTP endpoint (FastAPI/Django/Flask), include at least tests for:
+   - expected status codes (2xx/4xx/5xx),
+   - input validation (valid and invalid cases),
+   - permissions/authentication when applicable.
+8. If this is a React/Next.js component, include at least tests for:
+   - basic render with minimal props,
+   - main user interaction (click/input),
+   - loading/error states if they exist.
+9. Take PIPELINE MODE into account:
+   - In STRICT mode: prioritise edge cases and additional CRITICAL tests, even if the change looks small.
+   - In NORMAL mode: balance coverage with the maintenance cost of tests.
+   - In SAVE mode: focus on the most important cases and avoid over-designing optional tests.
 
 Write everything in Spanish.
 
 Format your response EXACTLY as:
 SPEC:
-<1-2 párrafos o bullets describiendo el comportamiento esperado, entradas/salidas y casos borde>
+<1-2 paragraphs or bullet points describing the expected behaviour, inputs/outputs and edge cases>
 
 TESTS:
-- [CRITICAL] <test 1: qué comprueba y por qué es importante>
+- [CRITICAL] <test 1: what it checks and why it is important>
 - [CRITICAL] <test 2>
 - [OPTIONAL] <test 3>
 """
