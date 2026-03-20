@@ -98,6 +98,29 @@ export default function App() {
     [pushUrlIfChanged],
   );
 
+  const isNarrowForDrawer = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 1023px)").matches;
+  }, []);
+
+  /** Clic en pestaña del panel: en móvil cierra el drawer al elegir sección. */
+  const setRightTabFromPanel = useCallback(
+    (tab: RightPanelTabId) => {
+      setRightTabWithHistory(tab);
+      if (isNarrowForDrawer()) setRightDrawerOpen(false);
+    },
+    [setRightTabWithHistory, isNarrowForDrawer],
+  );
+
+  /** Atajos Alt+3–7: en móvil abre el drawer para mostrar la pestaña. */
+  const setRightTabFromShortcut = useCallback(
+    (tab: RightPanelTabId) => {
+      setRightTabWithHistory(tab);
+      if (isNarrowForDrawer()) setRightDrawerOpen(true);
+    },
+    [setRightTabWithHistory, isNarrowForDrawer],
+  );
+
   const setActivePlanIdWithHistory = useCallback(
     (planId: string | null) => {
       pushUrlIfChanged({ planId });
@@ -126,7 +149,7 @@ export default function App() {
 
   useDashboardKeyboardShortcuts(
     setMainSectionWithHistory,
-    setRightTabWithHistory
+    setRightTabFromShortcut
   );
 
   const prevPendingCount = useRef<number | null>(null);
@@ -200,6 +223,17 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [rightDrawerOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => {
+      if (mq.matches) setRightDrawerOpen(false);
+    };
+    mq.addEventListener("change", onChange);
+    onChange();
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   return (
     <div className="h-dvh max-h-dvh overflow-hidden bg-black text-neutral-50 flex flex-col">
@@ -290,7 +324,7 @@ export default function App() {
 
         <div
           id="right-panel-drawer"
-          className={`flex flex-col gap-3 min-h-0 order-2 lg:order-none min-w-0 flex-1 lg:flex-none lg:max-h-full overflow-hidden max-lg:fixed max-lg:top-0 max-lg:bottom-0 max-lg:right-0 max-lg:z-50 max-lg:w-[min(100vw,420px)] max-lg:max-w-full max-lg:border-l max-lg:border-neutral-800 max-lg:bg-neutral-950 max-lg:p-4 max-lg:shadow-2xl max-lg:transition-transform max-lg:duration-200 max-lg:ease-out lg:relative lg:inset-auto lg:z-auto lg:w-full lg:border-l-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:translate-x-0 lg:pointer-events-auto ${
+          className={`flex flex-col gap-3 min-h-0 order-2 lg:order-none min-w-0 flex-1 lg:flex-none lg:max-h-full overflow-hidden max-lg:fixed max-lg:top-0 max-lg:bottom-0 max-lg:right-0 max-lg:z-50 max-lg:w-[min(100vw,420px)] max-lg:max-w-full max-lg:border-l max-lg:border-neutral-800 max-lg:bg-neutral-950 max-lg:p-4 max-lg:shadow-2xl max-lg:transition-transform max-lg:duration-200 max-lg:ease-out max-lg:motion-reduce:transition-none lg:relative lg:inset-auto lg:z-auto lg:w-full lg:border-l-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:translate-x-0 lg:pointer-events-auto ${
             rightDrawerOpen
               ? "max-lg:translate-x-0 max-lg:pointer-events-auto"
               : "max-lg:translate-x-full max-lg:pointer-events-none"
@@ -318,7 +352,7 @@ export default function App() {
           <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
             <RightPanelTabs
               active={rightTab}
-              onChange={setRightTabWithHistory}
+              onChange={setRightTabFromPanel}
               panels={{
               launch: <PlanForm />,
               metrics: <PlanMetrics planId={activePlanId} />,
@@ -332,6 +366,21 @@ export default function App() {
               ),
               more: (
                 <>
+                  <Card>
+                    <SectionHeader>Atajos de teclado</SectionHeader>
+                    <ul className="text-[11px] font-mono text-neutral-400 space-y-1.5 leading-relaxed">
+                      <li>
+                        <span className="text-neutral-500">Alt+1 / Alt+2</span> — Pipeline / Eventos
+                      </li>
+                      <li>
+                        <span className="text-neutral-500">Alt+3 … Alt+7</span> — Lanzar, Métricas, Detalle, Aprobaciones, Más
+                      </li>
+                      <li className="text-neutral-600 text-[10px] pt-1">
+                        En móvil, Alt+3–7 abre el panel; Opción = Alt (macOS).
+                      </li>
+                    </ul>
+                  </Card>
+
                   <Card>
                     <SectionHeader>Stats</SectionHeader>
                     <dl className="space-y-2">
