@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useDashboardKeyboardShortcuts } from "./hooks/useDashboardKeyboardShortcuts";
+import { useIsNarrowDrawerViewport } from "./hooks/useMediaQuery";
+import { useDrawerFocusManagement } from "./hooks/useDrawerFocusManagement";
 import { getDashboardHref, useDashboardUrlSync } from "./hooks/useDashboardUrlSync";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
@@ -66,6 +68,19 @@ export default function App() {
   const [mainSection, setMainSection] =
     useState<MainWorkspaceSectionId>("pipeline");
   const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
+  const isNarrowDrawer = useIsNarrowDrawerViewport();
+  const rightPanelDrawerRef = useRef<HTMLDivElement>(null);
+  const panelToggleRef = useRef<HTMLButtonElement>(null);
+
+  const closeRightDrawer = useCallback(() => setRightDrawerOpen(false), []);
+
+  useDrawerFocusManagement({
+    open: rightDrawerOpen,
+    isNarrowViewport: isNarrowDrawer,
+    containerRef: rightPanelDrawerRef,
+    returnFocusRef: panelToggleRef,
+    onRequestClose: closeRightDrawer,
+  });
 
   type NavSnapshot = {
     planId: string | null;
@@ -98,27 +113,20 @@ export default function App() {
     [pushUrlIfChanged],
   );
 
-  const isNarrowForDrawer = useCallback(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia("(max-width: 1023px)").matches;
-  }, []);
-
-  /** Clic en pestaña del panel: en móvil cierra el drawer al elegir sección. */
   const setRightTabFromPanel = useCallback(
     (tab: RightPanelTabId) => {
       setRightTabWithHistory(tab);
-      if (isNarrowForDrawer()) setRightDrawerOpen(false);
+      if (isNarrowDrawer) setRightDrawerOpen(false);
     },
-    [setRightTabWithHistory, isNarrowForDrawer],
+    [setRightTabWithHistory, isNarrowDrawer],
   );
 
-  /** Atajos Alt+3–7: en móvil abre el drawer para mostrar la pestaña. */
   const setRightTabFromShortcut = useCallback(
     (tab: RightPanelTabId) => {
       setRightTabWithHistory(tab);
-      if (isNarrowForDrawer()) setRightDrawerOpen(true);
+      if (isNarrowDrawer) setRightDrawerOpen(true);
     },
-    [setRightTabWithHistory, isNarrowForDrawer],
+    [setRightTabWithHistory, isNarrowDrawer],
   );
 
   const setActivePlanIdWithHistory = useCallback(
@@ -159,14 +167,9 @@ export default function App() {
     prevPendingCount.current = n;
     if (prev !== null && n > prev && n > 0) {
       setRightTab("approvals");
-      if (
-        typeof window !== "undefined" &&
-        window.matchMedia("(max-width: 1023px)").matches
-      ) {
-        setRightDrawerOpen(true);
-      }
+      if (isNarrowDrawer) setRightDrawerOpen(true);
     }
-  }, [pendingApprovals.length]);
+  }, [pendingApprovals.length, isNarrowDrawer]);
 
   const prevEventsCount = useRef<number | null>(null);
   useEffect(() => {
@@ -216,15 +219,6 @@ export default function App() {
   }, [events]);
 
   useEffect(() => {
-    if (!rightDrawerOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setRightDrawerOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [rightDrawerOpen]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(min-width: 1024px)");
     const onChange = () => {
@@ -235,6 +229,20 @@ export default function App() {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
+  const rightPanelAriaProps =
+    !isNarrowDrawer
+      ? ({
+          role: "complementary" as const,
+          "aria-label": "Plan, métricas y herramientas",
+        } as const)
+      : rightDrawerOpen
+        ? ({
+            role: "dialog" as const,
+            "aria-modal": true as const,
+            "aria-labelledby": "right-drawer-title",
+          } as const)
+        : ({ "aria-hidden": true as const } as const);
+
   return (
     <div className="h-dvh max-h-dvh overflow-hidden bg-black text-neutral-50 flex flex-col">
       <HeaderBar
@@ -244,6 +252,7 @@ export default function App() {
         right={
           <>
             <button
+              ref={panelToggleRef}
               type="button"
               className="lg:hidden shrink-0 rounded-lg border border-neutral-600 bg-neutral-900 px-2.5 py-1.5 text-[11px] font-mono text-neutral-200 hover:bg-neutral-800"
               aria-expanded={rightDrawerOpen}
@@ -267,11 +276,11 @@ export default function App() {
 
       <main className="relative flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_minmax(280px,380px)] gap-4 p-4 min-h-0 overflow-hidden">
         {rightDrawerOpen && (
-          <button
-            type="button"
-            aria-label="Cerrar panel"
+          <div
+            role="presentation"
             className="lg:hidden fixed inset-0 z-40 bg-black/70"
-            onClick={() => setRightDrawerOpen(false)}
+            aria-hidden
+            onClick={closeRightDrawer}
           />
         )}
 
@@ -324,6 +333,9 @@ export default function App() {
 
         <div
           id="right-panel-drawer"
+          ref={rightPanelDrawerRef}
+          tabIndex={-1}
+          {...rightPanelAriaProps}
           className={`flex flex-col gap-3 min-h-0 order-2 lg:order-none min-w-0 flex-1 lg:flex-none lg:max-h-full overflow-hidden max-lg:fixed max-lg:top-0 max-lg:bottom-0 max-lg:right-0 max-lg:z-50 max-lg:w-[min(100vw,420px)] max-lg:max-w-full max-lg:border-l max-lg:border-neutral-800 max-lg:bg-neutral-950 max-lg:p-4 max-lg:shadow-2xl max-lg:transition-transform max-lg:duration-200 max-lg:ease-out max-lg:motion-reduce:transition-none lg:relative lg:inset-auto lg:z-auto lg:w-full lg:border-l-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:translate-x-0 lg:pointer-events-auto ${
             rightDrawerOpen
               ? "max-lg:translate-x-0 max-lg:pointer-events-auto"
@@ -331,13 +343,16 @@ export default function App() {
           }`}
         >
           <div className="flex items-center justify-between gap-2 lg:hidden shrink-0">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
+            <span
+              id="right-drawer-title"
+              className="text-[10px] font-mono uppercase tracking-wider text-neutral-500"
+            >
               Herramientas
             </span>
             <button
               type="button"
               className="text-[10px] font-mono text-neutral-400 hover:text-white px-2 py-1 rounded border border-neutral-700"
-              onClick={() => setRightDrawerOpen(false)}
+              onClick={closeRightDrawer}
             >
               Cerrar
             </button>
