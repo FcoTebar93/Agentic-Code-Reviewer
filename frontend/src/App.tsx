@@ -1,15 +1,21 @@
 import { useEffect, useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { usePlanUrlSync } from "./hooks/usePlanUrlSync";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
 import { PlanForm } from "./components/PlanForm";
 import { ApprovalQueue } from "./components/ApprovalQueue";
 import { PlanMetrics } from "./components/PlanMetrics";
 import { PlanDetailCard } from "./components/PlanDetailCard";
+import { ActivePlanBar } from "./components/ActivePlanBar";
 import { Card, SectionHeader } from "./components/ui/Card";
 import { StatRow } from "./components/ui/StatRow";
 import { HeaderBar } from "./components/ui/HeaderBar";
 import { PlanFilterChips } from "./components/ui/PlanFilterChips";
+import {
+  RightPanelTabs,
+  type RightPanelTabId,
+} from "./components/ui/RightPanelTabs";
 import type { BaseEvent } from "./types/events";
 
 const WS_URL = import.meta.env.VITE_GATEWAY_WS_URL ?? "ws://localhost:8080/ws";
@@ -57,6 +63,9 @@ export default function App() {
   const [visibleEvents, setVisibleEvents] = useState<BaseEvent[]>(events);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [knownPlanIds, setKnownPlanIds] = useState<string[]>([]);
+  const [rightTab, setRightTab] = useState<RightPanelTabId>("launch");
+
+  usePlanUrlSync(activePlanId, setActivePlanId, knownPlanIds);
 
   const filteredEvents = sortByTimestampDesc(
     activePlanId === null
@@ -115,8 +124,8 @@ export default function App() {
         }
       />
 
-      <main className="flex-1 grid grid-cols-[1fr_380px] gap-4 p-4 min-h-0">
-        <div className="flex flex-col gap-4 min-h-0">
+      <main className="flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_minmax(280px,380px)] gap-4 p-4 min-h-0">
+        <div className="flex flex-col gap-4 min-h-0 order-1 min-w-0">
           <PipelineGraph latestEvent={latestEvent} />
           <div className="flex-1 min-h-0">
             <div className="flex items-center justify-between mb-1 gap-2">
@@ -147,91 +156,110 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 overflow-y-auto">
-          <PlanForm />
-
-          <PlanMetrics planId={activePlanId} />
-
-          <PlanDetailCard planId={activePlanId} />
-
-          <ApprovalQueue
-            approvals={pendingApprovals}
-            onApprove={(id) => callApprovalEndpoint(id, "approve")}
-            onReject={(id) => callApprovalEndpoint(id, "reject")}
+        <div className="flex flex-col gap-3 min-h-0 order-2 lg:order-none min-w-0">
+          <ActivePlanBar
+            planId={activePlanId}
+            mode={activePlanMode}
+            onClear={() => setActivePlanId(null)}
           />
-
-          <Card>
-            <SectionHeader>Stats</SectionHeader>
-            <dl className="space-y-2">
-              <StatRow label="Total events" value={visibleEvents.length} />
-              <StatRow
-                label="Pending approvals"
-                value={
-                  <span
-                    className={
-                      pendingApprovals.length > 0
-                        ? "text-amber-400"
-                        : "text-neutral-200"
-                    }
-                  >
-                    {pendingApprovals.length}
-                  </span>
-                }
-              />
-              {activePlanMode && (
-                <StatRow
-                  label="Active plan mode"
-                  value={
-                    <span
-                      className={
-                        activePlanMode === "save" || activePlanMode === "ahorro"
-                          ? "text-emerald-400"
-                          : "text-neutral-300"
-                      }
-                    >
-                      {activePlanMode === "ahorro" ? "save" : activePlanMode}
-                    </span>
-                  }
+          <RightPanelTabs
+            active={rightTab}
+            onChange={setRightTab}
+            panels={{
+              launch: <PlanForm />,
+              metrics: <PlanMetrics planId={activePlanId} />,
+              detail: <PlanDetailCard planId={activePlanId} />,
+              approvals: (
+                <ApprovalQueue
+                  approvals={pendingApprovals}
+                  onApprove={(id) => callApprovalEndpoint(id, "approve")}
+                  onReject={(id) => callApprovalEndpoint(id, "reject")}
                 />
-              )}
-              <StatRow
-                label="Last event"
-                value={
-                  <span className="text-neutral-200 truncate max-w-[180px] inline-block">
-                    {latestEvent?.event_type ?? "—"}
-                  </span>
-                }
-              />
-              <StatRow
-                label="Producer"
-                value={latestEvent?.producer ?? "—"}
-              />
-            </dl>
-          </Card>
+              ),
+              more: (
+                <>
+                  <Card>
+                    <SectionHeader>Stats</SectionHeader>
+                    <dl className="space-y-2">
+                      <StatRow label="Total events" value={visibleEvents.length} />
+                      <StatRow
+                        label="Pending approvals"
+                        value={
+                          <span
+                            className={
+                              pendingApprovals.length > 0
+                                ? "text-amber-400"
+                                : "text-neutral-200"
+                            }
+                          >
+                            {pendingApprovals.length}
+                          </span>
+                        }
+                      />
+                      {activePlanMode && (
+                        <StatRow
+                          label="Active plan mode"
+                          value={
+                            <span
+                              className={
+                                activePlanMode === "save" ||
+                                activePlanMode === "ahorro"
+                                  ? "text-emerald-400"
+                                  : "text-neutral-300"
+                              }
+                            >
+                              {activePlanMode === "ahorro"
+                                ? "save"
+                                : activePlanMode}
+                            </span>
+                          }
+                        />
+                      )}
+                      <StatRow
+                        label="Last event"
+                        value={
+                          <span className="text-neutral-200 truncate max-w-[180px] inline-block">
+                            {latestEvent?.event_type ?? "—"}
+                          </span>
+                        }
+                      />
+                      <StatRow
+                        label="Producer"
+                        value={latestEvent?.producer ?? "—"}
+                      />
+                    </dl>
+                  </Card>
 
-          <Card>
-            <SectionHeader>Quick Links</SectionHeader>
-            <div className="space-y-1.5">
-              {[
-                { label: "Grafana", url: "http://localhost:3000" },
-                { label: "Prometheus", url: "http://localhost:9090" },
-                { label: "RabbitMQ UI", url: "http://localhost:15672" },
-                { label: "Gateway API", url: "http://localhost:8080/docs" },
-                { label: "Pending Approvals API", url: "http://localhost:8080/api/approvals" },
-              ].map(({ label, url }) => (
-                <a
-                  key={label}
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between text-xs font-mono text-neutral-400 hover:text-white transition-colors"
-                >
-                  <span>{label}</span>
-                  <span className="text-neutral-600">↗</span>
-                </a>
-              ))}
-            </div>
-          </Card>
+                  <Card>
+                    <SectionHeader>Quick Links</SectionHeader>
+                    <div className="space-y-1.5">
+                      {[
+                        { label: "Grafana", url: "http://localhost:3000" },
+                        { label: "Prometheus", url: "http://localhost:9090" },
+                        { label: "RabbitMQ UI", url: "http://localhost:15672" },
+                        { label: "Gateway API", url: "http://localhost:8080/docs" },
+                        {
+                          label: "Pending Approvals API",
+                          url: "http://localhost:8080/api/approvals",
+                        },
+                      ].map(({ label, url }) => (
+                        <a
+                          key={label}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center justify-between text-xs font-mono text-neutral-400 hover:text-white transition-colors"
+                        >
+                          <span>{label}</span>
+                          <span className="text-neutral-600">↗</span>
+                        </a>
+                      ))}
+                    </div>
+                  </Card>
+                </>
+              ),
+            }}
+          />
         </div>
       </main>
     </div>
