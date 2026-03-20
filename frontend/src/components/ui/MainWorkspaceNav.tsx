@@ -36,8 +36,9 @@ export function MainWorkspaceNav({ active, onChange, panels }: Props) {
           className="flex flex-row lg:flex-col gap-1 flex-1 lg:flex-none"
           role="tablist"
         >
-          {SECTIONS.map(({ id, label, hint }) => {
+          {SECTIONS.map(({ id, label, hint }, index) => {
             const isOn = active === id;
+            const k = index + 1;
             return (
               <button
                 key={id}
@@ -46,7 +47,8 @@ export function MainWorkspaceNav({ active, onChange, panels }: Props) {
                 aria-selected={isOn}
                 id={`main-tab-${id}`}
                 aria-controls={`main-panel-${id}`}
-                title={hint}
+                aria-keyshortcuts={`Alt+${k}`}
+                title={`${hint} · Alt+${k}`}
                 onClick={() => onChange(id)}
                 className={`text-left text-[11px] font-mono px-2.5 py-2 rounded-lg border transition-colors lg:w-full ${
                   isOn

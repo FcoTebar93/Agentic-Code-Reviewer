@@ -41,8 +41,9 @@ export function RightPanelTabs({ active, onChange, panels }: Props) {
         role="tablist"
         aria-label="Panel lateral"
       >
-        {TABS.map(({ id, label }) => {
+        {TABS.map(({ id, label }, index) => {
           const isActive = active === id;
+          const k = index + 3;
           return (
             <button
               key={id}
@@ -51,6 +52,8 @@ export function RightPanelTabs({ active, onChange, panels }: Props) {
               aria-selected={isActive}
               id={`tab-${id}`}
               aria-controls={`panel-${id}`}
+              aria-keyshortcuts={`Alt+${k}`}
+              title={`${label} · Alt+${k}`}
               onClick={() => onChange(id)}
               className={`text-[11px] font-mono px-2.5 py-1.5 rounded-t border-b-2 transition-colors ${
                 isActive

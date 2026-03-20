@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useDashboardKeyboardShortcuts } from "./hooks/useDashboardKeyboardShortcuts";
 import { getDashboardHref, useDashboardUrlSync } from "./hooks/useDashboardUrlSync";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
@@ -122,6 +123,11 @@ export default function App() {
     setMainSection
   );
 
+  useDashboardKeyboardShortcuts(
+    setMainSectionWithHistory,
+    setRightTabWithHistory
+  );
+
   const prevPendingCount = useRef<number | null>(null);
   useEffect(() => {
     const n = pendingApprovals.length;
@@ -184,6 +190,7 @@ export default function App() {
       <HeaderBar
         title="ADMADC"
         subtitle="Autonomous Deterministic Multi-Agent Dev Company"
+        shortcutsHint="Atajos: Alt+1 Pipeline · Alt+2 Eventos · Alt+3–7 panel (Lanzar…Más)"
         right={
           <>
             {pendingApprovals.length > 0 && (
