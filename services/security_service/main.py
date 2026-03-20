@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
+from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
 from shared.observability.metrics import (
     metrics_response,
@@ -56,7 +57,10 @@ async def lifespan(application: FastAPI):
     logger = setup_logging(SERVICE_NAME)
 
     cfg = SecurityConfig.from_env()
-    http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+    http_client = create_async_http_client(
+        base_url=cfg.memory_service_url,
+        default_timeout=30.0,
+    )
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()

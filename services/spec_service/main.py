@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
+from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
 from shared.observability.metrics import metrics_response, agent_execution_time, llm_tokens
 from shared.contracts.events import (
@@ -28,6 +29,7 @@ from shared.utils import (
     guarded_http_get,
 )
 from services.spec_service.config import SpecConfig
+from services.spec_service.deps import SpecPipelineDeps
 from services.spec_service.prompts import SPEC_PROMPT
 from services.spec_service.tools import build_spec_tool_registry
 
@@ -45,12 +47,22 @@ async def lifespan(application: FastAPI):
     logger = setup_logging(SERVICE_NAME)
 
     cfg = SpecConfig.from_env()
-    http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+    http_client = create_async_http_client(
+        base_url=cfg.memory_service_url,
+        default_timeout=30.0,
+    )
 
     tool_registry = build_spec_tool_registry()
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
+
+    application.state.spec_pipeline_deps = SpecPipelineDeps(
+        http_client=http_client,
+        cfg=cfg,
+        event_bus=event_bus,
+        tool_registry=tool_registry,
+    )
 
     asyncio.create_task(_consume_tasks())
     logger.info("Spec Service ready (strategy=%s)", cfg.strategy)

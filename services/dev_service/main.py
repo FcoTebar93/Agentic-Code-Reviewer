@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
+from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
 from shared.observability.metrics import (
     metrics_response,
@@ -41,6 +42,7 @@ from shared.utils import (
     guarded_http_get,
 )
 from services.dev_service.config import DevConfig
+from services.dev_service.deps import DevPipelineDeps
 from services.dev_service.generator import generate_code
 from services.dev_service.tools import build_dev_tool_registry, ReadFileInput, REPO_ROOT
 from shared.tools import execute_tool, ToolRegistry
@@ -61,7 +63,10 @@ async def lifespan(application: FastAPI):
     logger = setup_logging(SERVICE_NAME)
 
     cfg = DevConfig.from_env()
-    http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+    http_client = create_async_http_client(
+        base_url=cfg.memory_service_url,
+        default_timeout=30.0,
+    )
 
     tool_registry = build_dev_tool_registry()
     try:
@@ -71,6 +76,13 @@ async def lifespan(application: FastAPI):
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
+
+    application.state.dev_pipeline_deps = DevPipelineDeps(
+        http_client=http_client,
+        cfg=cfg,
+        event_bus=event_bus,
+        tool_registry=tool_registry,
+    )
 
     asyncio.create_task(_consume_tasks())
     logger.info("Dev Service ready")

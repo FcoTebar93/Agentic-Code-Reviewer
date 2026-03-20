@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI
 
+from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
 from shared.observability.metrics import metrics_response, agent_execution_time, llm_tokens
 from shared.contracts.events import (
@@ -59,7 +60,10 @@ async def lifespan(application: FastAPI):
     logger = setup_logging(SERVICE_NAME)
 
     cfg = ReplannerConfig.from_env()
-    http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=30.0)
+    http_client = create_async_http_client(
+        base_url=cfg.memory_service_url,
+        default_timeout=30.0,
+    )
 
     tool_registry = build_replanner_tool_registry(memory_service_url=cfg.memory_service_url)
 

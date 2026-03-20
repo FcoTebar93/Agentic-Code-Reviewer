@@ -25,6 +25,8 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+
+from shared.http.client import create_async_http_client
 from pydantic import BaseModel
 
 from shared.logging.logger import setup_logging
@@ -45,6 +47,7 @@ from shared.llm_adapter import get_llm_provider
 from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
 from services.meta_planner.config import PlannerConfig
+from services.meta_planner.deps import MetaPlannerDeps
 from services.meta_planner.planner import decompose_tasks
 from services.meta_planner.tools import build_planner_tool_registry
 
@@ -147,12 +150,22 @@ async def lifespan(application: FastAPI):
     logger = setup_logging(SERVICE_NAME)
 
     cfg = PlannerConfig.from_env()
-    http_client = httpx.AsyncClient(base_url=cfg.memory_service_url, timeout=10.0)
+    http_client = create_async_http_client(
+        base_url=cfg.memory_service_url,
+        default_timeout=10.0,
+    )
 
     tool_registry = build_planner_tool_registry(memory_service_url=cfg.memory_service_url)
 
     event_bus = EventBus(cfg.rabbitmq_url)
     await event_bus.connect()
+
+    application.state.meta_planner_deps = MetaPlannerDeps(
+        http_client=http_client,
+        cfg=cfg,
+        event_bus=event_bus,
+        tool_registry=tool_registry,
+    )
 
     asyncio.create_task(_consume_plan_requests())
     asyncio.create_task(_consume_plan_revisions())
