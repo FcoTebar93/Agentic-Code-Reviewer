@@ -1,14 +1,10 @@
 import React, { useLayoutEffect, useState } from "react";
 
-export type RightPanelTabId =
-  | "launch"
-  | "metrics"
-  | "detail"
-  | "approvals"
-  | "more";
+export type RightPanelTabId = "metrics" | "detail" | "approvals" | "more";
+
+export const DEFAULT_RIGHT_PANEL_TAB: RightPanelTabId = "metrics";
 
 export const RIGHT_PANEL_TAB_IDS: RightPanelTabId[] = [
-  "launch",
   "metrics",
   "detail",
   "approvals",
@@ -19,8 +15,14 @@ export function isRightPanelTabId(s: string): s is RightPanelTabId {
   return (RIGHT_PANEL_TAB_IDS as string[]).includes(s);
 }
 
+export function normalizeRightPanelTabFromUrl(raw: string | null): RightPanelTabId | null {
+  if (raw == null || raw === "") return null;
+  if (raw === "launch") return DEFAULT_RIGHT_PANEL_TAB;
+  if (isRightPanelTabId(raw)) return raw;
+  return null;
+}
+
 const TABS: { id: RightPanelTabId; label: string }[] = [
-  { id: "launch", label: "Lanzar" },
   { id: "metrics", label: "Métricas" },
   { id: "detail", label: "Detalle" },
   { id: "approvals", label: "Aprobaciones" },

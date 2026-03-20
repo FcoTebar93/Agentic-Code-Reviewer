@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { isMainWorkspaceSectionId, type MainWorkspaceSectionId } from "../components/ui/MainWorkspaceNav";
-import { isRightPanelTabId, type RightPanelTabId } from "../components/ui/RightPanelTabs";
+import { DEFAULT_RIGHT_PANEL_TAB, normalizeRightPanelTabFromUrl, type RightPanelTabId } from "../components/ui/RightPanelTabs";
 
 const PLAN_QUERY = "plan";
 const TAB_QUERY = "tab";
 const MAIN_QUERY = "main";
 
-export function getDashboardHref(
-  planId: string | null,
-  tab: RightPanelTabId,
-  mainSection: MainWorkspaceSectionId = "pipeline",
-): string {
+export function getDashboardHref( planId: string | null, tab: RightPanelTabId, mainSection: MainWorkspaceSectionId = "pipeline"): string {
   if (typeof window === "undefined") return "";
   const url = new URL(window.location.href);
   if (planId) {
@@ -18,7 +14,7 @@ export function getDashboardHref(
   } else {
     url.searchParams.delete(PLAN_QUERY);
   }
-  if (tab === "launch") {
+  if (tab === DEFAULT_RIGHT_PANEL_TAB) {
     url.searchParams.delete(TAB_QUERY);
   } else {
     url.searchParams.set(TAB_QUERY, tab);
@@ -46,9 +42,9 @@ export function useDashboardUrlSync(
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    const raw = params.get(TAB_QUERY);
-    if (raw && isRightPanelTabId(raw)) {
-      setRightTab(raw);
+    const normalized = normalizeRightPanelTabFromUrl(params.get(TAB_QUERY));
+    if (normalized) {
+      setRightTab(normalized);
     }
     const rawMain = params.get(MAIN_QUERY);
     if (rawMain && isMainWorkspaceSectionId(rawMain)) {
@@ -80,11 +76,11 @@ export function useDashboardUrlSync(
     const applySearchToState = () => {
       const params = new URLSearchParams(window.location.search);
 
-      const rawTab = params.get(TAB_QUERY);
-      if (rawTab && isRightPanelTabId(rawTab)) {
-        setRightTab(rawTab);
+      const normalizedTab = normalizeRightPanelTabFromUrl(params.get(TAB_QUERY));
+      if (normalizedTab) {
+        setRightTab(normalizedTab);
       } else {
-        setRightTab("launch");
+        setRightTab(DEFAULT_RIGHT_PANEL_TAB);
       }
 
       const rawMain = params.get(MAIN_QUERY);
@@ -126,7 +122,7 @@ export function useDashboardUrlSync(
       }
     }
 
-    if (rightTab === "launch") {
+    if (rightTab === DEFAULT_RIGHT_PANEL_TAB) {
       url.searchParams.delete(TAB_QUERY);
     } else {
       url.searchParams.set(TAB_QUERY, rightTab);

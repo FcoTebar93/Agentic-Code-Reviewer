@@ -4,7 +4,8 @@ export function shouldOpenDrawerFromSearch(search: string): boolean {
   const params = new URLSearchParams(search);
   const tab = params.get("tab");
   const plan = params.get("plan")?.trim();
-  const tabImpliesPanel = tab != null && tab !== "" && tab !== "launch";
+  const tabImpliesPanel =
+    tab != null && tab !== "" && tab !== "launch";
   return tabImpliesPanel || Boolean(plan);
 }
 

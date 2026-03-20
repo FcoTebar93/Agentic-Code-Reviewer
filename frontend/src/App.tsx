@@ -82,7 +82,7 @@ export default function App() {
   const [visibleEvents, setVisibleEvents] = useState<BaseEvent[]>(events);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [knownPlanIds, setKnownPlanIds] = useState<string[]>([]);
-  const [rightTab, setRightTab] = useState<RightPanelTabId>("launch");
+  const [rightTab, setRightTab] = useState<RightPanelTabId>("metrics");
   const [mainSection, setMainSection] =
     useState<MainWorkspaceSectionId>("pipeline");
   const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
@@ -268,7 +268,7 @@ export default function App() {
       <HeaderBar
         title="ADMADC"
         subtitle="Autonomous Deterministic Multi-Agent Dev Company"
-        shortcutsHint="Atajos: Alt+1 Pipeline · Alt+2 Eventos · Alt+3–7 panel (Lanzar…Más)"
+        shortcutsHint="Atajos: Alt+1 Pipeline · Alt+2 Eventos · Alt+3–6 panel (Métricas…Más)"
         right={
           <>
             <button
@@ -315,36 +315,51 @@ export default function App() {
                 </div>
               ),
               events: (
-                <div className="flex flex-col flex-1 min-h-0 gap-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
-                        Event Feed
-                      </span>
-                      <PlanFilterChips
-                        planIds={knownPlanIds}
-                        activePlanId={activePlanId}
-                        onChange={setActivePlanIdWithHistory}
-                      />
+                <div className="flex flex-1 min-h-0 min-w-0 flex-row gap-3">
+                  <div className="flex flex-col flex-1 min-h-0 min-w-0 basis-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 mb-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
+                          Event Feed
+                        </span>
+                        <PlanFilterChips
+                          planIds={knownPlanIds}
+                          activePlanId={activePlanId}
+                          onChange={setActivePlanIdWithHistory}
+                        />
+                      </div>
+                      {visibleEvents.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            pushUrlIfChanged({ planId: null });
+                            setVisibleEvents([]);
+                            setActivePlanId(null);
+                            setKnownPlanIds([]);
+                          }}
+                          className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
+                        >
+                          clear logs
+                        </button>
+                      )}
                     </div>
-                    {visibleEvents.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          pushUrlIfChanged({ planId: null });
-                          setVisibleEvents([]);
-                          setActivePlanId(null);
-                          setKnownPlanIds([]);
-                        }}
-                        className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
-                      >
-                        clear logs
-                      </button>
-                    )}
+                    <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+                      <EventFeed events={filteredEvents} />
+                    </div>
                   </div>
-                  <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-                    <EventFeed events={filteredEvents} />
-                  </div>
+                  <aside
+                    className="flex flex-col shrink-0 min-h-0 w-[min(200px,36vw)] min-w-[132px] sm:w-[min(220px,34vw)] lg:w-[min(300px,32%)] border-l border-neutral-800 pl-3 overflow-y-auto"
+                    aria-label="Lanzar plan"
+                  >
+                    <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider shrink-0 mb-2">
+                      Lanzar
+                    </span>
+                    <div className="min-h-0 flex-1">
+                      <Suspense fallback={<PanelTabFallback />}>
+                        <LazyPlanForm />
+                      </Suspense>
+                    </div>
+                  </aside>
                 </div>
               ),
             }}
@@ -389,11 +404,6 @@ export default function App() {
               active={rightTab}
               onChange={setRightTabFromPanel}
               panels={{
-                launch: (
-                  <Suspense fallback={<PanelTabFallback />}>
-                    <LazyPlanForm />
-                  </Suspense>
-                ),
                 metrics: (
                   <Suspense fallback={<PanelTabFallback />}>
                     <LazyPlanMetrics planId={activePlanId} />

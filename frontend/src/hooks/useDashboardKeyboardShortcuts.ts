@@ -31,7 +31,6 @@ export function useDashboardKeyboardShortcuts(setMainSection: (s: MainWorkspaceS
         Digit4: 1,
         Digit5: 2,
         Digit6: 3,
-        Digit7: 4,
       };
       const idx = tabIndexByCode[e.code];
       if (idx !== undefined) {

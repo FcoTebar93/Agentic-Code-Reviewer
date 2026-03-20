@@ -13,7 +13,7 @@ export function isMainWorkspaceSectionId(s: string): s is MainWorkspaceSectionId
 
 const SECTIONS: { id: MainWorkspaceSectionId; label: string; hint: string }[] = [
   { id: "pipeline", label: "Pipeline", hint: "Grafo de agentes" },
-  { id: "events", label: "Eventos", hint: "Feed en vivo" },
+  { id: "events", label: "Eventos", hint: "Feed + lanzar plan" },
 ];
 
 type Props = {

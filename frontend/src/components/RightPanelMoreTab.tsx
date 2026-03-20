@@ -20,11 +20,11 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
             Eventos
           </li>
           <li>
-            <span className="text-neutral-500">Alt+3 … Alt+7</span> — Lanzar,
-            Métricas, Detalle, Aprobaciones, Más
+            <span className="text-neutral-500">Alt+3 … Alt+6</span> — Métricas,
+            Detalle, Aprobaciones, Más (Lanzar está en la vista Eventos)
           </li>
           <li className="text-neutral-600 text-[10px] pt-1">
-            En móvil, Alt+3–7 abre el panel; Opción = Alt (macOS).
+            En móvil, Alt+3–6 abre el panel; Opción = Alt (macOS).
           </li>
         </ul>
       </Card>
