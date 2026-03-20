@@ -2,11 +2,12 @@ import logging
 import time
 from typing import Any
 
-from shared.utils.rabbitmq import EventBus
+from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from shared.utils.memory_window import build_short_term_memory_window
 
 __all__ = [
     "EventBus",
+    "IdempotencyStore",
     "build_short_term_memory_window",
     "store_event",
     "infer_framework_hint",
