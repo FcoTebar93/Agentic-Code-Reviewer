@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useLayoutEffect, useState } from "react";
 
 export type RightPanelTabId =
   | "launch"
@@ -34,6 +34,14 @@ type Props = {
 };
 
 export function RightPanelTabs({ active, onChange, panels }: Props) {
+  const [visited, setVisited] = useState<Set<RightPanelTabId>>(
+    () => new Set([active]),
+  );
+
+  useLayoutEffect(() => {
+    setVisited((prev) => new Set(prev).add(active));
+  }, [active]);
+
   return (
     <div className="flex flex-col min-h-0 flex-1 gap-2 overflow-hidden">
       <div
@@ -67,22 +75,25 @@ export function RightPanelTabs({ active, onChange, panels }: Props) {
         })}
       </div>
       <div className="flex-1 min-h-0 min-w-0 relative">
-        {TABS.map(({ id }) => (
-          <div
-            key={id}
-            role="tabpanel"
-            id={`panel-${id}`}
-            aria-labelledby={`tab-${id}`}
-            hidden={active !== id}
-            className={
-              active === id
-                ? "absolute inset-0 overflow-y-auto pr-1 space-y-4"
-                : ""
-            }
-          >
-            {panels[id]}
-          </div>
-        ))}
+        {TABS.map(({ id }) => {
+          const mounted = visited.has(id) || id === active;
+          return (
+            <div
+              key={id}
+              role="tabpanel"
+              id={`panel-${id}`}
+              aria-labelledby={`tab-${id}`}
+              hidden={active !== id}
+              className={
+                active === id
+                  ? "absolute inset-0 overflow-y-auto pr-1 space-y-4"
+                  : ""
+              }
+            >
+              {mounted ? panels[id] : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

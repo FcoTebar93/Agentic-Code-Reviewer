@@ -1,23 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useDashboardKeyboardShortcuts } from "./hooks/useDashboardKeyboardShortcuts";
 import { useIsNarrowDrawerViewport } from "./hooks/useMediaQuery";
 import { useDrawerFocusManagement } from "./hooks/useDrawerFocusManagement";
+import { useDeepLinkDrawer } from "./hooks/useDeepLinkDrawer";
 import { getDashboardHref, useDashboardUrlSync } from "./hooks/useDashboardUrlSync";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
-import { PlanForm } from "./components/PlanForm";
-import { ApprovalQueue } from "./components/ApprovalQueue";
-import { PlanMetrics } from "./components/PlanMetrics";
-import { PlanDetailCard } from "./components/PlanDetailCard";
 import { ActivePlanBar } from "./components/ActivePlanBar";
-import { Card, SectionHeader } from "./components/ui/Card";
-import { StatRow } from "./components/ui/StatRow";
 import { HeaderBar } from "./components/ui/HeaderBar";
 import { PlanFilterChips } from "./components/ui/PlanFilterChips";
+import { PanelTabFallback } from "./components/ui/PanelTabFallback";
 import { MainWorkspaceNav, type MainWorkspaceSectionId } from "./components/ui/MainWorkspaceNav";
 import { RightPanelTabs, type RightPanelTabId } from "./components/ui/RightPanelTabs";
 import type { BaseEvent } from "./types/events";
+
+const LazyPlanForm = lazy(() =>
+  import("./components/PlanForm").then((m) => ({ default: m.PlanForm })),
+);
+const LazyPlanMetrics = lazy(() =>
+  import("./components/PlanMetrics").then((m) => ({ default: m.PlanMetrics })),
+);
+const LazyPlanDetailCard = lazy(() =>
+  import("./components/PlanDetailCard").then((m) => ({
+    default: m.PlanDetailCard,
+  })),
+);
+const LazyApprovalQueue = lazy(() =>
+  import("./components/ApprovalQueue").then((m) => ({
+    default: m.ApprovalQueue,
+  })),
+);
+const LazyRightPanelMoreTab = lazy(() =>
+  import("./components/RightPanelMoreTab").then((m) => ({
+    default: m.RightPanelMoreTab,
+  })),
+);
 
 const WS_URL = import.meta.env.VITE_GATEWAY_WS_URL ?? "ws://localhost:8080/ws";
 const HTTP_BASE = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
@@ -81,6 +99,8 @@ export default function App() {
     returnFocusRef: panelToggleRef,
     onRequestClose: closeRightDrawer,
   });
+
+  useDeepLinkDrawer(isNarrowDrawer, setRightDrawerOpen);
 
   type NavSnapshot = {
     planId: string | null;
@@ -369,113 +389,40 @@ export default function App() {
               active={rightTab}
               onChange={setRightTabFromPanel}
               panels={{
-              launch: <PlanForm />,
-              metrics: <PlanMetrics planId={activePlanId} />,
-              detail: <PlanDetailCard planId={activePlanId} />,
-              approvals: (
-                <ApprovalQueue
-                  approvals={pendingApprovals}
-                  onApprove={(id) => callApprovalEndpoint(id, "approve")}
-                  onReject={(id) => callApprovalEndpoint(id, "reject")}
-                />
-              ),
-              more: (
-                <>
-                  <Card>
-                    <SectionHeader>Atajos de teclado</SectionHeader>
-                    <ul className="text-[11px] font-mono text-neutral-400 space-y-1.5 leading-relaxed">
-                      <li>
-                        <span className="text-neutral-500">Alt+1 / Alt+2</span> — Pipeline / Eventos
-                      </li>
-                      <li>
-                        <span className="text-neutral-500">Alt+3 … Alt+7</span> — Lanzar, Métricas, Detalle, Aprobaciones, Más
-                      </li>
-                      <li className="text-neutral-600 text-[10px] pt-1">
-                        En móvil, Alt+3–7 abre el panel; Opción = Alt (macOS).
-                      </li>
-                    </ul>
-                  </Card>
-
-                  <Card>
-                    <SectionHeader>Stats</SectionHeader>
-                    <dl className="space-y-2">
-                      <StatRow label="Total events" value={visibleEvents.length} />
-                      <StatRow
-                        label="Pending approvals"
-                        value={
-                          <span
-                            className={
-                              pendingApprovals.length > 0
-                                ? "text-amber-400"
-                                : "text-neutral-200"
-                            }
-                          >
-                            {pendingApprovals.length}
-                          </span>
-                        }
-                      />
-                      {activePlanMode && (
-                        <StatRow
-                          label="Active plan mode"
-                          value={
-                            <span
-                              className={
-                                activePlanMode === "save" ||
-                                activePlanMode === "ahorro"
-                                  ? "text-emerald-400"
-                                  : "text-neutral-300"
-                              }
-                            >
-                              {activePlanMode === "ahorro"
-                                ? "save"
-                                : activePlanMode}
-                            </span>
-                          }
-                        />
-                      )}
-                      <StatRow
-                        label="Last event"
-                        value={
-                          <span className="text-neutral-200 truncate max-w-[180px] inline-block">
-                            {latestEvent?.event_type ?? "—"}
-                          </span>
-                        }
-                      />
-                      <StatRow
-                        label="Producer"
-                        value={latestEvent?.producer ?? "—"}
-                      />
-                    </dl>
-                  </Card>
-
-                  <Card>
-                    <SectionHeader>Quick Links</SectionHeader>
-                    <div className="space-y-1.5">
-                      {[
-                        { label: "Grafana", url: "http://localhost:3000" },
-                        { label: "Prometheus", url: "http://localhost:9090" },
-                        { label: "RabbitMQ UI", url: "http://localhost:15672" },
-                        { label: "Gateway API", url: "http://localhost:8080/docs" },
-                        {
-                          label: "Pending Approvals API",
-                          url: "http://localhost:8080/api/approvals",
-                        },
-                      ].map(({ label, url }) => (
-                        <a
-                          key={label}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center justify-between text-xs font-mono text-neutral-400 hover:text-white transition-colors"
-                        >
-                          <span>{label}</span>
-                          <span className="text-neutral-600">↗</span>
-                        </a>
-                      ))}
-                    </div>
-                  </Card>
-                </>
-              ),
+                launch: (
+                  <Suspense fallback={<PanelTabFallback />}>
+                    <LazyPlanForm />
+                  </Suspense>
+                ),
+                metrics: (
+                  <Suspense fallback={<PanelTabFallback />}>
+                    <LazyPlanMetrics planId={activePlanId} />
+                  </Suspense>
+                ),
+                detail: (
+                  <Suspense fallback={<PanelTabFallback />}>
+                    <LazyPlanDetailCard planId={activePlanId} />
+                  </Suspense>
+                ),
+                approvals: (
+                  <Suspense fallback={<PanelTabFallback />}>
+                    <LazyApprovalQueue
+                      approvals={pendingApprovals}
+                      onApprove={(id) => callApprovalEndpoint(id, "approve")}
+                      onReject={(id) => callApprovalEndpoint(id, "reject")}
+                    />
+                  </Suspense>
+                ),
+                more: (
+                  <Suspense fallback={<PanelTabFallback />}>
+                    <LazyRightPanelMoreTab
+                      visibleEventsCount={visibleEvents.length}
+                      pendingApprovalsCount={pendingApprovals.length}
+                      activePlanMode={activePlanMode}
+                      latestEvent={latestEvent}
+                    />
+                  </Suspense>
+                ),
               }}
             />
           </div>
