@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import { isMainWorkspaceSectionId, type MainWorkspaceSectionId } from "../components/ui/MainWorkspaceNav";
 import { isRightPanelTabId, type RightPanelTabId } from "../components/ui/RightPanelTabs";
 
 const PLAN_QUERY = "plan";
 const TAB_QUERY = "tab";
+const MAIN_QUERY = "main";
 
 export function getDashboardHref(
   planId: string | null,
   tab: RightPanelTabId,
+  mainSection: MainWorkspaceSectionId = "pipeline",
 ): string {
   if (typeof window === "undefined") return "";
   const url = new URL(window.location.href);
@@ -20,6 +23,11 @@ export function getDashboardHref(
   } else {
     url.searchParams.set(TAB_QUERY, tab);
   }
+  if (mainSection === "pipeline") {
+    url.searchParams.delete(MAIN_QUERY);
+  } else {
+    url.searchParams.set(MAIN_QUERY, mainSection);
+  }
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -29,6 +37,8 @@ export function useDashboardUrlSync(
   knownPlanIds: string[],
   rightTab: RightPanelTabId,
   setRightTab: (t: RightPanelTabId) => void,
+  mainSection: MainWorkspaceSectionId,
+  setMainSection: (s: MainWorkspaceSectionId) => void,
 ): void {
   const planInitialized = useRef(false);
   const [tabHydrated, setTabHydrated] = useState(false);
@@ -40,8 +50,12 @@ export function useDashboardUrlSync(
     if (raw && isRightPanelTabId(raw)) {
       setRightTab(raw);
     }
+    const rawMain = params.get(MAIN_QUERY);
+    if (rawMain && isMainWorkspaceSectionId(rawMain)) {
+      setMainSection(rawMain);
+    }
     setTabHydrated(true);
-  }, [setRightTab]);
+  }, [setRightTab, setMainSection]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -73,6 +87,13 @@ export function useDashboardUrlSync(
         setRightTab("launch");
       }
 
+      const rawMain = params.get(MAIN_QUERY);
+      if (rawMain && isMainWorkspaceSectionId(rawMain)) {
+        setMainSection(rawMain);
+      } else {
+        setMainSection("pipeline");
+      }
+
       const fromPlan = params.get(PLAN_QUERY)?.trim() ?? "";
       if (!fromPlan) {
         setActivePlanId(null);
@@ -89,7 +110,7 @@ export function useDashboardUrlSync(
 
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [setActivePlanId, setRightTab]);
+  }, [setActivePlanId, setRightTab, setMainSection]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -111,10 +132,16 @@ export function useDashboardUrlSync(
       url.searchParams.set(TAB_QUERY, rightTab);
     }
 
+    if (mainSection === "pipeline") {
+      url.searchParams.delete(MAIN_QUERY);
+    } else {
+      url.searchParams.set(MAIN_QUERY, mainSection);
+    }
+
     const next = `${url.pathname}${url.search}${url.hash}`;
     const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (next !== cur) {
       window.history.replaceState(null, "", next);
     }
-  }, [activePlanId, rightTab, tabHydrated, knownPlanIds.length]);
+  }, [activePlanId, rightTab, mainSection, tabHydrated, knownPlanIds.length]);
 }

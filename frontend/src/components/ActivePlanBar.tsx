@@ -1,12 +1,23 @@
 import React from "react";
+import { getDashboardHref } from "../hooks/useDashboardUrlSync";
+import type { MainWorkspaceSectionId } from "./ui/MainWorkspaceNav";
+import type { RightPanelTabId } from "./ui/RightPanelTabs";
 
 type Props = {
   planId: string | null;
   mode: string | null;
+  rightTab: RightPanelTabId;
+  mainSection: MainWorkspaceSectionId;
   onClear?: () => void;
 };
 
-export function ActivePlanBar({ planId, mode, onClear }: Props) {
+export function ActivePlanBar({
+  planId,
+  mode,
+  rightTab,
+  mainSection,
+  onClear,
+}: Props) {
   const [copied, setCopied] = React.useState<"id" | "link" | null>(null);
 
   if (!planId) {
@@ -34,9 +45,9 @@ export function ActivePlanBar({ planId, mode, onClear }: Props) {
 
   async function copyLink() {
     try {
-      const url = new URL(window.location.href);
-      url.searchParams.set("plan", id);
-      await navigator.clipboard.writeText(url.toString());
+      const path = getDashboardHref(id, rightTab, mainSection);
+      const absolute = new URL(path, window.location.origin).href;
+      await navigator.clipboard.writeText(absolute);
       setCopied("link");
       setTimeout(() => setCopied(null), 2000);
     } catch {

@@ -2,6 +2,15 @@ import type { ReactNode } from "react";
 
 export type MainWorkspaceSectionId = "pipeline" | "events";
 
+export const MAIN_WORKSPACE_SECTION_IDS: MainWorkspaceSectionId[] = [
+  "pipeline",
+  "events",
+];
+
+export function isMainWorkspaceSectionId(s: string): s is MainWorkspaceSectionId {
+  return (MAIN_WORKSPACE_SECTION_IDS as string[]).includes(s);
+}
+
 const SECTIONS: { id: MainWorkspaceSectionId; label: string; hint: string }[] = [
   { id: "pipeline", label: "Pipeline", hint: "Grafo de agentes" },
   { id: "events", label: "Eventos", hint: "Feed en vivo" },

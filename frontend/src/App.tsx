@@ -65,12 +65,23 @@ export default function App() {
   const [mainSection, setMainSection] =
     useState<MainWorkspaceSectionId>("pipeline");
 
-  const navRef = useRef({ activePlanId, rightTab });
-  navRef.current = { activePlanId, rightTab };
+  type NavSnapshot = {
+    planId: string | null;
+    rightTab: RightPanelTabId;
+    mainSection: MainWorkspaceSectionId;
+  };
 
-  const pushUrlIfChanged = useCallback((planId: string | null, tab: RightPanelTabId) => {
+  const navRef = useRef<NavSnapshot>({
+    planId: activePlanId,
+    rightTab,
+    mainSection,
+  });
+  navRef.current = { planId: activePlanId, rightTab, mainSection };
+
+  const pushUrlIfChanged = useCallback((overrides?: Partial<NavSnapshot>) => {
     if (typeof window === "undefined") return;
-    const next = getDashboardHref(planId, tab);
+    const s = { ...navRef.current, ...overrides };
+    const next = getDashboardHref(s.planId, s.rightTab, s.mainSection);
     const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (next !== cur) {
       window.history.pushState(null, "", next);
@@ -79,7 +90,7 @@ export default function App() {
 
   const setRightTabWithHistory = useCallback(
     (tab: RightPanelTabId) => {
-      pushUrlIfChanged(navRef.current.activePlanId, tab);
+      pushUrlIfChanged({ rightTab: tab });
       setRightTab(tab);
     },
     [pushUrlIfChanged],
@@ -87,8 +98,16 @@ export default function App() {
 
   const setActivePlanIdWithHistory = useCallback(
     (planId: string | null) => {
-      pushUrlIfChanged(planId, navRef.current.rightTab);
+      pushUrlIfChanged({ planId });
       setActivePlanId(planId);
+    },
+    [pushUrlIfChanged],
+  );
+
+  const setMainSectionWithHistory = useCallback(
+    (section: MainWorkspaceSectionId) => {
+      pushUrlIfChanged({ mainSection: section });
+      setMainSection(section);
     },
     [pushUrlIfChanged],
   );
@@ -98,7 +117,9 @@ export default function App() {
     setActivePlanId,
     knownPlanIds,
     rightTab,
-    setRightTab
+    setRightTab,
+    mainSection,
+    setMainSection
   );
 
   const prevPendingCount = useRef<number | null>(null);
@@ -182,7 +203,7 @@ export default function App() {
         <div className="flex flex-col min-h-0 order-1 min-w-0 flex-1">
           <MainWorkspaceNav
             active={mainSection}
-            onChange={setMainSection}
+            onChange={setMainSectionWithHistory}
             panels={{
               pipeline: (
                 <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -206,7 +227,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          pushUrlIfChanged(null, navRef.current.rightTab);
+                          pushUrlIfChanged({ planId: null });
                           setVisibleEvents([]);
                           setActivePlanId(null);
                           setKnownPlanIds([]);
@@ -230,6 +251,8 @@ export default function App() {
           <ActivePlanBar
             planId={activePlanId}
             mode={activePlanMode}
+            rightTab={rightTab}
+            mainSection={mainSection}
             onClear={() => setActivePlanIdWithHistory(null)}
           />
           <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
