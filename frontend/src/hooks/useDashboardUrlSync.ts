@@ -4,6 +4,25 @@ import { isRightPanelTabId, type RightPanelTabId } from "../components/ui/RightP
 const PLAN_QUERY = "plan";
 const TAB_QUERY = "tab";
 
+export function getDashboardHref(
+  planId: string | null,
+  tab: RightPanelTabId,
+): string {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.href);
+  if (planId) {
+    url.searchParams.set(PLAN_QUERY, planId);
+  } else {
+    url.searchParams.delete(PLAN_QUERY);
+  }
+  if (tab === "launch") {
+    url.searchParams.delete(TAB_QUERY);
+  } else {
+    url.searchParams.set(TAB_QUERY, tab);
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export function useDashboardUrlSync(
   activePlanId: string | null,
   setActivePlanId: (id: string | null) => void,

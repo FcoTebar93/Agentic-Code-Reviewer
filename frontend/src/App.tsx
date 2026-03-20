@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
-import { useDashboardUrlSync } from "./hooks/useDashboardUrlSync";
+import {
+  getDashboardHref,
+  useDashboardUrlSync,
+} from "./hooks/useDashboardUrlSync";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
 import { PlanForm } from "./components/PlanForm";
@@ -64,6 +67,34 @@ export default function App() {
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [knownPlanIds, setKnownPlanIds] = useState<string[]>([]);
   const [rightTab, setRightTab] = useState<RightPanelTabId>("launch");
+
+  const navRef = useRef({ activePlanId, rightTab });
+  navRef.current = { activePlanId, rightTab };
+
+  const pushUrlIfChanged = useCallback((planId: string | null, tab: RightPanelTabId) => {
+    if (typeof window === "undefined") return;
+    const next = getDashboardHref(planId, tab);
+    const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== cur) {
+      window.history.pushState(null, "", next);
+    }
+  }, []);
+
+  const setRightTabWithHistory = useCallback(
+    (tab: RightPanelTabId) => {
+      pushUrlIfChanged(navRef.current.activePlanId, tab);
+      setRightTab(tab);
+    },
+    [pushUrlIfChanged],
+  );
+
+  const setActivePlanIdWithHistory = useCallback(
+    (planId: string | null) => {
+      pushUrlIfChanged(planId, navRef.current.rightTab);
+      setActivePlanId(planId);
+    },
+    [pushUrlIfChanged],
+  );
 
   useDashboardUrlSync(
     activePlanId,
@@ -152,12 +183,13 @@ export default function App() {
                 <PlanFilterChips
                   planIds={knownPlanIds}
                   activePlanId={activePlanId}
-                  onChange={setActivePlanId}
+                  onChange={setActivePlanIdWithHistory}
                 />
               </div>
               {visibleEvents.length > 0 && (
                 <button
                   onClick={() => {
+                    pushUrlIfChanged(null, navRef.current.rightTab);
                     setVisibleEvents([]);
                     setActivePlanId(null);
                     setKnownPlanIds([]);
@@ -176,11 +208,11 @@ export default function App() {
           <ActivePlanBar
             planId={activePlanId}
             mode={activePlanMode}
-            onClear={() => setActivePlanId(null)}
+            onClear={() => setActivePlanIdWithHistory(null)}
           />
           <RightPanelTabs
             active={rightTab}
-            onChange={setRightTab}
+            onChange={setRightTabWithHistory}
             panels={{
               launch: <PlanForm />,
               metrics: <PlanMetrics planId={activePlanId} />,
