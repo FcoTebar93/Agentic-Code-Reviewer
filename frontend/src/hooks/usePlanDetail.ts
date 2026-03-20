@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getJson } from "../api/gatewayClient";
+import { getJson } from "../api/api";
 import type { PlanDetail } from "../types/planDetail";
 
 interface UsePlanDetailResult {

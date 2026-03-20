@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { postJson } from "../api/gatewayClient";
+import { postJson } from "../api/api";
 import { Card, SectionHeader } from "./ui/Card";
 
 interface PlanResult {

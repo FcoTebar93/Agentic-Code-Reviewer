@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { getJson } from "../api/gatewayClient";
-import type { PlanMetrics as PlanMetricsPayload } from "../types/planDetail";
+import { getJson } from "../api/api";
+import type { PlanMetrics as PlanMetricsPayload, PlanMetricsByService } from "../types/planDetail";
 import { Card, SectionHeader } from "./ui/Card";
 import { StatRow } from "./ui/StatRow";
 import { Badge } from "./ui/Badge";
@@ -238,7 +238,7 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
             <div className="pt-2 border-t border-neutral-800">
               <dt className="text-neutral-500 text-xs font-mono mb-1.5">By service</dt>
               <dd className="space-y-1">
-                {metrics.by_service.map((s: ByService) => (
+                {metrics.by_service.map((s: PlanMetricsByService) => (
                   <div
                     key={s.service}
                     className="flex justify-between text-xs font-mono"

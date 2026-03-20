@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BaseEvent } from "../types/events";
 import { EVENT_COLORS, EVENT_LABELS } from "../types/events";
-import { postJson } from "../api/gatewayClient";
+import { postJson } from "../api/api";
 import { Card, SectionHeader } from "./ui/Card";
 import { CodePanel } from "./ui/CodePanel";
 
