@@ -43,8 +43,8 @@ export interface PrApproval {
 }
 
 export type WsMessage =
-  | { type: "event"; event: BaseEvent }
-  | { type: "history"; event: Record<string, unknown> }
+  | { type: "event"; event: unknown }
+  | { type: "history"; event: unknown }
   | { type: "approval"; approval: PrApproval }
   | { type: "approval_decided"; approval: PrApproval };
 
@@ -70,6 +70,34 @@ export const PRODUCER_FOR_EVENT: Record<EventType, string> = {
   "plan.revision_confirmed": "gateway_service",
   "metrics.tokens_used": "meta_planner",
 };
+
+function isEventType(s: string): s is EventType {
+  return Object.prototype.hasOwnProperty.call(PRODUCER_FOR_EVENT, s);
+}
+
+export function parseBaseEvent(raw: unknown): BaseEvent | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.event_id !== "string") return null;
+  if (typeof o.event_type !== "string" || !isEventType(o.event_type)) return null;
+  if (typeof o.version !== "string") return null;
+  if (typeof o.timestamp !== "string") return null;
+  if (typeof o.producer !== "string") return null;
+  if (typeof o.idempotency_key !== "string") return null;
+  const payload = o.payload;
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return null;
+  }
+  return {
+    event_id: o.event_id,
+    event_type: o.event_type,
+    version: o.version,
+    timestamp: o.timestamp,
+    producer: o.producer,
+    idempotency_key: o.idempotency_key,
+    payload: payload as Record<string, unknown>,
+  };
+}
 
 export const EVENT_COLORS: Record<EventType, string> = {
   "plan.requested": "#3b82f6",

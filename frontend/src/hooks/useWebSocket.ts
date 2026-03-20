@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { BaseEvent, PrApproval, WsMessage } from "../types/events";
+import { type BaseEvent, type PrApproval, type WsMessage, parseBaseEvent } from "../types/events";
 
 const MAX_EVENTS = 100;
 const RECONNECT_DELAY_MS = 3000;
@@ -32,13 +32,16 @@ export function useWebSocket(url: string) {
         const parsed: WsMessage = JSON.parse(msg.data);
 
         if (parsed.type === "event") {
+          const evt = parseBaseEvent(parsed.event);
+          if (!evt) return;
           setEvents((prev) => {
-            const next = [parsed.event, ...prev];
+            const next = [evt, ...prev];
             return next.slice(0, MAX_EVENTS);
           });
         } else if (parsed.type === "history") {
+          const evt = parseBaseEvent(parsed.event);
+          if (!evt) return;
           setEvents((prev) => {
-            const evt = parsed.event as unknown as BaseEvent;
             if (prev.some((e) => e.event_id === evt.event_id)) return prev;
             return [...prev, evt];
           });

@@ -82,8 +82,7 @@ export interface PlanReplans {
 export interface PlanEvent {
   event_type: string;
   created_at?: string;
-  payload: any;
-  [key: string]: any;
+  payload: Record<string, unknown>;
 }
 
 export interface PlanDetail {
