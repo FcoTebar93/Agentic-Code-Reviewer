@@ -65,6 +65,7 @@ export default function App() {
   const [rightTab, setRightTab] = useState<RightPanelTabId>("launch");
   const [mainSection, setMainSection] =
     useState<MainWorkspaceSectionId>("pipeline");
+  const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
 
   type NavSnapshot = {
     planId: string | null;
@@ -135,6 +136,12 @@ export default function App() {
     prevPendingCount.current = n;
     if (prev !== null && n > prev && n > 0) {
       setRightTab("approvals");
+      if (
+        typeof window !== "undefined" &&
+        window.matchMedia("(max-width: 1023px)").matches
+      ) {
+        setRightDrawerOpen(true);
+      }
     }
   }, [pendingApprovals.length]);
 
@@ -185,6 +192,15 @@ export default function App() {
     });
   }, [events]);
 
+  useEffect(() => {
+    if (!rightDrawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRightDrawerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [rightDrawerOpen]);
+
   return (
     <div className="h-dvh max-h-dvh overflow-hidden bg-black text-neutral-50 flex flex-col">
       <HeaderBar
@@ -193,6 +209,15 @@ export default function App() {
         shortcutsHint="Atajos: Alt+1 Pipeline · Alt+2 Eventos · Alt+3–7 panel (Lanzar…Más)"
         right={
           <>
+            <button
+              type="button"
+              className="lg:hidden shrink-0 rounded-lg border border-neutral-600 bg-neutral-900 px-2.5 py-1.5 text-[11px] font-mono text-neutral-200 hover:bg-neutral-800"
+              aria-expanded={rightDrawerOpen}
+              aria-controls="right-panel-drawer"
+              onClick={() => setRightDrawerOpen((o) => !o)}
+            >
+              {rightDrawerOpen ? "Cerrar panel" : "Panel"}
+            </button>
             {pendingApprovals.length > 0 && (
               <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-xs font-mono rounded-full px-2.5 py-0.5 animate-pulse">
                 {pendingApprovals.length} approval{pendingApprovals.length !== 1 ? "s" : ""} pending
@@ -206,7 +231,16 @@ export default function App() {
         }
       />
 
-      <main className="flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_minmax(280px,380px)] gap-4 p-4 min-h-0 overflow-hidden">
+      <main className="relative flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_minmax(280px,380px)] gap-4 p-4 min-h-0 overflow-hidden">
+        {rightDrawerOpen && (
+          <button
+            type="button"
+            aria-label="Cerrar panel"
+            className="lg:hidden fixed inset-0 z-40 bg-black/70"
+            onClick={() => setRightDrawerOpen(false)}
+          />
+        )}
+
         <div className="flex flex-col min-h-0 order-1 min-w-0 flex-1">
           <MainWorkspaceNav
             active={mainSection}
@@ -254,7 +288,26 @@ export default function App() {
           />
         </div>
 
-        <div className="flex flex-col gap-3 min-h-0 order-2 lg:order-none min-w-0 flex-1 lg:flex-none lg:max-h-full overflow-hidden">
+        <div
+          id="right-panel-drawer"
+          className={`flex flex-col gap-3 min-h-0 order-2 lg:order-none min-w-0 flex-1 lg:flex-none lg:max-h-full overflow-hidden max-lg:fixed max-lg:top-0 max-lg:bottom-0 max-lg:right-0 max-lg:z-50 max-lg:w-[min(100vw,420px)] max-lg:max-w-full max-lg:border-l max-lg:border-neutral-800 max-lg:bg-neutral-950 max-lg:p-4 max-lg:shadow-2xl max-lg:transition-transform max-lg:duration-200 max-lg:ease-out lg:relative lg:inset-auto lg:z-auto lg:w-full lg:border-l-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:translate-x-0 lg:pointer-events-auto ${
+            rightDrawerOpen
+              ? "max-lg:translate-x-0 max-lg:pointer-events-auto"
+              : "max-lg:translate-x-full max-lg:pointer-events-none"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 lg:hidden shrink-0">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
+              Herramientas
+            </span>
+            <button
+              type="button"
+              className="text-[10px] font-mono text-neutral-400 hover:text-white px-2 py-1 rounded border border-neutral-700"
+              onClick={() => setRightDrawerOpen(false)}
+            >
+              Cerrar
+            </button>
+          </div>
           <ActivePlanBar
             planId={activePlanId}
             mode={activePlanMode}
