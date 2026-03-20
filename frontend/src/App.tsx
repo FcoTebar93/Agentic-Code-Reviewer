@@ -14,6 +14,8 @@ import { PanelTabFallback } from "./components/ui/PanelTabFallback";
 import { MainWorkspaceNav, type MainWorkspaceSectionId } from "./components/ui/MainWorkspaceNav";
 import { RightPanelTabs, type RightPanelTabId } from "./components/ui/RightPanelTabs";
 import type { BaseEvent } from "./types/events";
+import { postWithoutBody } from "./api/gatewayClient";
+import { getGatewayWsUrl } from "./lib/gatewayConfig";
 
 const LazyPlanForm = lazy(() =>
   import("./components/PlanForm").then((m) => ({ default: m.PlanForm })),
@@ -37,8 +39,7 @@ const LazyRightPanelMoreTab = lazy(() =>
   })),
 );
 
-const WS_URL = import.meta.env.VITE_GATEWAY_WS_URL ?? "ws://localhost:8080/ws";
-const HTTP_BASE = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
+const WS_URL = getGatewayWsUrl();
 
 const STATUS_DOT: Record<string, string> = {
   connected: "bg-emerald-500",
@@ -65,16 +66,9 @@ function sortByTimestampDesc(events: BaseEvent[]): BaseEvent[] {
 
 async function callApprovalEndpoint(
   approvalId: string,
-  action: "approve" | "reject"
+  action: "approve" | "reject",
 ) {
-  const resp = await fetch(
-    `${HTTP_BASE}/api/approvals/${approvalId}/${action}`,
-    { method: "POST" }
-  );
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`${resp.status}: ${body}`);
-  }
+  await postWithoutBody(`/api/approvals/${approvalId}/${action}`);
 }
 
 export default function App() {

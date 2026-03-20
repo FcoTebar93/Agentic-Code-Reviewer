@@ -1,4 +1,5 @@
 import React from "react";
+import { postJson } from "../api/gatewayClient";
 import { Card, SectionHeader } from "./ui/Card";
 import { StatRow } from "./ui/StatRow";
 import { Badge } from "./ui/Badge";
@@ -564,9 +565,6 @@ const SecuritySummary: React.FC<{
   );
 };
 
-const HTTP_BASE =
-  import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
-
 const ManualReplanSection: React.FC<{
   plan: PlanDetail;
   prefill?: {
@@ -631,15 +629,7 @@ const ManualReplanSection: React.FC<{
           .filter(Boolean),
         target_group_ids: selectedGroups.length ? selectedGroups : uniqueGroups,
       };
-      const resp = await fetch(`${HTTP_BASE}/api/replan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!resp.ok) {
-        const txt = await resp.text();
-        throw new Error(`${resp.status}: ${txt}`);
-      }
+      await postJson("/api/replan", body);
       setMessage("Replan solicitado correctamente (esperando nuevo plan).");
       setReason("");
       setSuggestions("");

@@ -1,7 +1,6 @@
 import { useState, useRef } from "react";
+import { postJson } from "../api/gatewayClient";
 import { Card, SectionHeader } from "./ui/Card";
-
-const HTTP_URL = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
 
 interface PlanResult {
   plan_id: string;
@@ -44,17 +43,7 @@ export function PlanForm() {
         body.llm_provider = plannerProvider;
       }
 
-      const resp = await fetch(`${HTTP_URL}/api/plan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
-      }
-
-      const data = await resp.json();
+      const data = await postJson<PlanResult>("/api/plan", body);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

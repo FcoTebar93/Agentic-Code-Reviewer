@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BaseEvent } from "../types/events";
 import { EVENT_COLORS, EVENT_LABELS } from "../types/events";
+import { postJson } from "../api/gatewayClient";
 import { Card, SectionHeader } from "./ui/Card";
 import { CodePanel } from "./ui/CodePanel";
 
 interface Props {
   events: BaseEvent[];
 }
-
-const HTTP_BASE = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
 
 function formatTime(iso: string): string {
   try {
@@ -153,17 +152,10 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
     if (replanLoading) return;
     setReplanLoading(true);
     try {
-      const resp = await fetch(`${HTTP_BASE}/api/replan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(evt.payload),
-      });
-      if (!resp.ok) {
-        console.error("Replan request failed", resp.status);
-        setReplanLoading(false);
-      }
+      await postJson("/api/replan", evt.payload);
     } catch (err) {
       console.error("Replan request error", err);
+    } finally {
       setReplanLoading(false);
     }
   }

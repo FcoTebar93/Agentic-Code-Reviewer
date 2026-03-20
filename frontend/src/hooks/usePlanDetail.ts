@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getJson } from "../api/gatewayClient";
 import type { PlanDetail } from "../types/planDetail";
 
 interface UsePlanDetailResult {
@@ -6,9 +7,6 @@ interface UsePlanDetailResult {
   loading: boolean;
   error: string | null;
 }
-
-const HTTP_BASE =
-  import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
 
 export function usePlanDetail(planId: string | null): UsePlanDetailResult {
   const [data, setData] = useState<PlanDetail | null>(null);
@@ -27,21 +25,9 @@ export function usePlanDetail(planId: string | null): UsePlanDetailResult {
     setLoading(true);
     setError(null);
 
-    fetch(`${HTTP_BASE}/api/plan_detail/${encodeURIComponent(planId)}`)
-      .then((resp) => {
-        if (!resp.ok) {
-          return resp
-            .json()
-            .catch(() => ({}))
-            .then((body) => {
-              const msg =
-                (body && typeof body.error === "string" && body.error) ||
-                `HTTP ${resp.status}`;
-              throw new Error(msg);
-            });
-        }
-        return resp.json() as Promise<PlanDetail>;
-      })
+    getJson<PlanDetail>(
+      `/api/plan_detail/${encodeURIComponent(planId)}`,
+    )
       .then((json) => {
         if (!cancelled) {
           setData(json);

@@ -1,40 +1,10 @@
 import { useEffect, useState } from "react";
+import { getJson } from "../api/gatewayClient";
+import type { PlanMetrics as PlanMetricsPayload } from "../types/planDetail";
 import { Card, SectionHeader } from "./ui/Card";
 import { StatRow } from "./ui/StatRow";
 import { Badge } from "./ui/Badge";
 
-const HTTP_BASE = import.meta.env.VITE_GATEWAY_HTTP_URL ?? "http://localhost:8080";
-
-interface ByService {
-  service: string;
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens?: number;
-  estimated_cost_prompt_usd?: number;
-  estimated_cost_completion_usd?: number;
-  estimated_cost_total_usd?: number;
-}
-
-interface PlanMetricsPayload {
-  plan_id: string;
-  total_prompt_tokens: number;
-  total_completion_tokens: number;
-  total_tokens: number;
-  estimated_cost_prompt_usd?: number;
-  estimated_cost_completion_usd?: number;
-  estimated_cost_total_usd?: number;
-  pipeline_status?: string;
-  first_event_at?: string | null;
-  last_event_at?: string | null;
-  duration_seconds?: number;
-  qa_retry_count?: number;
-  qa_failed_count?: number;
-  security_blocked_count?: number;
-  replan_suggestions_count?: number;
-  replan_confirmed_count?: number;
-  by_service: ByService[];
-}
- 
 export function PlanMetrics({ planId }: { planId: string | null }) {
   const [metrics, setMetrics] = useState<PlanMetricsPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,12 +19,10 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`${HTTP_BASE}/api/plan_metrics/${encodeURIComponent(planId)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status}: ${r.statusText}`);
-        return r.json();
-      })
-      .then((data: PlanMetricsPayload) => {
+    getJson<PlanMetricsPayload>(
+      `/api/plan_metrics/${encodeURIComponent(planId)}`,
+    )
+      .then((data) => {
         if (!cancelled) {
           setMetrics(data);
           setError(null);
