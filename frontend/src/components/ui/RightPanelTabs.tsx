@@ -35,7 +35,7 @@ type Props = {
 
 export function RightPanelTabs({ active, onChange, panels }: Props) {
   return (
-    <div className="flex flex-col min-h-0 gap-2">
+    <div className="flex flex-col min-h-0 flex-1 gap-2 overflow-hidden">
       <div
         className="flex flex-wrap gap-1 border-b border-neutral-800 pb-2 -mb-px"
         role="tablist"
@@ -73,7 +73,7 @@ export function RightPanelTabs({ active, onChange, panels }: Props) {
             hidden={active !== id}
             className={
               active === id
-                ? "overflow-y-auto pr-1 space-y-4 max-h-[calc(100vh-12rem)] min-h-[200px]"
+                ? "absolute inset-0 overflow-y-auto pr-1 space-y-4"
                 : ""
             }
           >

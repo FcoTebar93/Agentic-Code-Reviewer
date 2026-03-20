@@ -16,6 +16,10 @@ import { StatRow } from "./components/ui/StatRow";
 import { HeaderBar } from "./components/ui/HeaderBar";
 import { PlanFilterChips } from "./components/ui/PlanFilterChips";
 import {
+  MainWorkspaceNav,
+  type MainWorkspaceSectionId,
+} from "./components/ui/MainWorkspaceNav";
+import {
   RightPanelTabs,
   type RightPanelTabId,
 } from "./components/ui/RightPanelTabs";
@@ -67,6 +71,8 @@ export default function App() {
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [knownPlanIds, setKnownPlanIds] = useState<string[]>([]);
   const [rightTab, setRightTab] = useState<RightPanelTabId>("launch");
+  const [mainSection, setMainSection] =
+    useState<MainWorkspaceSectionId>("pipeline");
 
   const navRef = useRef({ activePlanId, rightTab });
   navRef.current = { activePlanId, rightTab };
@@ -152,7 +158,7 @@ export default function App() {
   }, [events]);
 
   return (
-    <div className="min-h-screen bg-black text-neutral-50 flex flex-col">
+    <div className="h-dvh max-h-dvh overflow-hidden bg-black text-neutral-50 flex flex-col">
       <HeaderBar
         title="ADMADC"
         subtitle="Autonomous Deterministic Multi-Agent Dev Company"
@@ -171,49 +177,65 @@ export default function App() {
         }
       />
 
-      <main className="flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_minmax(280px,380px)] gap-4 p-4 min-h-0">
-        <div className="flex flex-col gap-4 min-h-0 order-1 min-w-0">
-          <PipelineGraph latestEvent={latestEvent} />
-          <div className="flex-1 min-h-0">
-            <div className="flex items-center justify-between mb-1 gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
-                  Event Feed
-                </span>
-                <PlanFilterChips
-                  planIds={knownPlanIds}
-                  activePlanId={activePlanId}
-                  onChange={setActivePlanIdWithHistory}
-                />
-              </div>
-              {visibleEvents.length > 0 && (
-                <button
-                  onClick={() => {
-                    pushUrlIfChanged(null, navRef.current.rightTab);
-                    setVisibleEvents([]);
-                    setActivePlanId(null);
-                    setKnownPlanIds([]);
-                  }}
-                  className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
-                >
-                  clear logs
-                </button>
-              )}
-            </div>
-            <EventFeed events={filteredEvents} />
-          </div>
+      <main className="flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_minmax(280px,380px)] gap-4 p-4 min-h-0 overflow-hidden">
+        <div className="flex flex-col min-h-0 order-1 min-w-0 flex-1">
+          <MainWorkspaceNav
+            active={mainSection}
+            onChange={setMainSection}
+            panels={{
+              pipeline: (
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <PipelineGraph latestEvent={latestEvent} />
+                </div>
+              ),
+              events: (
+                <div className="flex flex-col flex-1 min-h-0 gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
+                        Event Feed
+                      </span>
+                      <PlanFilterChips
+                        planIds={knownPlanIds}
+                        activePlanId={activePlanId}
+                        onChange={setActivePlanIdWithHistory}
+                      />
+                    </div>
+                    {visibleEvents.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pushUrlIfChanged(null, navRef.current.rightTab);
+                          setVisibleEvents([]);
+                          setActivePlanId(null);
+                          setKnownPlanIds([]);
+                        }}
+                        className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
+                      >
+                        clear logs
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+                    <EventFeed events={filteredEvents} />
+                  </div>
+                </div>
+              ),
+            }}
+          />
         </div>
 
-        <div className="flex flex-col gap-3 min-h-0 order-2 lg:order-none min-w-0">
+        <div className="flex flex-col gap-3 min-h-0 order-2 lg:order-none min-w-0 flex-1 lg:flex-none lg:max-h-full overflow-hidden">
           <ActivePlanBar
             planId={activePlanId}
             mode={activePlanMode}
             onClear={() => setActivePlanIdWithHistory(null)}
           />
-          <RightPanelTabs
-            active={rightTab}
-            onChange={setRightTabWithHistory}
-            panels={{
+          <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
+            <RightPanelTabs
+              active={rightTab}
+              onChange={setRightTabWithHistory}
+              panels={{
               launch: <PlanForm />,
               metrics: <PlanMetrics planId={activePlanId} />,
               detail: <PlanDetailCard planId={activePlanId} />,
@@ -306,8 +328,9 @@ export default function App() {
                   </Card>
                 </>
               ),
-            }}
-          />
+              }}
+            />
+          </div>
         </div>
       </main>
     </div>
