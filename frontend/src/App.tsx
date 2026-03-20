@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
-import { usePlanUrlSync } from "./hooks/usePlanUrlSync";
+import { useDashboardUrlSync } from "./hooks/useDashboardUrlSync";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
 import { PlanForm } from "./components/PlanForm";
@@ -65,7 +65,23 @@ export default function App() {
   const [knownPlanIds, setKnownPlanIds] = useState<string[]>([]);
   const [rightTab, setRightTab] = useState<RightPanelTabId>("launch");
 
-  usePlanUrlSync(activePlanId, setActivePlanId, knownPlanIds);
+  useDashboardUrlSync(
+    activePlanId,
+    setActivePlanId,
+    knownPlanIds,
+    rightTab,
+    setRightTab
+  );
+
+  const prevPendingCount = useRef<number | null>(null);
+  useEffect(() => {
+    const n = pendingApprovals.length;
+    const prev = prevPendingCount.current;
+    prevPendingCount.current = n;
+    if (prev !== null && n > prev && n > 0) {
+      setRightTab("approvals");
+    }
+  }, [pendingApprovals.length]);
 
   const filteredEvents = sortByTimestampDesc(
     activePlanId === null

@@ -7,6 +7,18 @@ export type RightPanelTabId =
   | "approvals"
   | "more";
 
+export const RIGHT_PANEL_TAB_IDS: RightPanelTabId[] = [
+  "launch",
+  "metrics",
+  "detail",
+  "approvals",
+  "more",
+];
+
+export function isRightPanelTabId(s: string): s is RightPanelTabId {
+  return (RIGHT_PANEL_TAB_IDS as string[]).includes(s);
+}
+
 const TABS: { id: RightPanelTabId; label: string }[] = [
   { id: "launch", label: "Lanzar" },
   { id: "metrics", label: "Métricas" },
