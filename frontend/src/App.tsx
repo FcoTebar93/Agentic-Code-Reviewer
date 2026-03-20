@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
-import {
-  getDashboardHref,
-  useDashboardUrlSync,
-} from "./hooks/useDashboardUrlSync";
+import { getDashboardHref, useDashboardUrlSync } from "./hooks/useDashboardUrlSync";
 import { PipelineGraph } from "./components/PipelineGraph";
 import { EventFeed } from "./components/EventFeed";
 import { PlanForm } from "./components/PlanForm";
@@ -15,14 +12,8 @@ import { Card, SectionHeader } from "./components/ui/Card";
 import { StatRow } from "./components/ui/StatRow";
 import { HeaderBar } from "./components/ui/HeaderBar";
 import { PlanFilterChips } from "./components/ui/PlanFilterChips";
-import {
-  MainWorkspaceNav,
-  type MainWorkspaceSectionId,
-} from "./components/ui/MainWorkspaceNav";
-import {
-  RightPanelTabs,
-  type RightPanelTabId,
-} from "./components/ui/RightPanelTabs";
+import { MainWorkspaceNav, type MainWorkspaceSectionId } from "./components/ui/MainWorkspaceNav";
+import { RightPanelTabs, type RightPanelTabId } from "./components/ui/RightPanelTabs";
 import type { BaseEvent } from "./types/events";
 
 const WS_URL = import.meta.env.VITE_GATEWAY_WS_URL ?? "ws://localhost:8080/ws";
@@ -119,6 +110,16 @@ export default function App() {
       setRightTab("approvals");
     }
   }, [pendingApprovals.length]);
+
+  const prevEventsCount = useRef<number | null>(null);
+  useEffect(() => {
+    const n = events.length;
+    const prev = prevEventsCount.current;
+    prevEventsCount.current = n;
+    if (prev !== null && n > prev && n > 0) {
+      setMainSection("events");
+    }
+  }, [events.length]);
 
   const filteredEvents = sortByTimestampDesc(
     activePlanId === null
