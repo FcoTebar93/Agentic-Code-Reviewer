@@ -195,7 +195,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - **RabbitMQ** (bus de eventos).
   - **Qdrant** (vector DB).
   - **Redis** (caché).
-  - **Prometheus** + **Grafana** + **Loki** / **Promtail** (observabilidad).
+  - **Prometheus** + **Alertmanager** + **Grafana** + **Loki** / **Promtail** (observabilidad).
 
 ---
 
@@ -244,7 +244,7 @@ Esto arranca:
 
 - Servicios agenticos: gateway, meta_planner, spec, dev, qa, security, replanner, memory, github.
 - Servicios de soporte: PostgreSQL, RabbitMQ, Redis, Qdrant.
-- Observabilidad: Prometheus, Grafana, Loki (logs vía Promtail).
+- Observabilidad: Prometheus, Alertmanager, Grafana, Loki (logs vía Promtail).
 - Frontend: panel web.
 
 4. **Acceder a la plataforma**

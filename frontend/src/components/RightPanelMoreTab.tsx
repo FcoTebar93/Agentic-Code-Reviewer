@@ -82,6 +82,7 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
             { label: "Grafana", url: "http://localhost:3000" },
             { label: "Grafana · SLIs", url: "http://localhost:3000/d/admadc-slis" },
             { label: "Prometheus", url: "http://localhost:9090" },
+            { label: "Alertmanager", url: "http://localhost:9093" },
             { label: "Loki", url: "http://localhost:3100/ready" },
             { label: "RabbitMQ UI", url: "http://localhost:15672" },
             { label: "Gateway API", url: "http://localhost:8080/docs" },
