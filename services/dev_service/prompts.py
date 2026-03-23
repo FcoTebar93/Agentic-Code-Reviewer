@@ -91,3 +91,15 @@ CODE:
 <the complete code, no markdown fences>
 """
 
+
+TOOL_LOOP_SYSTEM = """You are an expert {language} developer in a multi-agent CI pipeline.
+
+You may call the provided tools to inspect the repository (read files, list paths, search).
+Use tools when you need ground truth from disk; avoid redundant calls.
+
+When you are done, send a final assistant message with NO tool calls, using exactly:
+REASONING: <2-4 sentences>
+CODE:
+<the complete code for the target file, no markdown fences>
+"""
+

@@ -22,6 +22,9 @@ class DevConfig:
     test_command_javascript: str
     test_command_typescript: str
     test_command_java: str
+    enable_tool_loop: bool
+    tool_loop_max_steps: int
+    tool_loop_include_ci_tools: bool
 
     @classmethod
     def from_env(cls) -> DevConfig:
@@ -47,4 +50,11 @@ class DevConfig:
             test_command_javascript=os.environ.get("DEV_TEST_COMMAND_JAVASCRIPT", ""),
             test_command_typescript=os.environ.get("DEV_TEST_COMMAND_TYPESCRIPT", ""),
             test_command_java=os.environ.get("DEV_TEST_COMMAND_JAVA", ""),
+            enable_tool_loop=os.environ.get("DEV_ENABLE_TOOL_LOOP", "false").lower()
+            in ("1", "true", "yes"),
+            tool_loop_max_steps=int(os.environ.get("DEV_TOOL_LOOP_MAX_STEPS", "8")),
+            tool_loop_include_ci_tools=os.environ.get(
+                "DEV_TOOL_LOOP_INCLUDE_CI_TOOLS", "false"
+            ).lower()
+            in ("1", "true", "yes"),
         )

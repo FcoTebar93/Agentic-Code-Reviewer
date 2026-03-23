@@ -43,7 +43,7 @@ from shared.utils import (
 )
 from services.dev_service.config import DevConfig
 from services.dev_service.deps import DevPipelineDeps
-from services.dev_service.generator import generate_code
+from services.dev_service.generator import generate_code, generate_code_with_tool_loop
 from services.dev_service.tools import build_dev_tool_registry, ReadFileInput, REPO_ROOT
 from shared.tools import execute_tool, ToolRegistry
 from shared.contracts.events import EventType, SpecGeneratedPayload
@@ -176,12 +176,25 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             spec_block=spec_block,
             failure_patterns_block=failure_patterns_block,
         )
-        code_result, prompt_tokens, completion_tokens = await generate_code(
-            llm,
-            task,
-            plan_reasoning=payload.plan_reasoning,
-            short_term_memory=dev_context,
-        )
+        if cfg.enable_tool_loop and tool_registry is not None:
+            code_result, prompt_tokens, completion_tokens = (
+                await generate_code_with_tool_loop(
+                    llm,
+                    task,
+                    plan_reasoning=payload.plan_reasoning,
+                    short_term_memory=dev_context,
+                    registry=tool_registry,
+                    max_steps=cfg.tool_loop_max_steps,
+                    include_ci_tools=cfg.tool_loop_include_ci_tools,
+                )
+            )
+        else:
+            code_result, prompt_tokens, completion_tokens = await generate_code(
+                llm,
+                task,
+                plan_reasoning=payload.plan_reasoning,
+                short_term_memory=dev_context,
+            )
 
         if prompt_tokens or completion_tokens:
             tok_event = metrics_tokens_used(
