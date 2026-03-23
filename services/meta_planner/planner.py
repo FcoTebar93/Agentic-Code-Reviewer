@@ -20,6 +20,12 @@ from shared.contracts.events import TaskSpec
 from shared.llm_adapter import LLMProvider, LLMResponse
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
+from shared.llm_adapter.tool_loop_budget import (
+    loop_tokens_exceeds_budget,
+    plan_tool_loop_try_add_tokens,
+    tool_calls_exceeds_budget,
+    tool_loop_budget_from_env,
+)
 from shared.observability.metrics import (
     agent_tool_calls_total,
     agent_tool_loop_llm_rounds,
@@ -34,6 +40,11 @@ logger = logging.getLogger(__name__)
 SERVICE_NAME = "meta_planner"
 
 ADMADC_TOOL_LOOP_MARKER = "[ADMADC_TOOL_LOOP]"
+
+_PLANNER_PARSE_REPAIR = (
+    "La sección TASKS debe ser un array JSON válido (objetos con description, file_path, language). "
+    "Repite la respuesta completa con REASONING: y TASKS: corregidos."
+)
 
 _PLANNER_TOOL_NAMES = (
     "semantic_search_memory",
@@ -139,7 +150,18 @@ async def decompose_tasks(
         llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
         llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
 
-    reasoning, tasks = _parse_response(response.content)
+    reasoning, tasks, json_ok = _parse_response(response.content)
+    if not json_ok:
+        repair = f"{prompt}\n\n{_PLANNER_PARSE_REPAIR}"
+        response2: LLMResponse = await llm.generate_text(repair)
+        pt2 = response2.prompt_tokens or 0
+        ct2 = response2.completion_tokens or 0
+        pt += pt2
+        ct += ct2
+        if pt2 or ct2:
+            llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt2)
+            llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct2)
+        reasoning, tasks, _ = _parse_response(response2.content)
     logger.info(
         "Decomposed prompt into %d tasks. Reasoning: %s",
         len(tasks),
@@ -161,6 +183,8 @@ async def decompose_tasks_with_tool_loop(
     memory_seed: str = "",
     *,
     max_steps: int = 8,
+    plan_id: str | None = None,
+    redis_url: str | None = None,
 ) -> tuple[PlanResult, int, int]:
     """
     Multi-turn planning with memory_service tools before REASONING/TASKS.
@@ -185,8 +209,10 @@ async def decompose_tasks_with_tool_loop(
     total_pt = 0
     total_ct = 0
     llm_rounds = 0
+    tools_executed = 0
+    budget = tool_loop_budget_from_env(max_steps)
 
-    for _step in range(max(1, max_steps)):
+    for _step in range(max(1, budget.max_steps)):
         llm_rounds += 1
         req = LLMRequest(
             prompt="",
@@ -202,6 +228,24 @@ async def decompose_tasks_with_tool_loop(
         if pt or ct:
             llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
             llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+        if loop_tokens_exceeds_budget(total_pt, total_ct, budget.max_tokens_loop):
+            agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+            agent_tool_loop_outcomes_total.labels(
+                service=SERVICE_NAME, outcome="budget_exceeded"
+            ).inc()
+            reasoning, tasks, _ = _parse_response("")
+            return PlanResult(tasks=tasks, reasoning=reasoning), total_pt, total_ct
+        if budget.max_tokens_plan > 0:
+            allowed = await plan_tool_loop_try_add_tokens(
+                redis_url, plan_id, pt + ct, budget.max_tokens_plan
+            )
+            if not allowed:
+                agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                agent_tool_loop_outcomes_total.labels(
+                    service=SERVICE_NAME, outcome="budget_exceeded"
+                ).inc()
+                reasoning, tasks, _ = _parse_response("")
+                return PlanResult(tasks=tasks, reasoning=reasoning), total_pt, total_ct
 
         if resp.tool_calls:
             asst: dict[str, Any] = {
@@ -230,6 +274,14 @@ async def decompose_tasks_with_tool_loop(
                     )
                 else:
                     exec_result = await execute_tool(registry, name, args_dict)
+                tools_executed += 1
+                if tool_calls_exceeds_budget(tools_executed, budget.max_tool_calls):
+                    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                    agent_tool_loop_outcomes_total.labels(
+                        service=SERVICE_NAME, outcome="budget_exceeded"
+                    ).inc()
+                    reasoning, tasks, _ = _parse_response("")
+                    return PlanResult(tasks=tasks, reasoning=reasoning), total_pt, total_ct
                 agent_tool_calls_total.labels(
                     service=SERVICE_NAME,
                     tool_name=name or "unknown",
@@ -244,7 +296,10 @@ async def decompose_tasks_with_tool_loop(
                 )
             continue
 
-        reasoning, tasks = _parse_response(resp.content or "")
+        reasoning, tasks, json_ok = _parse_response(resp.content or "")
+        if not json_ok:
+            messages.append({"role": "user", "content": _PLANNER_PARSE_REPAIR})
+            continue
         agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
         agent_tool_loop_outcomes_total.labels(
             service=SERVICE_NAME, outcome="completed"
@@ -260,17 +315,19 @@ async def decompose_tasks_with_tool_loop(
     agent_tool_loop_outcomes_total.labels(
         service=SERVICE_NAME, outcome="exhausted"
     ).inc()
-    reasoning, tasks = _parse_response("")
+    reasoning, tasks, _ = _parse_response("")
     logger.warning("Planner tool loop exhausted max_steps=%s", max_steps)
     return PlanResult(tasks=tasks, reasoning=reasoning), total_pt, total_ct
 
 
-def _parse_response(raw: str) -> tuple[str, list[TaskSpec]]:
+def _parse_response(raw: str) -> tuple[str, list[TaskSpec], bool]:
     """
-    Parse LLM output into (reasoning, TaskSpec list).
+    Parse LLM output into (reasoning, TaskSpec list, json_ok).
 
-    Handles both the structured REASONING/TASKS format and raw JSON fallback.
+    json_ok False indica que hubo que usar el fallback de una sola tarea.
     """
+    if not (raw or "").strip():
+        return "", [], True
     reasoning = ""
     tasks_raw = raw.strip()
 
@@ -290,7 +347,7 @@ def _parse_response(raw: str) -> tuple[str, list[TaskSpec]]:
     try:
         items = json.loads(cleaned)
         if isinstance(items, list):
-            return reasoning, [
+            specs = [
                 TaskSpec(
                     description=item.get("description", ""),
                     file_path=item.get("file_path", "unknown.py"),
@@ -299,14 +356,20 @@ def _parse_response(raw: str) -> tuple[str, list[TaskSpec]]:
                     group_id=item.get("group_id", "") or "",
                 )
                 for item in items
+                if isinstance(item, dict)
             ]
+            return reasoning, specs, bool(specs)
     except (json.JSONDecodeError, TypeError):
         logger.warning("Failed to parse LLM task list as JSON, creating fallback task")
 
-    return reasoning, [
-        TaskSpec(
-            description=f"Implement: {tasks_raw[:200]}",
-            file_path="src/main.py",
-            language="python",
-        )
-    ]
+    return (
+        reasoning,
+        [
+            TaskSpec(
+                description=f"Implement: {tasks_raw[:200]}",
+                file_path="src/main.py",
+                language="python",
+            )
+        ],
+        False,
+    )

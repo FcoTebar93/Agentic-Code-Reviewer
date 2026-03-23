@@ -284,6 +284,8 @@ async def _execute_plan(
                     prompt,
                     memory_seed=memory_context,
                     max_steps=cfg.tool_loop_max_steps,
+                    plan_id=None,
+                    redis_url=cfg.redis_url,
                 )
             )
         else:
@@ -422,7 +424,6 @@ async def _consume_plan_revisions() -> None:
                 payload.original_plan_id[:8],
                 (payload.severity or "medium"),
             )
-            # No automatic replanning on suggestions anymore; wait for plan.revision_confirmed.
             return
 
         if event.event_type == EventType.PLAN_REVISION_CONFIRMED:
