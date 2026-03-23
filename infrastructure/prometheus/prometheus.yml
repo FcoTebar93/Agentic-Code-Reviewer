@@ -37,3 +37,13 @@ scrape_configs:
     static_configs:
       - targets: ["memory_service:8000"]
     metrics_path: /metrics
+
+  - job_name: "replanner_service"
+    static_configs:
+      - targets: ["replanner_service:8000"]
+    metrics_path: /metrics
+
+  - job_name: "spec_service"
+    static_configs:
+      - targets: ["spec_service:8000"]
+    metrics_path: /metrics
