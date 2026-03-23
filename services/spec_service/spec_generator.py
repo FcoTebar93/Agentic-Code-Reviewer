@@ -8,9 +8,16 @@ import json
 import logging
 from typing import Any
 
-from shared.llm_adapter import LLMProvider, LLMResponse
+from shared.llm_adapter import LLMProvider
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
+from shared.llm_adapter.parse_retry import generate_text_with_parse_retry
+from shared.llm_adapter.tool_loop_budget import (
+    loop_tokens_exceeds_budget,
+    plan_tool_loop_try_add_tokens,
+    tool_calls_exceeds_budget,
+    tool_loop_budget_from_env,
+)
 from shared.observability.metrics import (
     agent_tool_calls_total,
     agent_tool_loop_llm_rounds,
@@ -27,6 +34,11 @@ logger = logging.getLogger(__name__)
 SERVICE_NAME = "spec_service"
 
 _SPEC_TOOLS = ("read_file", "list_project_files", "search_in_repo")
+
+_SPEC_REPAIR = (
+    "IMPORTANTE: La respuesta final debe contener secciones SPEC: y TESTS: con contenido no vacío "
+    "salvo que la tarea sea trivial."
+)
 
 
 def build_spec_user_prompt(
@@ -78,6 +90,10 @@ def parse_spec_response(raw: str) -> tuple[str, str]:
     return spec_block.strip(), tests_block.strip()
 
 
+def _spec_parse_ok(spec_text: str, tests_text: str, _raw: str) -> bool:
+    return bool(spec_text.strip() or tests_text.strip())
+
+
 def _tool_payload(result: ToolExecutionResult) -> str:
     if result.success:
         return json.dumps(result.output, default=str)
@@ -102,14 +118,20 @@ async def generate_spec(
         test_layout=test_layout,
         mode=mode,
     )
-    response: LLMResponse = await llm.generate_text(prompt)
-    pt = response.prompt_tokens or 0
-    ct = response.completion_tokens or 0
-    if pt or ct:
-        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
-        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
-    spec_text, tests_text = parse_spec_response(response.content or "")
-    return {"spec": spec_text, "tests": tests_text}, pt, ct
+    def _parse(raw: str) -> tuple[dict[str, str] | None, bool]:
+        spec_text, tests_text = parse_spec_response(raw or "")
+        d = {"spec": spec_text, "tests": tests_text}
+        return d, _spec_parse_ok(spec_text, tests_text, raw or "")
+
+    out, pt, ct = await generate_text_with_parse_retry(
+        llm,
+        initial_prompt=prompt,
+        repair_instruction=_SPEC_REPAIR,
+        parse=_parse,
+        service_name=SERVICE_NAME,
+        max_attempts=2,
+    )
+    return out, pt, ct
 
 
 async def generate_spec_with_tool_loop(
@@ -123,6 +145,8 @@ async def generate_spec_with_tool_loop(
     test_layout: str,
     mode: str,
     max_steps: int = 8,
+    plan_id: str | None = None,
+    redis_url: str | None = None,
 ) -> tuple[dict[str, str], int, int]:
     tools = tools_openai_from_registry(registry, _SPEC_TOOLS)
     if not tools:
@@ -161,8 +185,10 @@ async def generate_spec_with_tool_loop(
     total_pt = 0
     total_ct = 0
     llm_rounds = 0
+    tools_executed = 0
+    budget = tool_loop_budget_from_env(max_steps)
 
-    for _step in range(max(1, max_steps)):
+    for _step in range(max(1, budget.max_steps)):
         llm_rounds += 1
         req = LLMRequest(
             prompt="",
@@ -178,6 +204,33 @@ async def generate_spec_with_tool_loop(
         if pt or ct:
             llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
             llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+        if loop_tokens_exceeds_budget(total_pt, total_ct, budget.max_tokens_loop):
+            agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+            agent_tool_loop_outcomes_total.labels(
+                service=SERVICE_NAME, outcome="budget_exceeded"
+            ).inc()
+            return (
+                {
+                    "spec": "",
+                    "tests": "",
+                },
+                total_pt,
+                total_ct,
+            )
+        if budget.max_tokens_plan > 0:
+            allowed = await plan_tool_loop_try_add_tokens(
+                redis_url, plan_id, pt + ct, budget.max_tokens_plan
+            )
+            if not allowed:
+                agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                agent_tool_loop_outcomes_total.labels(
+                    service=SERVICE_NAME, outcome="budget_exceeded"
+                ).inc()
+                return (
+                    {"spec": "", "tests": ""},
+                    total_pt,
+                    total_ct,
+                )
 
         if resp.tool_calls:
             asst: dict[str, Any] = {
@@ -206,6 +259,17 @@ async def generate_spec_with_tool_loop(
                     )
                 else:
                     exec_result = await execute_tool(registry, name, args_dict)
+                tools_executed += 1
+                if tool_calls_exceeds_budget(tools_executed, budget.max_tool_calls):
+                    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                    agent_tool_loop_outcomes_total.labels(
+                        service=SERVICE_NAME, outcome="budget_exceeded"
+                    ).inc()
+                    return (
+                        {"spec": "", "tests": ""},
+                        total_pt,
+                        total_ct,
+                    )
                 agent_tool_calls_total.labels(
                     service=SERVICE_NAME,
                     tool_name=name or "unknown",
@@ -221,6 +285,14 @@ async def generate_spec_with_tool_loop(
             continue
 
         spec_text, tests_text = parse_spec_response(resp.content or "")
+        if not _spec_parse_ok(spec_text, tests_text, resp.content or ""):
+            messages.append(
+                {
+                    "role": "user",
+                    "content": _SPEC_REPAIR + " Responde solo con SPEC: y TESTS:, sin herramientas.",
+                }
+            )
+            continue
         agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
         agent_tool_loop_outcomes_total.labels(
             service=SERVICE_NAME, outcome="completed"

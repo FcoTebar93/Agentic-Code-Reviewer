@@ -159,7 +159,12 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 provider_name=cfg.llm_provider,
                 redis_url=cfg.redis_url,
             )
-            plan_context = await _build_plan_context(plan_id, task.task_id, task.file_path)
+            plan_context = await _build_plan_context(
+                plan_id,
+                task.task_id,
+                task.file_path,
+                skip_repo_prefetch=cfg.enable_tool_loop,
+            )
             test_layout = _infer_test_layout(task.file_path, task.language)
             if cfg.enable_tool_loop and tool_registry is not None:
                 spec_result, prompt_tokens, completion_tokens = (
@@ -173,6 +178,8 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                         test_layout=test_layout,
                         mode=normalized_mode,
                         max_steps=cfg.tool_loop_max_steps,
+                        plan_id=plan_id,
+                        redis_url=cfg.redis_url,
                     )
                 )
             else:
@@ -233,7 +240,13 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     )
 
 
-async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str:
+async def _build_plan_context(
+    plan_id: str,
+    task_id: str,
+    file_path: str,
+    *,
+    skip_repo_prefetch: bool = False,
+) -> str:
     """
     Build a small textual context for the spec agent:
     - Planner reasoning for this plan (if available).
@@ -246,55 +259,88 @@ async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str
     if http_client is None:
         return ""
 
+    base_key = f"admadc:spec_plan_base:{plan_id}"
+    plan_base = ""
     try:
-        resp = await guarded_http_get(
+        cr = await guarded_http_get(
             http_client,
-            "/events",
+            f"/cache/{base_key}",
             logger,
-            key="memory_service:/events",
-            params={
-                "event_type": "plan.created",
-                "plan_id": plan_id,
-                "limit": 1,
-            },
+            key=f"memory_service:/cache/{base_key}",
         )
-        if resp is None:
-            return ""
-        if resp.status_code != 200:
-            return ""
+        if cr is not None and cr.status_code == 200:
+            body = cr.json()
+            val = (body or {}).get("value")
+            if isinstance(val, str):
+                plan_base = val
+    except Exception:
+        pass
 
-        events = resp.json()
-        if not isinstance(events, list) or not events:
-            return ""
+    try:
+        if not plan_base.strip():
+            resp = await guarded_http_get(
+                http_client,
+                "/events",
+                logger,
+                key="memory_service:/events",
+                params={
+                    "event_type": "plan.created",
+                    "plan_id": plan_id,
+                    "limit": 1,
+                },
+            )
+            if resp is None:
+                return ""
+            if resp.status_code != 200:
+                return ""
 
-        evt = events[0]
-        payload = evt.get("payload") or {}
-        reasoning = str(payload.get("reasoning", "")).strip()[:400]
-        tasks = payload.get("tasks") or []
+            events = resp.json()
+            if not isinstance(events, list) or not events:
+                return ""
+
+            evt = events[0]
+            payload = evt.get("payload") or {}
+            reasoning = str(payload.get("reasoning", "")).strip()[:400]
+            tasks = payload.get("tasks") or []
+
+            base_lines: list[str] = []
+            if reasoning:
+                base_lines.append("Planner reasoning (truncated):")
+                base_lines.append(reasoning)
+                base_lines.append("")
+
+            if isinstance(tasks, list) and tasks:
+                sibling_files: list[str] = []
+                for t in tasks:
+                    if not isinstance(t, dict):
+                        continue
+                    fp = str(t.get("file_path", "") or "")
+                    if not fp:
+                        continue
+                    sibling_files.append(fp)
+                if sibling_files:
+                    base_lines.append("Files in this plan:")
+                    for fp in sibling_files[:12]:
+                        base_lines.append(f"- {fp}")
+                    base_lines.append("")
+
+            plan_base = "\n".join(base_lines)
+            ttl_base = int(__import__("os").environ.get("SPEC_PLAN_CONTEXT_CACHE_TTL_SEC", "3600"))
+            if ttl_base > 0 and plan_base.strip():
+                try:
+                    await http_client.post(
+                        "/cache",
+                        json={"key": base_key, "value": plan_base, "ttl": ttl_base},
+                    )
+                except Exception:
+                    logger.debug(
+                        "No se pudo cachear resumen de plan para spec (plan %s)",
+                        plan_id[:8],
+                    )
 
         lines: list[str] = []
-        if reasoning:
-            lines.append("Planner reasoning (truncated):")
-            lines.append(reasoning)
-            lines.append("")
-
-        if isinstance(tasks, list) and tasks:
-            sibling_files: list[str] = []
-            for t in tasks:
-                if not isinstance(t, dict):
-                    continue
-                fp = str(t.get("file_path", "") or "")
-                tid = str(t.get("task_id", "") or "")
-                if not fp:
-                    continue
-                if tid == task_id:
-                    continue
-                sibling_files.append(fp)
-            if sibling_files:
-                lines.append("Other files in this plan:")
-                for fp in sibling_files[:8]:
-                    lines.append(f"- {fp}")
-                lines.append("")
+        if plan_base.strip():
+            lines.append(plan_base.strip())
 
         spec_hist = await _build_spec_history_for_file(file_path)
         if spec_hist:
@@ -307,13 +353,14 @@ async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str
             lines.append("Previous QA failures for this file (truncated):")
             lines.append(qa_hist)
 
-        repo_ctx = await _build_repo_context_for_spec(file_path)
-        if repo_ctx:
-            lines.append("")
-            lines.append("Repository context (truncated):")
-            lines.append(repo_ctx)
+        if not skip_repo_prefetch:
+            repo_ctx = await _build_repo_context_for_spec(file_path)
+            if repo_ctx:
+                lines.append("")
+                lines.append("Repository context (truncated):")
+                lines.append(repo_ctx)
 
-        return "\n".join(lines)
+        return "\n".join(lines).strip()
     except Exception:
         logger.exception(
             "Failed to build plan context for spec_service (plan %s, task %s)",
