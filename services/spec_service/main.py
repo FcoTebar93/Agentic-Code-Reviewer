@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
-from shared.observability.metrics import metrics_response, agent_execution_time, llm_tokens
+from shared.observability.metrics import metrics_response, agent_execution_time
 from shared.contracts.events import (
     BaseEvent,
     EventType,
@@ -19,18 +19,20 @@ from shared.contracts.events import (
     spec_generated,
     metrics_tokens_used,
 )
-from shared.llm_adapter import get_llm_provider, LLMProvider, LLMResponse
+from shared.llm_adapter import get_llm_provider
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
     IdempotencyStore,
     store_event,
-    infer_framework_hint,
     guarded_http_get,
 )
 from services.spec_service.config import SpecConfig
 from services.spec_service.deps import SpecPipelineDeps
-from services.spec_service.prompts import SPEC_PROMPT
+from services.spec_service.spec_generator import (
+    generate_spec,
+    generate_spec_with_tool_loop,
+)
 from services.spec_service.tools import build_spec_tool_registry
 
 
@@ -157,15 +159,30 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             )
             plan_context = await _build_plan_context(plan_id, task.task_id, task.file_path)
             test_layout = _infer_test_layout(task.file_path, task.language)
-            spec_result, prompt_tokens, completion_tokens = await _generate_spec(
-                llm=llm,
-                description=task.description,
-                file_path=task.file_path,
-                language=task.language,
-                plan_context=plan_context,
-                test_layout=test_layout,
-                mode=normalized_mode,
-            )
+            if cfg.enable_tool_loop and tool_registry is not None:
+                spec_result, prompt_tokens, completion_tokens = (
+                    await generate_spec_with_tool_loop(
+                        llm,
+                        tool_registry,
+                        description=task.description,
+                        file_path=task.file_path,
+                        language=task.language,
+                        plan_context=plan_context,
+                        test_layout=test_layout,
+                        mode=normalized_mode,
+                        max_steps=cfg.tool_loop_max_steps,
+                    )
+                )
+            else:
+                spec_result, prompt_tokens, completion_tokens = await generate_spec(
+                    llm,
+                    description=task.description,
+                    file_path=task.file_path,
+                    language=task.language,
+                    plan_context=plan_context,
+                    test_layout=test_layout,
+                    mode=normalized_mode,
+                )
 
             if prompt_tokens or completion_tokens:
                 tok_event = metrics_tokens_used(
@@ -212,75 +229,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
     logger.info(
         "Spec generated for task %s (plan %s)", task.task_id[:8], plan_id[:8]
     )
-
-
-async def _generate_spec(
-    llm: LLMProvider,
-    description: str,
-    file_path: str,
-    language: str,
-    plan_context: str,
-    test_layout: str,
-    mode: str,
-) -> tuple[dict[str, str], int, int]:
-    """
-    Call the LLM once to produce SPEC and TESTS sections.
-    Returns ({spec: str, tests: str}, prompt_tokens, completion_tokens).
-    """
-    fw_hint = infer_framework_hint(language, file_path)
-    ctx_block = plan_context.strip()
-    if fw_hint:
-        prefix = f"FRAMEWORK HINT: {fw_hint}\n\n"
-        ctx_block = prefix + (ctx_block or "")
-    prompt = SPEC_PROMPT.format(
-        language=language or "python",
-        description=description,
-        file_path=file_path,
-        plan_context=ctx_block or "None.",
-        test_layout=test_layout.strip() or "None.",
-        mode=(mode or "normal").strip().lower(),
-    )
-    response: LLMResponse = await llm.generate_text(prompt)
-
-    pt = response.prompt_tokens or 0
-    ct = response.completion_tokens or 0
-    if pt or ct:
-        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
-        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
-
-    spec_text, tests_text = _parse_spec_response(response.content or "")
-    return {"spec": spec_text, "tests": tests_text}, pt, ct
-
-
-def _parse_spec_response(raw: str) -> tuple[str, str]:
-    """
-    Parse SPEC and TESTS sections from the LLM response.
-    """
-    spec_block = ""
-    tests_block = ""
-
-    current = None
-    lines = raw.strip().splitlines()
-    for line in lines:
-        stripped = line.strip()
-        upper = stripped.upper()
-        if upper.startswith("SPEC:"):
-            current = "spec"
-            content = stripped[len("SPEC:") :].strip()
-            if content:
-                spec_block += content + "\n"
-        elif upper.startswith("TESTS:"):
-            current = "tests"
-            content = stripped[len("TESTS:") :].strip()
-            if content:
-                tests_block += content + "\n"
-        else:
-            if current == "spec":
-                spec_block += stripped + "\n"
-            elif current == "tests":
-                tests_block += stripped + "\n"
-
-    return spec_block.strip(), tests_block.strip()
 
 
 async def _build_plan_context(plan_id: str, task_id: str, file_path: str) -> str:
@@ -620,4 +568,3 @@ async def _build_repo_context_for_spec(file_path: str, max_chars: int = 800) -> 
     if len(text) > max_chars:
         text = text[:max_chars]
     return text.strip()
-
