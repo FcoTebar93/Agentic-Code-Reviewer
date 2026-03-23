@@ -27,7 +27,10 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
     - `POST /api/replan` → confirma un replan sugerido por el Replanner.
     - `GET /api/events`, `GET /api/tasks/{plan_id}` → proxy al Memory Service.
     - `GET /api/plan_metrics/{plan_id}` → agrega métricas de tokens y estado del pipeline.
-    - `GET /api/status` y `GET /api/approvals` → salud y aprobaciones pendientes.
+    - `GET /api/plan_detail/{plan_id}` → detalle agregado del plan (eventos, tareas, métricas) para la UI.
+    - `GET /api/status` y `GET /api/approvals` → estado y aprobaciones pendientes.
+    - `POST /api/approvals/{id}/approve` y `POST /api/approvals/{id}/reject` → decisión HITL.
+    - `GET /health` y `GET /metrics` → salud y métricas Prometheus del gateway.
     - WebSocket `/ws` → difunde todos los eventos y las aprobaciones pendientes a la UI.
   - Implementa la capa **Human‑In‑The‑Loop (HITL)**:
     - Recibe `security.approved`, genera `pr.pending_approval` y mantiene una cola de aprobaciones internas.
@@ -39,7 +42,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
 - **Meta Planner (`meta_planner`)**
   - Agente “arquitecto” que:
     - Recibe un prompt de usuario vía `POST /plan` o evento `plan.requested`.
-    - Usa el LLM + memoria (eventos y búsqueda semántica) para crear un **plan** y un conjunto de **tareas**.
+    - Usa el LLM + herramientas de memoria (`semantic_search_memory`, `query_events`, `failure_patterns`) para crear un **plan** y un conjunto de **tareas**.
   - Publica:
     - `plan.created` con la definición del plan.
     - `task.assigned` por cada tarea (con `group_id` y metadatos del archivo objetivo).
@@ -53,6 +56,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - Escucha `task.assigned` y genera:
     - Especificaciones de alto nivel y sugerencias de pruebas.
     - Evento `spec.generated` con esa información.
+  - Usa herramientas de lectura del repo (`read_file`, `list_project_files`, `search_in_repo`).
   - En modo “save” puede evitar gastar tokens en tareas triviales (por ejemplo, tareas muy cortas).
 
 - **Dev Service (`dev_service`)**
@@ -65,7 +69,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
       - Ficheros de proyecto (`list_project_files`).
       - Contenido actual de archivos (`read_file`).
       - Especificación generada por `spec_service`.
-    - Usa el LLM y herramientas (`run_tests`, etc.) para **generar o editar código**.
+    - Usa el LLM y herramientas (`read_file`, `list_project_files`, `run_tests`, `run_lints`, `search_in_repo`, `format_code`) para **generar o editar código**.
   - Publica:
     - `code.generated` con el código propuesto, reasoning y metadata (lenguaje, ruta, intento de QA, etc.).
     - `metrics.tokens_used` por cada llamada al LLM.
@@ -80,6 +84,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
        - `python_security_scan` (Bandit).
        - `semgrep_scan` (multi‑lenguaje).
        - Opcionales: linters JS/TS y Java (`js_ts_lint`, `java_lint`).
+       - Complementarias: `search_in_repo`, `query_events`, `failure_patterns`, `format_code` (black en Python).
     2. Ejecuta una revisión LLM estructurada con:
        - Contexto del plan y la tarea.
        - Razonamiento del Dev.
@@ -112,7 +117,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
     - `security.blocked`.
   - Usa:
     - LLM.
-    - Memoria semántica de resultados anteriores (`semantic_outcome_memory`).
+    - Herramientas de memoria: `semantic_outcome_memory`, `failure_patterns`.
   - Decide si es necesario **replantear el plan**:
     - Si sí, emite `plan.revision_suggested` con:
       - Severidad.
@@ -146,9 +151,9 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
 - **Shared libs (`shared/`)**
   - `shared/contracts/events.py` → contratos tipados de todos los eventos (plan, tareas, QA, seguridad, PRs, métricas…).
   - `shared/utils` → EventBus (aio‑pika), memoria de corto plazo, helpers HTTP para hablar con Memory Service, etc.
-  - `shared/tools` → registro y ejecución de herramientas (`read_file`, `list_project_files`, `run_tests`, linters, semgrep, búsqueda semántica…).
+  - `shared/tools` → registro y ejecución de herramientas (modelos Pydantic + `ToolRegistry`); nombres por servicio en [Herramientas LLM](#herramientas-llm).
   - `shared/llm_adapter` → factoría de proveedores LLM (OpenAI, Groq, Gemini, OpenRouter, local…) con caché opcional en Redis.
-  - `shared/logging`, `shared/observability` → logging estructurado y métricas Prometheus.
+  - `shared/logging`, `shared/observability` → logging JSON en stdout y métricas Prometheus (`/metrics`); detalle operativo en la sección **Observabilidad**.
 
 - **Frontend (`frontend/`)**
   - Aplicación React/TypeScript + Vite.
@@ -162,6 +167,20 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - Comandos principales:
     - `status`, `plan`, `events`, `tasks`, `metrics`, `approvals`, `approve`, `reject`, `replan`.
   - Usa la variable `ADMADC_GATEWAY_URL` (por defecto `http://localhost:8080`).
+
+---
+
+## Herramientas LLM
+
+Cada agente construye un `ToolRegistry` (`shared/tools`): los nombres son los que el modelo puede llamar. **Security** y **GitHub** no usan este registro (escaneo determinista y Git respectivamente).
+
+| Servicio | Herramientas |
+|----------|--------------|
+| **meta_planner** | `semantic_search_memory`, `query_events`, `failure_patterns` |
+| **spec_service** | `read_file`, `list_project_files`, `search_in_repo` |
+| **dev_service** | `read_file`, `list_project_files`, `run_tests`, `run_lints`, `search_in_repo`, `format_code` |
+| **qa_service** | `python_lint`, `python_security_scan`, `js_ts_lint`, `java_lint`, `semgrep_scan`, `search_in_repo`, `query_events`, `failure_patterns`, `format_code` |
+| **replanner_service** | `semantic_outcome_memory`, `failure_patterns` |
 
 ---
 
@@ -195,6 +214,36 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - **Qdrant** (vector DB).
   - **Redis** (caché).
   - **Prometheus** + **Grafana** (observabilidad).
+
+---
+
+## Observabilidad
+
+**Métricas, logs y alertas** — el stack corre en Docker Compose junto al resto de servicios.
+
+### URLs locales (puertos por defecto)
+
+| Recurso | URL |
+|---------|-----|
+| **Grafana** | http://localhost:3000 (usuario/contraseña por defecto en `docker-compose`: `admin` / `admadc`) |
+| **Prometheus** | http://localhost:9090 |
+| **Alertmanager** | http://localhost:9093 (alertas activas, silencios, estado de entregas) |
+| **Loki** (comprobación) | http://localhost:3100/ready |
+| **Gateway** (OpenAPI) | http://localhost:8080/docs |
+| **Frontend** | http://localhost:3001 |
+
+En el frontend, la pestaña **Más** incluye atajos a Grafana (incl. dashboard **ADMADC · SLIs**), Prometheus, Alertmanager y Loki.
+
+### Qué hace cada pieza
+
+- **Prometheus** — scrapea `/metrics` de los microservicios y de sí mismo, de **Alertmanager** y de **Loki**; evalúa reglas en `infrastructure/prometheus/rules/` (`slis_alerts.yml`, `meta_alerts.yml`).
+- **Alertmanager** — recibe las alertas de Prometheus; la configuración es **solo un YAML editable**: `infrastructure/alertmanager/alertmanager.yml` (webhooks, Slack, email, rutas por etiqueta). Guía: `infrastructure/alertmanager/README.md`. Tras editar: `docker compose restart alertmanager`.
+- **Grafana** — datasources provisionados: **Prometheus**, **Loki**, **Alertmanager** (UIDs estables). Dashboard **ADMADC · SLIs** en la carpeta ADMADC (`infrastructure/grafana/dashboards/admadc-slis.json`).
+- **Loki + Promtail** — logs JSON de los contenedores (`shared/logging`) hacia Loki; consultas en Grafana → Explore (LogQL).
+
+### Documentación y checklist
+
+- **SLIs, checklist de cierre y pasos 2–3**: `infrastructure/observability/SLIS.md`.
 
 ---
 
@@ -232,6 +281,11 @@ cp .env.example .env
   - **GitHub**
     - `GITHUB_TOKEN` (si quieres crear PRs reales).
     - `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`.
+  - **Logging y depuración**
+    - `LOG_LEVEL` (p. ej. `INFO`, `DEBUG`) en los servicios que lo consumen desde Compose.
+    - `AGENT_DELAY_SECONDS` (opcional, por defecto `0`) para espaciar trabajo de agentes en desarrollo.
+  - **Alertmanager**
+    - Sin variables obligatorias: editá `infrastructure/alertmanager/alertmanager.yml` para tus canales (ver comentarios en `.env.example`).
 
 3. **Levantar el stack con Docker Compose**
 
@@ -255,7 +309,9 @@ Esto arranca:
     - Gestionar aprobaciones humanas de PRs.
 - **Gateway API** (para debug o uso directo):
   - HTTP: `http://localhost:8080`.
+  - OpenAPI/Swagger: `http://localhost:8080/docs`.
   - WebSocket: `ws://localhost:8080/ws`.
+- **Observabilidad** (métricas, logs, alertas): ver sección [Observabilidad](#observabilidad) y tablas de URL.
 
 5. **Opcional: habilitar linters JS/TS y Java en QA**
 
@@ -297,6 +353,13 @@ docker compose up qa_service
   - `DEV_LLM_PROVIDER`.
   - `QA_LLM_PROVIDER`.
   - `REPLANNER_LLM_PROVIDER`.
+  - `SPEC_LLM_PROVIDER` (Spec Service).
+  - `SPEC_TOKEN_BUDGET_PER_TASK` (presupuesto de tokens por tarea en spec).
+
+### Operación y logs
+
+- `LOG_LEVEL` — nivel de log en servicios agenticos (vía Compose).
+- `AGENT_DELAY_SECONDS` — retardo opcional entre ciclos de agente (desarrollo).
 
 ### Config específica de servicios (ejemplos)
 
@@ -336,6 +399,11 @@ docker compose up qa_service
   - `RABBITMQ_URL`, `MEMORY_SERVICE_URL`.
   - `REPLANNER_LLM_PROVIDER` o `LLM_PROVIDER`.
 
+- **Spec Service**
+  - `RABBITMQ_URL`, `MEMORY_SERVICE_URL`.
+  - `SPEC_LLM_PROVIDER` o `LLM_PROVIDER`.
+  - `SPEC_TOKEN_BUDGET_PER_TASK` (opcional).
+
 - **Memory Service**
   - `DATABASE_URL`, `QDRANT_URL`, `REDIS_URL`, `RABBITMQ_URL`.
   - `MEMORY_STARTUP_RETRIES`, `MEMORY_STARTUP_DELAY_SEC` para reintentos de arranque robustos.
@@ -349,6 +417,29 @@ docker compose up qa_service
   - `VITE_GATEWAY_HTTP_URL`, `VITE_GATEWAY_WS_URL`.
   - `ADMADC_GATEWAY_URL` (CLI).
 
+- **Observabilidad**
+  - Alertmanager: configuración en `infrastructure/alertmanager/alertmanager.yml` (sin secretos obligatorios en `.env`).
+
+### Puertos de referencia (agentes y datos)
+
+Además del frontend (3001), Grafana (3000), Prometheus (9090), Alertmanager (9093) y Loki (3100), los agentes suelen exponerse así en el host (ver `docker-compose.yml` si cambian):
+
+| Servicio | Puerto host |
+|----------|-------------|
+| Gateway | 8080 |
+| meta_planner | 8001 |
+| dev_service | 8002 |
+| github_service | 8003 |
+| memory_service | 8004 |
+| qa_service | 8005 |
+| security_service | 8006 |
+| replanner_service | 8007 |
+| spec_service | solo red interna (sin mapeo host en el compose por defecto) |
+| PostgreSQL | 5432 |
+| RabbitMQ (AMQP / management) | 5672 / 15672 |
+| Redis | 6379 |
+| Qdrant | 6333 |
+
 ---
 
 ## Descripción de cada agente/servicio
@@ -357,7 +448,7 @@ docker compose up qa_service
 
 - **Rol**: puerta única para el frontend y capa HITL.
 - **Responsabilidades**:
-  - Exponer endpoints HTTP para planes, métricas, eventos, tareas y aprobaciones.
+  - Exponer endpoints HTTP para planes, replan, métricas y detalle de plan, eventos, tareas, aprobaciones, salud y `/metrics` para Prometheus.
   - Gestionar conexiones WebSocket y retransmitir todos los eventos del bus.
   - Convertir `security.approved` en `pr.pending_approval` y orquestar el flujo de aprobación humana.
   - Emitir `pr.human_approved` / `pr.human_rejected` y `pipeline.conclusion`.
@@ -377,6 +468,7 @@ docker compose up qa_service
 - **Responsabilidades**:
   - Escuchar `task.assigned`.
   - Producir `spec.generated` con especificaciones, criterios de aceptación y tests sugeridos.
+  - Leer el repo vía herramientas (`read_file`, `list_project_files`, `search_in_repo`).
   - Aportar contexto adicional al Dev Service y al QA.
 
 ### Dev Service
@@ -413,7 +505,7 @@ docker compose up qa_service
 - **Rol**: agente de replanning inteligente.
 - **Responsabilidades**:
   - Escuchar `qa.failed` y `security.blocked`.
-  - Usar memoria semántica de outcomes para entender patrones de fallo.
+  - Usar herramientas `semantic_outcome_memory` y `failure_patterns` para contextualizar fallos.
   - Decidir si hace falta replantear el plan y, en ese caso, emitir `plan.revision_suggested`.
 
 ### Memory Service
@@ -441,7 +533,7 @@ docker compose up qa_service
 
 ### Frontend
 
-- **Rol**: panel de control y observabilidad.
+- **Rol**: panel de control (React + TypeScript + Vite + Tailwind).
 - **Responsabilidades**:
   - Lanzar nuevos planes y replans.
   - Visualizar:
@@ -449,6 +541,7 @@ docker compose up qa_service
     - Métricas de tokens y duración del pipeline.
     - Razonamiento de Dev/QA/Seguridad.
   - Gestionar aprobaciones humanas de PRs (HITL).
+  - Atajos a Grafana, Prometheus, Alertmanager y Loki desde la UI (pestaña **Más**).
 
 ### CLI (`scripts/admadc_cli.py`)
 
@@ -464,5 +557,5 @@ docker compose up qa_service
 
 ---
 
-Con esto, el README refleja el estado actual de la plataforma, sus agentes y la forma recomendada de desplegarla y configurarla en local.
+Este README resume la arquitectura de agentes, las herramientas expuestas al LLM por servicio, el despliegue local y el stack de observabilidad (métricas, logs y alertas con Alertmanager configurable).
 
