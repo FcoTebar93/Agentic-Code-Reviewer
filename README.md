@@ -149,7 +149,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - `shared/tools` → registro y ejecución de herramientas (`read_file`, `list_project_files`, `run_tests`, linters, semgrep, búsqueda semántica…).
   - `shared/llm_adapter` → factoría de proveedores LLM (OpenAI, Groq, Gemini, OpenRouter, local…) con caché opcional en Redis.
   - `shared/logging`, `shared/observability` → logging estructurado y métricas Prometheus.
-  - SLIs acordados para paneles y alertas: `infrastructure/observability/SLIS.md`.
+  - SLIs acordados para paneles y alertas: `infrastructure/observability/SLIS.md` (dashboard Grafana **ADMADC · SLIs**, reglas Prometheus en `infrastructure/prometheus/rules/slis_alerts.yml`).
 
 - **Frontend (`frontend/`)**
   - Aplicación React/TypeScript + Vite.
