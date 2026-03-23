@@ -25,6 +25,11 @@ from aio_pika.abc import (
 )
 
 from shared.contracts.events import BaseEvent
+from shared.correlation import (
+    bind_correlation_from_amqp_and_event,
+    correlation_amqp_headers_for_publish,
+    reset_correlation_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,15 +137,19 @@ class EventBus:
             raise RuntimeError("EventBus not connected. Call connect() first.")
 
         body = event.model_dump_json().encode()
+        base_headers = {
+            "idempotency_key": event.idempotency_key,
+            "x-retry-count": 0,
+        }
+        headers = correlation_amqp_headers_for_publish(
+            base_headers, payload=event.payload
+        )
         message = Message(
             body=body,
             content_type="application/json",
             message_id=event.event_id,
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            headers={
-                "idempotency_key": event.idempotency_key,
-                "x-retry-count": 0,
-            },
+            headers=headers,
         )
         routing_key = event.event_type.value
         await self._exchange.publish(message, routing_key=routing_key)
@@ -217,7 +226,6 @@ class EventBus:
                 async with message.process(requeue=False, ignore_processed=True):
                     data = json.loads(message.body.decode())
                     event = BaseEvent.model_validate(data)
-                    # Use retry-scoped key so republished retries are not skipped as duplicates
                     effective_key = (
                         event.idempotency_key
                         if retry_count == 0
@@ -232,7 +240,13 @@ class EventBus:
                         return
 
                     await idempotency_store.mark_seen(effective_key)
-                    await handler(event)
+                    corr_tokens = bind_correlation_from_amqp_and_event(
+                        message.headers, event.payload
+                    )
+                    try:
+                        await handler(event)
+                    finally:
+                        reset_correlation_tokens(corr_tokens)
 
             except Exception:
                 logger.exception(
