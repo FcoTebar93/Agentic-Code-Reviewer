@@ -166,6 +166,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 skip_repo_prefetch=cfg.enable_tool_loop,
             )
             test_layout = _infer_test_layout(task.file_path, task.language)
+            user_locale = getattr(payload, "user_locale", None) or "en"
             if cfg.enable_tool_loop and tool_registry is not None:
                 spec_result, prompt_tokens, completion_tokens = (
                     await generate_spec_with_tool_loop(
@@ -180,6 +181,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                         max_steps=cfg.tool_loop_max_steps,
                         plan_id=plan_id,
                         redis_url=cfg.redis_url,
+                        user_locale=user_locale,
                     )
                 )
             else:
@@ -191,6 +193,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     plan_context=plan_context,
                     test_layout=test_layout,
                     mode=normalized_mode,
+                    user_locale=user_locale,
                 )
 
             if prompt_tokens or completion_tokens:

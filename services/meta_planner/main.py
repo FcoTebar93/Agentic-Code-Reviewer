@@ -203,6 +203,7 @@ class PlanRequest(BaseModel):
     project_name: str = "default"
     repo_url: str = ""
     mode: str = "normal"
+    user_locale: str = "en"
 
 
 class PlanResponse(BaseModel):
@@ -235,6 +236,7 @@ async def create_plan(req: PlanRequest):
             req.project_name,
             req.repo_url,
             mode=req.mode or "normal",
+            user_locale=getattr(req, "user_locale", None) or "en",
         )
         _plan_idem_cache[key] = (result["plan_id"], result, now)
         return result
@@ -272,6 +274,7 @@ async def _execute_plan(
     repo_url: str,
     forced_plan_id: str | None = None,
     mode: str = "normal",
+    user_locale: str = "en",
 ) -> dict:
     with agent_execution_time.labels(service=SERVICE_NAME, operation="plan").time():
         llm = get_llm_provider(provider_name=cfg.llm_provider)
@@ -286,11 +289,12 @@ async def _execute_plan(
                     max_steps=cfg.tool_loop_max_steps,
                     plan_id=None,
                     redis_url=cfg.redis_url,
+                    user_locale=user_locale,
                 )
             )
         else:
             plan_result, prompt_tokens, completion_tokens = await decompose_tasks(
-                llm, prompt, memory_context=memory_context
+                llm, prompt, memory_context=memory_context, user_locale=user_locale
             )
         seen_paths: set[str] = set()
         task_specs = []
@@ -319,6 +323,7 @@ async def _execute_plan(
             tasks=task_specs,
             reasoning=plan_result.reasoning,
             mode=mode or "normal",
+            user_locale=user_locale,
         )
         plan_event = plan_created(SERVICE_NAME, plan_payload)
         plan_id = plan_payload.plan_id
@@ -355,6 +360,7 @@ async def _execute_plan(
                 repo_url=repo_url,
                 plan_reasoning=plan_result.reasoning,
                 mode=plan_payload.mode,
+                user_locale=user_locale,
             )
             ta_event = task_assigned(SERVICE_NAME, ta_payload)
             await event_bus.publish(ta_event)
@@ -397,6 +403,7 @@ async def _consume_plan_requests() -> None:
             payload.project_name,
             payload.repo_url,
             mode=getattr(payload, "mode", "normal") or "normal",
+            user_locale=getattr(payload, "user_locale", None) or "en",
         )
 
     await event_bus.subscribe(
@@ -460,8 +467,8 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
         )
         return
 
-    original_prompt, original_reasoning = await _fetch_original_plan_prompt(
-        original_plan_id
+    original_prompt, original_reasoning, revision_locale = (
+        await _fetch_original_plan_prompt(original_plan_id)
     )
     if not original_prompt:
         logger.warning(
@@ -515,20 +522,21 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
         repo_url=repo_url or "",
         forced_plan_id=new_plan_id,
         mode="normal",
+        user_locale=revision_locale or "en",
     )
     _replans_per_original_plan[original_plan_id] = current_replans + 1
 
 
 async def _fetch_original_plan_prompt(
     plan_id: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """
-    Retrieve the original user prompt and planner reasoning for a plan.
+    Retrieve the original user prompt, planner reasoning, and user_locale for a plan.
 
     Uses memory_service /events filtered by event_type=plan.created and plan_id.
     """
     if http_client is None:
-        return "", ""
+        return "", "", "en"
 
     try:
         resp = await http_client.get(
@@ -545,23 +553,24 @@ async def _fetch_original_plan_prompt(
                 plan_id[:8],
                 resp.status_code,
             )
-            return "", ""
+            return "", "", "en"
 
         events = resp.json()
         if not isinstance(events, list) or not events:
-            return "", ""
+            return "", "", "en"
 
         evt = events[0]
         payload = evt.get("payload") or {}
         original_prompt = str(payload.get("original_prompt", "")).strip()
         reasoning = str(payload.get("reasoning", "")).strip()
-        return original_prompt, reasoning
+        user_locale = str(payload.get("user_locale", "") or "en").strip() or "en"
+        return original_prompt, reasoning, user_locale
     except Exception:
         logger.exception(
             "Error while fetching original plan.created for %s",
             plan_id[:8],
         )
-        return "", ""
+        return "", "", "en"
 
 
 async def _infer_repo_url_for_plan(plan_id: str) -> str:

@@ -32,6 +32,7 @@ from shared.observability.metrics import (
     agent_tool_loop_outcomes_total,
     llm_tokens,
 )
+from shared.prompt_locale import natural_language_rules_for_locale
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
 
@@ -42,8 +43,8 @@ SERVICE_NAME = "meta_planner"
 ADMADC_TOOL_LOOP_MARKER = "[ADMADC_TOOL_LOOP]"
 
 _PLANNER_PARSE_REPAIR = (
-    "La sección TASKS debe ser un array JSON válido (objetos con description, file_path, language). "
-    "Repite la respuesta completa con REASONING: y TASKS: corregidos."
+    "The TASKS section must be a valid JSON array of objects with keys description, file_path, language "
+    "(and optionally edit_scope, group_id). Repeat the full answer with corrected REASONING: and TASKS:."
 )
 
 _PLANNER_TOOL_NAMES = (
@@ -85,6 +86,9 @@ of the repository.
 MEMORY CONTEXT:
 {memory_context}
 
+RESPONSE LANGUAGE:
+{response_language_rules}
+
 First, explain your reasoning: why these tasks, what architectural decisions you made,
 how you are using MEMORY CONTEXT (especially failure patterns and severity hints), and how tasks relate
 to each other.
@@ -109,6 +113,8 @@ PLANNER_TOOL_LOOP_SYSTEM = """You are a senior software architect (PLANNER) in a
 
 Call memory tools when you need past events, semantic recall, or failure-by-module patterns.
 Keep tasks small (ideally one file), avoid huge cross-cutting changes, and respect QA/security hotspots from tool data.
+
+{response_language_rules}
 
 Final message must have NO tool calls, exactly:
 REASONING: <architectural reasoning in 2-4 sentences>
@@ -136,11 +142,13 @@ async def decompose_tasks(
     llm: LLMProvider,
     user_prompt: str,
     memory_context: str = "",
+    user_locale: str = "en",
 ) -> tuple[PlanResult, int, int]:
     """Call the LLM to break a user prompt into TaskSpecs with reasoning. Returns (result, prompt_tokens, completion_tokens)."""
     prompt = PLANNING_PROMPT_TEMPLATE.format(
         prompt=user_prompt,
         memory_context=memory_context.strip() or "None.",
+        response_language_rules=natural_language_rules_for_locale(user_locale),
     )
     response: LLMResponse = await llm.generate_text(prompt)
 
@@ -185,6 +193,7 @@ async def decompose_tasks_with_tool_loop(
     max_steps: int = 8,
     plan_id: str | None = None,
     redis_url: str | None = None,
+    user_locale: str = "en",
 ) -> tuple[PlanResult, int, int]:
     """
     Multi-turn planning with memory_service tools before REASONING/TASKS.
@@ -195,14 +204,19 @@ async def decompose_tasks_with_tool_loop(
         agent_tool_loop_outcomes_total.labels(
             service=SERVICE_NAME, outcome="fallback_single_shot"
         ).inc()
-        return await decompose_tasks(llm, user_prompt, memory_context=memory_seed)
+        return await decompose_tasks(
+            llm, user_prompt, memory_context=memory_seed, user_locale=user_locale
+        )
 
     user_content = PLANNER_TOOL_LOOP_USER.format(
         prompt=user_prompt,
         memory_seed=(memory_seed.strip() or "None."),
     )
+    system_content = PLANNER_TOOL_LOOP_SYSTEM.format(
+        response_language_rules=natural_language_rules_for_locale(user_locale),
+    )
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": PLANNER_TOOL_LOOP_SYSTEM},
+        {"role": "system", "content": system_content},
         {"role": "user", "content": user_content},
     ]
 

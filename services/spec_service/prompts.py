@@ -60,7 +60,8 @@ Instructions:
    - In NORMAL mode: balance coverage with the maintenance cost of tests.
    - In SAVE mode: focus on the most important cases and avoid over-designing optional tests.
 
-Write everything in Spanish.
+RESPONSE LANGUAGE:
+{response_language_rules}
 
 Format your response EXACTLY as:
 SPEC:
@@ -78,7 +79,9 @@ SPEC_TOOL_LOOP_SYSTEM = """You are a senior {language} engineer in a multi-agent
 You may call tools to read files, list directories, and search the repository before answering.
 Use tools when you need real paths or file contents; avoid redundant calls.
 
-When finished, send a final message with NO tool calls. Write in Spanish, exactly in this shape:
+{response_language_rules}
+
+When finished, send a final message with NO tool calls, exactly in this shape:
 
 SPEC:
 <concise behaviour: inputs, outputs, edge cases>

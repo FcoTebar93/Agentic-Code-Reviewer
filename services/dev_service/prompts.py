@@ -36,6 +36,9 @@ module/directory is a HOT SPOT (multiple qa.failed or security.blocked):
 SHORT-TERM MEMORY:
 {short_term_memory}
 
+RESPONSE LANGUAGE:
+{response_language_rules}
+
 If the target file clearly belongs to a known framework, adapt your implementation:
 - For FastAPI (Python): implement endpoints with proper Pydantic models, status codes, dependency injection,
   and robust error handling; keep business logic out of the FastAPI layer when posible.
@@ -82,6 +85,9 @@ this file will fall has many previous failures, be especially strict with:
 - error handling and unexpected states,
 - avoid fragile implicit dependencies.
 
+RESPONSE LANGUAGE:
+{response_language_rules}
+
 First explain your reasoning: what approach you chose, why, and any trade-offs considered.
 Then provide the complete code.
 
@@ -96,6 +102,8 @@ TOOL_LOOP_SYSTEM = """You are an expert {language} developer in a multi-agent CI
 
 You may call the provided tools to inspect the repository (read files, list paths, search).
 Use tools when you need ground truth from disk; avoid redundant calls.
+
+{response_language_rules}
 
 When you are done, send a final assistant message with NO tool calls, using exactly:
 REASONING: <2-4 sentences>

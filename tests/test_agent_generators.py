@@ -161,6 +161,33 @@ class TestMockToolLoops(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_qa_tool_loop_mock(self) -> None:
+        async def _run() -> None:
+            from shared.llm_adapter.mock_provider import MockProvider
+            from services.qa_service.reviewer import review_code_with_tool_loop
+            from services.qa_service.tools import build_qa_tool_registry
+
+            llm = MockProvider()
+            reg = build_qa_tool_registry()
+            result, pt, ct = await review_code_with_tool_loop(
+                llm,
+                code="def foo():\n    return 1\n",
+                file_path="src/x.py",
+                language="python",
+                task_description="add foo",
+                dev_reasoning="",
+                short_term_memory="None.",
+                static_analysis_report="No issues.",
+                registry=reg,
+                max_steps=6,
+                plan_id="11111111-1111-1111-1111-111111111111",
+                redis_url=None,
+            )
+            self.assertTrue(result.passed)
+            self.assertGreater(pt + ct, 0)
+
+        asyncio.run(_run())
+
 
 if __name__ == "__main__":
     unittest.main()

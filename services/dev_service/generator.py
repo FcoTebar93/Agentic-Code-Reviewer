@@ -35,6 +35,7 @@ from shared.observability.metrics import (
 )
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
+from shared.prompt_locale import natural_language_rules_for_locale
 from shared.utils import infer_framework_hint
 from services.dev_service.prompts import (
     CODE_GEN_PROMPT,
@@ -54,8 +55,8 @@ class CodeResult:
 SERVICE_NAME = "dev_service"
 
 _CODEGEN_REPAIR = (
-    "IMPORTANTE: Tu respuesta debe incluir exactamente las secciones REASONING: y CODE: "
-    "con código ejecutable en CODE (no vacío salvo que la tarea sea explícitamente vacía)."
+    "Your answer must include exactly the REASONING: and CODE: sections with executable code "
+    "in CODE (non-empty unless the task is explicitly empty)."
 )
 
 _READ_ONLY_TOOLS = ("read_file", "list_project_files", "search_in_repo")
@@ -73,11 +74,13 @@ def _build_codegen_user_content(
     task: TaskSpec,
     plan_reasoning: str,
     short_term_memory: str,
+    user_locale: str = "en",
 ) -> str:
     framework_hint = infer_framework_hint(task.language, task.file_path)
     stm_block = short_term_memory.strip()
     if framework_hint:
         stm_block = f"FRAMEWORK HINT: {framework_hint}\n\n" + (stm_block or "")
+    rules = natural_language_rules_for_locale(user_locale)
     if plan_reasoning.strip():
         return CODE_GEN_PROMPT.format(
             language=task.language,
@@ -85,11 +88,13 @@ def _build_codegen_user_content(
             description=task.description,
             file_path=task.file_path,
             short_term_memory=stm_block or "None.",
+            response_language_rules=rules,
         )
     return CODE_GEN_PROMPT_NO_PRIOR.format(
         language=task.language,
         description=task.description,
         file_path=task.file_path,
+        response_language_rules=rules,
     )
 
 
@@ -108,9 +113,12 @@ async def generate_code(
     task: TaskSpec,
     plan_reasoning: str = "",
     short_term_memory: str = "",
+    user_locale: str = "en",
 ) -> tuple[CodeResult, int, int]:
     """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
-    prompt = _build_codegen_user_content(task, plan_reasoning, short_term_memory)
+    prompt = _build_codegen_user_content(
+        task, plan_reasoning, short_term_memory, user_locale=user_locale
+    )
 
     def _parse(raw: str) -> tuple[CodeResult | None, bool]:
         r = _parse_response(raw)
@@ -143,6 +151,7 @@ async def generate_code_with_tool_loop(
     include_ci_tools: bool = False,
     plan_id: str | None = None,
     redis_url: str | None = None,
+    user_locale: str = "en",
 ) -> tuple[CodeResult, int, int]:
     """
     Multi-turn generation: model may call repo tools before emitting REASONING/CODE.
@@ -156,13 +165,20 @@ async def generate_code_with_tool_loop(
         agent_tool_loop_outcomes_total.labels(
             service=SERVICE_NAME, outcome="fallback_single_shot"
         ).inc()
-        return await generate_code(llm, task, plan_reasoning, short_term_memory)
+        return await generate_code(
+            llm, task, plan_reasoning, short_term_memory, user_locale=user_locale
+        )
 
-    user_content = _build_codegen_user_content(task, plan_reasoning, short_term_memory)
+    user_content = _build_codegen_user_content(
+        task, plan_reasoning, short_term_memory, user_locale=user_locale
+    )
     messages: list[dict[str, Any]] = [
         {
             "role": "system",
-            "content": TOOL_LOOP_SYSTEM.format(language=task.language),
+            "content": TOOL_LOOP_SYSTEM.format(
+                language=task.language,
+                response_language_rules=natural_language_rules_for_locale(user_locale),
+            ),
         },
         {"role": "user", "content": user_content},
     ]

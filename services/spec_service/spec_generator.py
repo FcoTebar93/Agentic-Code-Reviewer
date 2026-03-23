@@ -26,6 +26,7 @@ from shared.observability.metrics import (
 )
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
+from shared.prompt_locale import natural_language_rules_for_locale
 from shared.utils import infer_framework_hint
 from services.spec_service.prompts import SPEC_PROMPT, SPEC_TOOL_LOOP_SYSTEM
 
@@ -36,8 +37,8 @@ SERVICE_NAME = "spec_service"
 _SPEC_TOOLS = ("read_file", "list_project_files", "search_in_repo")
 
 _SPEC_REPAIR = (
-    "IMPORTANTE: La respuesta final debe contener secciones SPEC: y TESTS: con contenido no vacío "
-    "salvo que la tarea sea trivial."
+    "The final answer must contain SPEC: and TESTS: sections with non-empty content "
+    "unless the task is trivial."
 )
 
 
@@ -49,6 +50,7 @@ def build_spec_user_prompt(
     plan_context: str,
     test_layout: str,
     mode: str,
+    user_locale: str = "en",
 ) -> str:
     fw_hint = infer_framework_hint(language, file_path)
     ctx_block = plan_context.strip()
@@ -61,6 +63,7 @@ def build_spec_user_prompt(
         plan_context=ctx_block or "None.",
         test_layout=test_layout.strip() or "None.",
         mode=(mode or "normal").strip().lower(),
+        response_language_rules=natural_language_rules_for_locale(user_locale),
     )
 
 
@@ -109,6 +112,7 @@ async def generate_spec(
     plan_context: str,
     test_layout: str,
     mode: str,
+    user_locale: str = "en",
 ) -> tuple[dict[str, str], int, int]:
     prompt = build_spec_user_prompt(
         description=description,
@@ -117,6 +121,7 @@ async def generate_spec(
         plan_context=plan_context,
         test_layout=test_layout,
         mode=mode,
+        user_locale=user_locale,
     )
     def _parse(raw: str) -> tuple[dict[str, str] | None, bool]:
         spec_text, tests_text = parse_spec_response(raw or "")
@@ -147,6 +152,7 @@ async def generate_spec_with_tool_loop(
     max_steps: int = 8,
     plan_id: str | None = None,
     redis_url: str | None = None,
+    user_locale: str = "en",
 ) -> tuple[dict[str, str], int, int]:
     tools = tools_openai_from_registry(registry, _SPEC_TOOLS)
     if not tools:
@@ -162,6 +168,7 @@ async def generate_spec_with_tool_loop(
             plan_context=plan_context,
             test_layout=test_layout,
             mode=mode,
+            user_locale=user_locale,
         )
 
     user_content = build_spec_user_prompt(
@@ -171,12 +178,14 @@ async def generate_spec_with_tool_loop(
         plan_context=plan_context,
         test_layout=test_layout,
         mode=mode,
+        user_locale=user_locale,
     )
     messages: list[dict[str, Any]] = [
         {
             "role": "system",
             "content": SPEC_TOOL_LOOP_SYSTEM.format(
                 language=language or "python",
+                response_language_rules=natural_language_rules_for_locale(user_locale),
             ),
         },
         {"role": "user", "content": user_content},

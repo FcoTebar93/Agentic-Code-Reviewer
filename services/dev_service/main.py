@@ -190,6 +190,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     include_ci_tools=cfg.tool_loop_include_ci_tools,
                     plan_id=plan_id,
                     redis_url=cfg.redis_url,
+                    user_locale=getattr(payload, "user_locale", None) or "en",
                 )
             )
         else:
@@ -198,6 +199,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 task,
                 plan_reasoning=payload.plan_reasoning,
                 short_term_memory=dev_context,
+                user_locale=getattr(payload, "user_locale", None) or "en",
             )
 
         if prompt_tokens or completion_tokens:
@@ -281,6 +283,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             qa_attempt=current_attempt,
             reasoning=combined_reasoning,
             mode=mode,
+            user_locale=getattr(payload, "user_locale", None) or "en",
         )
         step_delay = float(cfg.step_delay)
         if step_delay > 0:
