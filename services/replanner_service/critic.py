@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from shared.contracts.events import QAResultPayload, SecurityResultPayload
 from shared.llm_adapter import LLMProvider
@@ -27,6 +29,10 @@ from shared.prompt_locale import natural_language_rules_for_locale
 logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "replanner_service"
+
+ADMADC_TOOL_LOOP_MARKER = "[ADMADC_TOOL_LOOP]"
+
+_REPLANNER_TOOL_NAMES = ("semantic_outcome_memory", "failure_patterns")
 
 
 REPLANNER_PROMPT = """You are an autonomous replanning agent in a multi-agent dev pipeline.
@@ -123,15 +129,19 @@ async def analyse_outcome(
         response_language_rules=natural_language_rules_for_locale(user_locale),
     )
 
-    response: LLMResponse = await llm.generate_text(prompt)
+    def _parse(raw: str) -> tuple[ReplanDecision | None, bool]:
+        d = _parse_replanner_response(raw)
+        ok = "REVISION_NEEDED:" in (raw or "").upper()
+        return d, ok
 
-    pt = response.prompt_tokens or 0
-    ct = response.completion_tokens or 0
-    if pt or ct:
-        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
-        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
-
-    decision = _parse_replanner_response(response.content)
+    decision, pt, ct = await generate_text_with_parse_retry(
+        llm,
+        initial_prompt=prompt,
+        repair_instruction=_REPLANNER_PARSE_REPAIR,
+        parse=_parse,
+        service_name=SERVICE_NAME,
+        max_attempts=2,
+    )
 
     logger.info(
         "Replanner analysed outcome for plan %s: revision_needed=%s, severity=%s, reason=%s",

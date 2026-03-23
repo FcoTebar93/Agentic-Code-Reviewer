@@ -15,6 +15,8 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+from shared.correlation import plan_id_var, task_id_var, trace_id_var
+
 
 class JSONFormatter(logging.Formatter):
     """Formats log records as single-line JSON objects."""
@@ -34,6 +36,16 @@ class JSONFormatter(logging.Formatter):
 
         if record.exc_info and record.exc_info[1]:
             entry["exception"] = self.formatException(record.exc_info)
+
+        tid = trace_id_var.get()
+        if tid:
+            entry["trace_id"] = tid
+        pid = plan_id_var.get()
+        if pid:
+            entry["plan_id"] = pid
+        tk = task_id_var.get()
+        if tk:
+            entry["task_id"] = tk
 
         extra = getattr(record, "_extra", None)
         if extra:

@@ -14,7 +14,9 @@ To switch to a real model, set in .env:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+from typing import Any
 
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
@@ -55,7 +57,9 @@ def _extract_codegen_context(prompt: str) -> tuple[str, str, str]:
     if task_match:
         desc = task_match.group(1).strip()[:200]
 
-    file_match = re.search(r"written for file:\s*(.+)", prompt)
+    file_match = re.search(
+        r"(?:written for file|Target file):\s*(.+?)(?:\s*$|\s*\n)", prompt, re.I | re.M
+    )
     if file_match:
         file_path = file_match.group(1).strip()
 
@@ -89,10 +93,14 @@ def _plan_response(prompt: str) -> str:
         "Determined a single self-contained module is sufficient given the scope. "
         "Chose `src/main.py` as entry point to keep the structure minimal and testable."
     )
-    task_json = (
-        '[{"description": "Implement: ' + _safe_json_str(user_request[:120]) + '", '
-        '"file_path": "src/main.py", "language": "python"}]'
-    )
+    tasks_obj = [
+        {
+            "description": f"Implement: {user_request[:120]}",
+            "file_path": "src/main.py",
+            "language": "python",
+        }
+    ]
+    task_json = json.dumps(tasks_obj, ensure_ascii=False)
     return f"REASONING: {reasoning}\nTASKS: {task_json}"
 
 
@@ -322,19 +330,27 @@ class MockProvider(LLMProvider):
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         self._call_count += 1
-        prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
-        prompt_type = _detect_prompt_type(request.prompt)
+        effective = _effective_prompt_text(request)
+        key_src = effective if effective else (request.prompt or "")
+        prompt_hash = hashlib.sha256(key_src.encode()).hexdigest()
+
+        if request.tools and request.messages is not None:
+            return _mock_tool_loop_response(request, prompt_hash)
+
+        prompt_type = _detect_prompt_type(effective or request.prompt)
 
         if prompt_type == "planning":
-            content = _plan_response(request.prompt)
+            content = _plan_response(effective or request.prompt)
         elif prompt_type == "codegen":
-            content = _codegen_response(request.prompt)
+            content = _codegen_response(effective or request.prompt)
         elif prompt_type == "qa":
-            content = _qa_response(request.prompt)
+            content = _qa_response(effective or request.prompt)
         else:
-            content = _generic_response(request.prompt, prompt_hash, self._call_count)
+            content = _generic_response(
+                effective or request.prompt, prompt_hash, self._call_count
+            )
 
-        fake_prompt_tokens = len(request.prompt.split())
+        fake_prompt_tokens = len((effective or request.prompt).split())
         fake_completion_tokens = len(content.split())
 
         return LLMResponse(
@@ -345,4 +361,5 @@ class MockProvider(LLMProvider):
             total_tokens=fake_prompt_tokens + fake_completion_tokens,
             cached=False,
             prompt_hash=prompt_hash,
+            tool_calls=None,
         )

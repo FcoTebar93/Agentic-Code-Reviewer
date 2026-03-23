@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import metrics_response, agent_execution_time, llm_tokens
 from shared.contracts.events import (
     BaseEvent,
@@ -25,7 +26,7 @@ from shared.llm_adapter import get_llm_provider
 from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
 from services.replanner_service.config import ReplannerConfig
-from services.replanner_service.critic import analyse_outcome
+from services.replanner_service.critic import analyse_outcome, analyse_outcome_with_tool_loop
 from services.replanner_service.tools import build_replanner_tool_registry
 
 SERVICE_NAME = "replanner_service"
@@ -87,6 +88,7 @@ app = FastAPI(
     description="Critic agent that suggests plan revisions after QA/Security outcomes",
     lifespan=lifespan,
 )
+install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
 
 

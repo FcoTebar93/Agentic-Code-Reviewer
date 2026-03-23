@@ -34,7 +34,11 @@ from shared.prompt_locale import (
 )
 from shared.policies import load_project_policy, policy_for_path, effective_mode
 from services.qa_service.config import QAConfig
-from services.qa_service.reviewer import review_code, ReviewResult
+from services.qa_service.reviewer import (
+    ReviewResult,
+    review_code,
+    review_code_with_tool_loop,
+)
 from shared.utils import infer_framework_hint
 
 
@@ -128,9 +132,11 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 redis_url=deps.cfg.redis_url,
             )
             short_term_memory = await _build_short_term_memory(plan_id, deps, limit=15)
-            repo_context = await _build_repo_context(
-                payload.file_path, payload.code, deps
-            )
+            repo_context = ""
+            if not deps.cfg.enable_tool_loop:
+                repo_context = await _build_repo_context(
+                    payload.file_path, payload.code, deps
+                )
             patterns_context = await _build_failure_patterns_context(
                 payload.file_path, deps
             )
@@ -183,7 +189,6 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                     dev_reasoning=dev_reasoning,
                     short_term_memory=qa_context,
                     static_analysis_report=static_report,
-                    user_locale=user_locale,
                 )
 
     if prompt_tokens or completion_tokens:

@@ -70,6 +70,10 @@ class PlanRequestedPayload(BaseModel):
     project_name: str
     repo_url: str = ""
     mode: str = "normal"
+    user_locale: str = Field(
+        default="en",
+        description="BCP-47 primary tag (e.g. en, es) for agent natural-language output.",
+    )
 
 
 class TaskSpec(BaseModel):
@@ -88,6 +92,7 @@ class PlanCreatedPayload(BaseModel):
     tasks: list[TaskSpec]
     reasoning: str = ""
     mode: str = "normal"
+    user_locale: str = "en"
 
 
 class TaskAssignedPayload(BaseModel):
@@ -97,6 +102,7 @@ class TaskAssignedPayload(BaseModel):
     repo_url: str = ""
     plan_reasoning: str = ""
     mode: str = "normal"
+    user_locale: str = "en"
 
 
 class CodeGeneratedPayload(BaseModel):
@@ -108,6 +114,7 @@ class CodeGeneratedPayload(BaseModel):
     qa_attempt: int = 0
     reasoning: str = ""
     mode: str = "normal"
+    user_locale: str = "en"
 
 
 class PRRequestedPayload(BaseModel):
@@ -118,6 +125,7 @@ class PRRequestedPayload(BaseModel):
     commit_message: str
     security_approved: bool = False
     mode: str = "normal"
+    user_locale: str = "en"
 
 
 class PRCreatedPayload(BaseModel):
@@ -147,6 +155,7 @@ class QAResultPayload(BaseModel):
         default="medium",
         description="Severidad heurística del resultado QA (low|medium|high|critical) basada en issues estáticos y contexto.",
     )
+    user_locale: str = "en"
 
 
 class SpecGeneratedPayload(BaseModel):
@@ -174,6 +183,7 @@ class SecurityResultPayload(BaseModel):
         default="medium",
         description="Severidad heurística del resultado de seguridad (low|medium|high|critical) basada en violaciones.",
     )
+    user_locale: str = "en"
 
 
 class PrApprovalPayload(BaseModel):

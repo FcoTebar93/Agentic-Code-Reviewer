@@ -11,17 +11,36 @@ This creates a visible inter-agent dialogue: dev explains choices, QA responds.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
-from shared.llm_adapter import LLMProvider, LLMResponse
-from shared.observability.metrics import llm_tokens
+from shared.llm_adapter import LLMProvider
+from shared.llm_adapter.models import LLMRequest
+from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
+from shared.llm_adapter.parse_retry import generate_text_with_parse_retry
+from shared.llm_adapter.tool_loop_budget import (
+    loop_tokens_exceeds_budget,
+    plan_tool_loop_try_add_tokens,
+    tool_calls_exceeds_budget,
+    tool_loop_budget_from_env,
+)
+from shared.observability.metrics import (
+    agent_tool_calls_total,
+    agent_tool_loop_llm_rounds,
+    agent_tool_loop_outcomes_total,
+    llm_tokens,
+)
 from shared.policies import rules_for_language, Rule
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
 from services.qa_service.config import DANGEROUS_PATTERNS
-from services.qa_service.prompts import QA_REVIEW_PROMPT, QA_REVIEW_PROMPT_NO_PRIOR
+from services.qa_service.prompts import (
+    QA_REVIEW_PROMPT,
+    QA_REVIEW_PROMPT_NO_PRIOR,
+    QA_TOOL_LOOP_SYSTEM,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,8 +211,7 @@ def _heuristic_suspicious_snippets(code: str, *, user_locale: str = "en") -> lis
     return findings
 
 
-async def _llm_review(
-    llm: LLMProvider,
+def _build_llm_review_prompt(
     code: str,
     file_path: str,
     language: str,
@@ -206,7 +224,7 @@ async def _llm_review(
     response_language_rules = natural_language_rules_for_locale(user_locale)
 
     if dev_reasoning.strip():
-        prompt = QA_REVIEW_PROMPT.format(
+        return QA_REVIEW_PROMPT.format(
             language=language,
             file_path=file_path,
             code=code,
