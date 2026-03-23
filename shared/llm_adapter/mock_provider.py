@@ -197,10 +197,45 @@ def _spec_tool_loop_final_response(prompt: str) -> str:
     )
 
 
+def _is_planner_tool_loop(effective: str) -> bool:
+    return (
+        "[ADMADC_TOOL_LOOP]" in effective
+        and "User request:" in effective
+        and "Pre-fetched memory summary" in effective
+    )
+
+
+def _is_replanner_tool_loop(effective: str) -> bool:
+    return (
+        "[ADMADC_TOOL_LOOP]" in effective
+        and "CURRENT OUTCOME SUMMARY:" in effective
+    )
+
+
+def _extract_plan_uuid_for_mock(prompt: str) -> str:
+    m = re.search(
+        r"plan with id ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+        prompt,
+        re.I,
+    )
+    if m:
+        return m.group(1)
+    return "00000000-0000-0000-0000-000000000001"
+
+
+def _replanner_tool_final_response() -> str:
+    return (
+        "REASON: Mock replanner after simulated memory tool.\n"
+        "SEVERITY: low\n"
+        "REVISION_NEEDED: no\n"
+        "SUGGESTIONS:\n"
+        "- none\n"
+    )
+
+
 def _mock_tool_loop_response(request: LLMRequest, prompt_hash: str) -> LLMResponse:
     """
-    Simulate one tool round (read_file) then a normal completion,
-    for dev_service (codegen) or spec_service (SPEC/TESTS) tool loops.
+    Simulate one tool round then a final message for dev/spec/planner/replanner loops.
     """
     effective = _effective_prompt_text(request)
     msgs = request.messages or []
@@ -209,6 +244,10 @@ def _mock_tool_loop_response(request: LLMRequest, prompt_hash: str) -> LLMRespon
     if saw_tool:
         if _is_spec_tool_prompt(effective):
             content = _spec_tool_loop_final_response(effective)
+        elif _is_replanner_tool_loop(effective):
+            content = _replanner_tool_final_response()
+        elif _is_planner_tool_loop(effective):
+            content = _plan_response(effective)
         else:
             content = _codegen_response(effective)
         fake_pt = len(effective.split())
@@ -224,17 +263,29 @@ def _mock_tool_loop_response(request: LLMRequest, prompt_hash: str) -> LLMRespon
             tool_calls=None,
         )
 
-    if _is_spec_tool_prompt(effective):
+    if _is_replanner_tool_loop(effective):
+        pid = _extract_plan_uuid_for_mock(effective)
+        args = {"plan_id": pid, "limit": 5}
+        fn_name = "semantic_outcome_memory"
+    elif _is_planner_tool_loop(effective):
+        q = _extract_user_request(effective)
+        args = {"query": (q or "implementation")[:200], "limit": 5}
+        fn_name = "semantic_search_memory"
+    elif _is_spec_tool_prompt(effective):
         file_path = _extract_target_file_from_spec_prompt(effective)
+        args = {"path": file_path or "src/main.py", "max_bytes": 32000}
+        fn_name = "read_file"
     else:
         _desc, file_path, _lang = _extract_codegen_context(effective)
-    args = {"path": file_path or "src/main.py", "max_bytes": 32000}
-    tool_calls: list[dict[str, Any]] = [
+        args = {"path": file_path or "src/main.py", "max_bytes": 32000}
+        fn_name = "read_file"
+
+    tool_calls = [
         {
             "id": "mock-tool-call-1",
             "type": "function",
             "function": {
-                "name": "read_file",
+                "name": fn_name,
                 "arguments": json.dumps(args),
             },
         }
