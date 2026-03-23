@@ -1,0 +1,33 @@
+groups:
+  - name: admadc_agents
+    interval: 30s
+    rules:
+      - alert: AdmadcAgentToolLoopHighExhaustion
+        expr: |
+          (
+            sum(rate(agent_tool_loop_outcomes_total{outcome="exhausted"}[20m]))
+            /
+            (sum(rate(agent_tool_loop_outcomes_total[20m])) + 1e-9)
+          ) > 0.35
+          and on() sum(increase(agent_tool_loop_outcomes_total[1h])) >= 8
+        for: 25m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Muchos bucles de agente agotados por max_steps (>35 % outcomes en 20m)"
+          description: "Revisar DEV_/SPEC_/META_PLANNER_/REPLANNER_*_TOOL_LOOP_MAX_STEPS y calidad del modelo. Ver dashboard ADMADC · Agentes."
+
+      - alert: AdmadcAgentToolCallFailureRatio
+        expr: |
+          (
+            sum(rate(agent_tool_calls_total{result="failure"}[15m]))
+            /
+            (sum(rate(agent_tool_calls_total[15m])) + 1e-9)
+          ) > 0.45
+          and on() sum(rate(agent_tool_calls_total[15m])) > 0.005
+        for: 20m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ratio alto de fallos en tools de agentes (>45 %)"
+          description: "memory_service caído, timeouts o argumentos inválidos. Ver métricas agent_tool_calls_total{result=\"failure\"}."

@@ -12,19 +12,26 @@
       }
     ]
   },
-  "description": "Paneles para los SLIs definidos en infrastructure/observability/SLIS.md. Alertas: Prometheus → /rules/slis_alerts.yml",
+  "description": "Métricas de bucles con herramientas (agentes) y logs con correlación trace_id/plan_id/task_id. Ver infrastructure/observability/SLIS.md § Agentes.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "title": "SLIs base",
+      "type": "link",
+      "url": "/d/admadc-slis/admadc-slis",
+      "icon": "dashboard"
+    }
+  ],
   "liveNow": false,
   "panels": [
     {
-      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
-      "id": 1,
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "id": 10,
       "options": {
-        "content": "**SLIs ADMADC** · Umbrales de alerta provisionales en `infrastructure/prometheus/rules/slis_alerts.yml` · Documentación: `infrastructure/observability/SLIS.md`",
+        "content": "**Agentes ADMADC** — `agent_tool_calls_total`, `agent_tool_loop_outcomes_total`, `agent_tool_loop_llm_rounds` (`shared/observability/metrics.py`). Los logs JSON incluyen `trace_id`, `plan_id`, `task_id` cuando el contexto está activo (`shared/correlation.py`). Filtro Loki: contenedores del pipeline (`admadc_gateway_service`, `admadc_dev_service`, …; ver `SLIS.md`). En **Explore**, sustituí `YOUR_TRACE` por el `X-ADMADC-Trace-Id` del gateway.",
         "mode": "markdown"
       },
       "title": "",
@@ -37,32 +44,28 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
             "drawStyle": "line",
             "fillOpacity": 15,
             "showPoints": "never"
           },
-          "max": 1,
-          "min": 0,
-          "unit": "none"
+          "unit": "ops"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 3 },
-      "id": 2,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "up{job=~\"gateway_service|meta_planner|memory_service|dev_service|qa_service|spec_service|security_service|replanner_service|github_service\"}",
-          "legendFormat": "{{job}}",
+          "expr": "sum by (service, tool_name) (rate(agent_tool_calls_total[5m]))",
+          "legendFormat": "{{service}} · {{tool_name}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "SLI 1 · up (scrape por job)",
+      "title": "Llamadas a tools (tasa / 5m)",
       "type": "timeseries"
     },
     {
@@ -71,31 +74,29 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
-            "axisBorderShow": false,
-            "drawStyle": "line",
-            "fillOpacity": 10,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": { "mode": "normal" },
             "showPoints": "never"
           },
-          "max": 1,
-          "min": 0,
-          "unit": "percentunit"
+          "unit": "ops"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
-      "id": 3,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 12,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum(rate(llm_requests_total{outcome!=\"ok\"}[5m])) / sum(rate(llm_requests_total[5m]))",
-          "legendFormat": "ratio no-ok",
+          "expr": "sum by (service, outcome) (rate(agent_tool_loop_outcomes_total[10m]))",
+          "legendFormat": "{{service}} · {{outcome}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "SLI 2 · LLM ratio (outcome ≠ ok)",
+      "title": "Fin de bucle tool-loop (completed / exhausted / fallback)",
       "type": "timeseries"
     },
     {
@@ -104,24 +105,32 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" },
-          "unit": "s"
+          "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
-      "id": 4,
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "id": 13,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(agent_execution_time_seconds_bucket[5m])))",
-          "legendFormat": "{{service}}",
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(agent_tool_loop_llm_rounds_bucket[10m])))",
+          "legendFormat": "p95 {{service}}",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le, service) (rate(agent_tool_loop_llm_rounds_bucket[10m])))",
+          "legendFormat": "p50 {{service}}",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "SLI 3 · p95 agent_execution_time (por service)",
+      "title": "Vueltas LLM por tool-loop (p50 / p95 por service)",
       "type": "timeseries"
     },
     {
@@ -130,24 +139,24 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" },
-          "unit": "reqps"
+          "unit": "tps"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
-      "id": 5,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 20 },
+      "id": 14,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean"] } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum by (service) (rate(tasks_completed_total[15m]))",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (service, direction) (rate(llm_tokens_total{service=~\"dev_service|spec_service|meta_planner|replanner_service|qa_service\"}[5m]))",
+          "legendFormat": "{{service}} {{direction}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "SLI 4 · tasks_completed (tasa / 15m)",
+      "title": "Tokens LLM · agentes principales (tasa)",
       "type": "timeseries"
     },
     {
@@ -155,31 +164,31 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
-          "custom": { "drawStyle": "bars", "fillOpacity": 80, "showPoints": "never" },
+          "custom": { "drawStyle": "bars", "fillOpacity": 70, "showPoints": "never" },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 27 },
-      "id": 6,
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 27 },
+      "id": 15,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
-          "expr": "sum(count_over_time({container=~\"admadc_(gateway_service|meta_planner|memory_service|dev_service|qa_service|spec_service|security_service|replanner_service|github_service)\"} | json | level=\"ERROR\" [5m]))",
-          "legendFormat": "ERROR / 5m",
+          "expr": "sum by (service) (count_over_time({container=~\"admadc_(gateway_service|meta_planner|memory_service|dev_service|qa_service|spec_service|security_service|replanner_service|github_service)\"} | json | trace_id != \"\" [5m]))",
+          "legendFormat": "{{service}}",
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "SLI 5 · conteo logs level=ERROR (ventana 5m)",
+      "title": "Loki · líneas con trace_id (por service JSON)",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 34 },
-      "id": 7,
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 33 },
+      "id": 16,
       "options": {
         "dedupStrategy": "none",
         "showLabels": true,
@@ -191,24 +200,24 @@
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "editorMode": "code",
-          "expr": "{container=~\"admadc_(gateway_service|meta_planner|memory_service|dev_service|qa_service|spec_service|security_service|replanner_service|github_service)\"} | json | level=\"ERROR\"",
+          "expr": "{container=~\"admadc_(gateway_service|meta_planner|memory_service|dev_service|qa_service|spec_service|security_service|replanner_service|github_service)\"} | json | trace_id != \"\"",
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "SLI 5 · líneas ERROR (logs)",
+      "title": "Loki · tail correlacionado (trace / plan / task)",
       "type": "logs"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["admadc", "slis"],
+  "tags": ["admadc", "agents", "observability"],
   "templating": { "list": [] },
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "ADMADC · SLIs",
-  "uid": "admadc-slis",
+  "title": "ADMADC · Agentes",
+  "uid": "admadc-agents",
   "version": 1,
   "weekStart": ""
 }

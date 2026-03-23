@@ -12,6 +12,7 @@ alerting:
 rule_files:
   - /etc/prometheus/rules/slis_alerts.yml
   - /etc/prometheus/rules/meta_alerts.yml
+  - /etc/prometheus/rules/agent_alerts.yml
 
 scrape_configs:
   - job_name: "gateway_service"
