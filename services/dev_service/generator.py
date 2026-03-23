@@ -20,6 +20,13 @@ from shared.contracts.events import TaskSpec
 from shared.llm_adapter import LLMProvider, LLMResponse
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
+from shared.llm_adapter.parse_retry import generate_text_with_parse_retry
+from shared.llm_adapter.tool_loop_budget import (
+    loop_tokens_exceeds_budget,
+    plan_tool_loop_try_add_tokens,
+    tool_calls_exceeds_budget,
+    tool_loop_budget_from_env,
+)
 from shared.observability.metrics import (
     agent_tool_calls_total,
     agent_tool_loop_llm_rounds,
@@ -45,6 +52,11 @@ class CodeResult:
 
 
 SERVICE_NAME = "dev_service"
+
+_CODEGEN_REPAIR = (
+    "IMPORTANTE: Tu respuesta debe incluir exactamente las secciones REASONING: y CODE: "
+    "con código ejecutable en CODE (no vacío salvo que la tarea sea explícitamente vacía)."
+)
 
 _READ_ONLY_TOOLS = ("read_file", "list_project_files", "search_in_repo")
 _CI_TOOLS = ("run_tests", "run_lints")
@@ -87,6 +99,10 @@ def _tool_message_payload(result: ToolExecutionResult) -> str:
     return json.dumps({"success": False, "error": result.error or "unknown"})
 
 
+def _codegen_parse_ok(result: CodeResult, _raw: str) -> bool:
+    return bool((result.code or "").strip())
+
+
 async def generate_code(
     llm: LLMProvider,
     task: TaskSpec,
@@ -96,13 +112,18 @@ async def generate_code(
     """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
     prompt = _build_codegen_user_content(task, plan_reasoning, short_term_memory)
 
-    response: LLMResponse = await llm.generate_text(prompt)
-    pt = response.prompt_tokens or 0
-    ct = response.completion_tokens or 0
-    if pt or ct:
-        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
-        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
-    result = _parse_response(response.content)
+    def _parse(raw: str) -> tuple[CodeResult | None, bool]:
+        r = _parse_response(raw)
+        return r, _codegen_parse_ok(r, raw)
+
+    result, pt, ct = await generate_text_with_parse_retry(
+        llm,
+        initial_prompt=prompt,
+        repair_instruction=_CODEGEN_REPAIR,
+        parse=_parse,
+        service_name=SERVICE_NAME,
+        max_attempts=2,
+    )
 
     logger.info(
         "Generated %d chars of %s code for %s. Reasoning: %s",
@@ -120,6 +141,8 @@ async def generate_code_with_tool_loop(
     registry: ToolRegistry,
     max_steps: int = 8,
     include_ci_tools: bool = False,
+    plan_id: str | None = None,
+    redis_url: str | None = None,
 ) -> tuple[CodeResult, int, int]:
     """
     Multi-turn generation: model may call repo tools before emitting REASONING/CODE.
@@ -147,8 +170,10 @@ async def generate_code_with_tool_loop(
     total_pt = 0
     total_ct = 0
     llm_rounds = 0
+    tools_executed = 0
+    budget = tool_loop_budget_from_env(max_steps)
 
-    for _step in range(max(1, max_steps)):
+    for _step in range(max(1, budget.max_steps)):
         llm_rounds += 1
         req = LLMRequest(
             prompt="",
@@ -164,6 +189,42 @@ async def generate_code_with_tool_loop(
         if pt or ct:
             llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
             llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+        if loop_tokens_exceeds_budget(total_pt, total_ct, budget.max_tokens_loop):
+            agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+            agent_tool_loop_outcomes_total.labels(
+                service=SERVICE_NAME, outcome="budget_exceeded"
+            ).inc()
+            return (
+                CodeResult(
+                    code="",
+                    reasoning=(
+                        "Dev tool loop detenido: presupuesto de tokens del bucle superado "
+                        "(ADMADC_TOOL_LOOP_MAX_TOKENS_PER_LOOP)."
+                    ),
+                ),
+                total_pt,
+                total_ct,
+            )
+        if budget.max_tokens_plan > 0:
+            allowed = await plan_tool_loop_try_add_tokens(
+                redis_url, plan_id, pt + ct, budget.max_tokens_plan
+            )
+            if not allowed:
+                agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                agent_tool_loop_outcomes_total.labels(
+                    service=SERVICE_NAME, outcome="budget_exceeded"
+                ).inc()
+                return (
+                    CodeResult(
+                        code="",
+                        reasoning=(
+                            "Dev tool loop detenido: presupuesto acumulado de tokens por plan "
+                            "superado (ADMADC_PLAN_TOOL_LOOP_MAX_TOKENS)."
+                        ),
+                    ),
+                    total_pt,
+                    total_ct,
+                )
 
         if resp.tool_calls:
             asst: dict[str, Any] = {
@@ -192,6 +253,23 @@ async def generate_code_with_tool_loop(
                     )
                 else:
                     exec_result = await execute_tool(registry, name, args_dict)
+                tools_executed += 1
+                if tool_calls_exceeds_budget(tools_executed, budget.max_tool_calls):
+                    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                    agent_tool_loop_outcomes_total.labels(
+                        service=SERVICE_NAME, outcome="budget_exceeded"
+                    ).inc()
+                    return (
+                        CodeResult(
+                            code="",
+                            reasoning=(
+                                "Dev tool loop detenido: límite de llamadas a herramientas "
+                                "superado (ADMADC_TOOL_LOOP_MAX_TOOL_CALLS)."
+                            ),
+                        ),
+                        total_pt,
+                        total_ct,
+                    )
                 agent_tool_calls_total.labels(
                     service=SERVICE_NAME,
                     tool_name=name or "unknown",
@@ -207,6 +285,18 @@ async def generate_code_with_tool_loop(
             continue
 
         result = _parse_response(resp.content or "")
+        if not _codegen_parse_ok(result, resp.content or ""):
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        _CODEGEN_REPAIR
+                        + " Devuelve de nuevo REASONING: y CODE: completos en un único mensaje "
+                        "sin herramientas."
+                    ),
+                }
+            )
+            continue
         agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
         agent_tool_loop_outcomes_total.labels(
             service=SERVICE_NAME, outcome="completed"

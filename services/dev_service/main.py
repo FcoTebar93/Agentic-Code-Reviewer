@@ -188,6 +188,8 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     registry=tool_registry,
                     max_steps=cfg.tool_loop_max_steps,
                     include_ci_tools=cfg.tool_loop_include_ci_tools,
+                    plan_id=plan_id,
+                    redis_url=cfg.redis_url,
                 )
             )
         else:
