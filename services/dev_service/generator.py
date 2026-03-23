@@ -20,7 +20,12 @@ from shared.contracts.events import TaskSpec
 from shared.llm_adapter import LLMProvider, LLMResponse
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
-from shared.observability.metrics import llm_tokens
+from shared.observability.metrics import (
+    agent_tool_calls_total,
+    agent_tool_loop_llm_rounds,
+    agent_tool_loop_outcomes_total,
+    llm_tokens,
+)
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
 from shared.utils import infer_framework_hint
@@ -125,6 +130,9 @@ async def generate_code_with_tool_loop(
     tools = tools_openai_from_registry(registry, _tool_loop_tool_names(include_ci_tools))
     if not tools:
         logger.warning("Tool loop: no tools matched registry; using single-shot codegen")
+        agent_tool_loop_outcomes_total.labels(
+            service=SERVICE_NAME, outcome="fallback_single_shot"
+        ).inc()
         return await generate_code(llm, task, plan_reasoning, short_term_memory)
 
     user_content = _build_codegen_user_content(task, plan_reasoning, short_term_memory)
@@ -138,8 +146,10 @@ async def generate_code_with_tool_loop(
 
     total_pt = 0
     total_ct = 0
+    llm_rounds = 0
 
     for _step in range(max(1, max_steps)):
+        llm_rounds += 1
         req = LLMRequest(
             prompt="",
             messages=messages,
@@ -182,6 +192,11 @@ async def generate_code_with_tool_loop(
                     )
                 else:
                     exec_result = await execute_tool(registry, name, args_dict)
+                agent_tool_calls_total.labels(
+                    service=SERVICE_NAME,
+                    tool_name=name or "unknown",
+                    result="success" if exec_result.success else "failure",
+                ).inc()
                 messages.append(
                     {
                         "role": "tool",
@@ -192,6 +207,10 @@ async def generate_code_with_tool_loop(
             continue
 
         result = _parse_response(resp.content or "")
+        agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+        agent_tool_loop_outcomes_total.labels(
+            service=SERVICE_NAME, outcome="completed"
+        ).inc()
         logger.info(
             "Tool-loop generated %d chars of %s code for %s. Reasoning: %s",
             len(result.code),
@@ -201,6 +220,10 @@ async def generate_code_with_tool_loop(
         )
         return result, total_pt, total_ct
 
+    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+    agent_tool_loop_outcomes_total.labels(
+        service=SERVICE_NAME, outcome="exhausted"
+    ).inc()
     result = CodeResult(
         code="",
         reasoning=(

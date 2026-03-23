@@ -45,6 +45,25 @@ pr_creation_latency = Histogram(
     buckets=(1.0, 5.0, 10.0, 30.0, 60.0, 120.0),
 )
 
+agent_tool_calls_total = Counter(
+    "agent_tool_calls_total",
+    "Tool invocations from LLM agent tool loops",
+    ["service", "tool_name", "result"],
+)
+
+agent_tool_loop_llm_rounds = Histogram(
+    "agent_tool_loop_llm_rounds",
+    "LLM rounds per finished tool loop (each API call is one observation)",
+    ["service"],
+    buckets=(1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0),
+)
+
+agent_tool_loop_outcomes_total = Counter(
+    "agent_tool_loop_outcomes_total",
+    "Terminal outcomes for agent tool loops",
+    ["service", "outcome"],
+)
+
 
 def metrics_response() -> Response:
     return Response(

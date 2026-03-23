@@ -11,7 +11,12 @@ from typing import Any
 from shared.llm_adapter import LLMProvider, LLMResponse
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
-from shared.observability.metrics import llm_tokens
+from shared.observability.metrics import (
+    agent_tool_calls_total,
+    agent_tool_loop_llm_rounds,
+    agent_tool_loop_outcomes_total,
+    llm_tokens,
+)
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
 from shared.utils import infer_framework_hint
@@ -122,6 +127,9 @@ async def generate_spec_with_tool_loop(
     tools = tools_openai_from_registry(registry, _SPEC_TOOLS)
     if not tools:
         logger.warning("Spec tool loop: no tools in registry; using single-shot")
+        agent_tool_loop_outcomes_total.labels(
+            service=SERVICE_NAME, outcome="fallback_single_shot"
+        ).inc()
         return await generate_spec(
             llm,
             description=description,
@@ -152,8 +160,10 @@ async def generate_spec_with_tool_loop(
 
     total_pt = 0
     total_ct = 0
+    llm_rounds = 0
 
     for _step in range(max(1, max_steps)):
+        llm_rounds += 1
         req = LLMRequest(
             prompt="",
             messages=messages,
@@ -196,6 +206,11 @@ async def generate_spec_with_tool_loop(
                     )
                 else:
                     exec_result = await execute_tool(registry, name, args_dict)
+                agent_tool_calls_total.labels(
+                    service=SERVICE_NAME,
+                    tool_name=name or "unknown",
+                    result="success" if exec_result.success else "failure",
+                ).inc()
                 messages.append(
                     {
                         "role": "tool",
@@ -206,6 +221,10 @@ async def generate_spec_with_tool_loop(
             continue
 
         spec_text, tests_text = parse_spec_response(resp.content or "")
+        agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+        agent_tool_loop_outcomes_total.labels(
+            service=SERVICE_NAME, outcome="completed"
+        ).inc()
         if not spec_text and not tests_text:
             logger.warning(
                 "Spec tool loop: final message had no SPEC/TESTS blocks (file=%s)",
@@ -213,6 +232,10 @@ async def generate_spec_with_tool_loop(
             )
         return {"spec": spec_text, "tests": tests_text}, total_pt, total_ct
 
+    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+    agent_tool_loop_outcomes_total.labels(
+        service=SERVICE_NAME, outcome="exhausted"
+    ).inc()
     empty = {
         "spec": "",
         "tests": "",
