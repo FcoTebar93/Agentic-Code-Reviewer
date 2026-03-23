@@ -29,7 +29,11 @@ from shared.tools import ToolRegistry, execute_tool
 from shared.utils import EventBus, build_short_term_memory_window, store_event
 from shared.policies import load_project_policy, policy_for_path, effective_mode
 from services.qa_service.config import QAConfig
-from services.qa_service.reviewer import review_code, ReviewResult
+from services.qa_service.reviewer import (
+    ReviewResult,
+    review_code,
+    review_code_with_tool_loop,
+)
 from shared.utils import infer_framework_hint
 
 
@@ -122,9 +126,11 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 redis_url=deps.cfg.redis_url,
             )
             short_term_memory = await _build_short_term_memory(plan_id, deps, limit=15)
-            repo_context = await _build_repo_context(
-                payload.file_path, payload.code, deps
-            )
+            repo_context = ""
+            if not deps.cfg.enable_tool_loop:
+                repo_context = await _build_repo_context(
+                    payload.file_path, payload.code, deps
+                )
             patterns_context = await _build_failure_patterns_context(
                 payload.file_path, deps
             )
@@ -151,18 +157,38 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 short_term_memory=stm_block,
                 repo_context=repo_context,
             )
-            result, prompt_tokens, completion_tokens = await review_code(
-                llm=llm,
-                code=payload.code,
-                file_path=payload.file_path,
-                language=payload.language,
-                task_description=(
-                    f"Generate {payload.language} code for {payload.file_path}"
-                ),
-                dev_reasoning=dev_reasoning,
-                short_term_memory=qa_context,
-                static_analysis_report=static_report,
-            )
+            if deps.cfg.enable_tool_loop and deps.tool_registry is not None:
+                result, prompt_tokens, completion_tokens = (
+                    await review_code_with_tool_loop(
+                        llm=llm,
+                        code=payload.code,
+                        file_path=payload.file_path,
+                        language=payload.language,
+                        task_description=(
+                            f"Generate {payload.language} code for {payload.file_path}"
+                        ),
+                        dev_reasoning=dev_reasoning,
+                        short_term_memory=qa_context,
+                        static_analysis_report=static_report,
+                        registry=deps.tool_registry,
+                        max_steps=deps.cfg.tool_loop_max_steps,
+                        plan_id=plan_id,
+                        redis_url=deps.cfg.redis_url,
+                    )
+                )
+            else:
+                result, prompt_tokens, completion_tokens = await review_code(
+                    llm=llm,
+                    code=payload.code,
+                    file_path=payload.file_path,
+                    language=payload.language,
+                    task_description=(
+                        f"Generate {payload.language} code for {payload.file_path}"
+                    ),
+                    dev_reasoning=dev_reasoning,
+                    short_term_memory=qa_context,
+                    static_analysis_report=static_report,
+                )
 
     if prompt_tokens or completion_tokens:
         tok_event = metrics_tokens_used(

@@ -32,6 +32,8 @@ class QAConfig:
     enable_semgrep: bool
     enable_js_lint: bool
     enable_java_lint: bool
+    enable_tool_loop: bool
+    tool_loop_max_steps: int
 
     @classmethod
     def from_env(cls) -> QAConfig:
@@ -58,4 +60,7 @@ class QAConfig:
             in ("1", "true", "yes"),
             enable_java_lint=os.environ.get("QA_ENABLE_JAVA_LINT", "false").lower()
             in ("1", "true", "yes"),
+            enable_tool_loop=os.environ.get("QA_ENABLE_TOOL_LOOP", "false").lower()
+            in ("1", "true", "yes"),
+            tool_loop_max_steps=int(os.environ.get("QA_TOOL_LOOP_MAX_STEPS", "8")),
         )

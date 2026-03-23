@@ -46,6 +46,38 @@ class LintInput(ToolInput):
     )
 
 
+class ReadFileInput(ToolInput):
+    path: str = Field(
+        description="Ruta relativa al repo del archivo a leer",
+    )
+    max_bytes: int = Field(
+        default=32_000,
+        ge=1,
+        le=256_000,
+        description="Máximo de bytes a devolver del archivo",
+    )
+
+
+def read_file_tool(args: ReadFileInput) -> dict[str, Any]:
+    target = _safe_join(args.path)
+    if not target.exists() or not target.is_file():
+        return {"exists": False, "path": str(target), "content": "", "truncated": False}
+
+    data = target.read_bytes()
+    truncated = len(data) > args.max_bytes
+    if truncated:
+        data = data[: args.max_bytes]
+
+    text = data.decode("utf-8", errors="replace")
+    return {
+        "exists": True,
+        "path": str(target),
+        "content": text,
+        "truncated": truncated,
+        "size_bytes": target.stat().st_size,
+    }
+
+
 class SearchInRepoInput(ToolInput):
     pattern: str = Field(
         description="Patrón de texto o regex a buscar en el repo",
@@ -640,7 +672,6 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
     """
     lang = (args.language or "python").lower()
 
-    # Python via black
     if lang in {"python", "py"}:
         try:
             try:
@@ -693,7 +724,6 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
                 "stderr": f"format_code_tool (python) failed: {exc}",
             }
 
-    # JS/TS via prettier
     if lang in {"javascript", "js", "typescript", "ts"}:
         try:
             try:
@@ -752,7 +782,6 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
                 "stderr": f"format_code_tool (js/ts) failed: {exc}",
             }
 
-    # Fallback for unsupported languages
     return {
         "supported": False,
         "language": args.language,
@@ -832,6 +861,19 @@ def build_qa_tool_registry() -> ToolRegistry:
             max_retries=0,
             sandboxed=True,
             tags=["security", "static_analysis", "multi_language"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="read_file",
+            description="Leer un archivo de texto del repositorio (solo lectura, rutas relativas al repo)",
+            input_model=ReadFileInput,
+            func=read_file_tool,
+            timeout_s=10.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["repo", "read"],
         )
     )
 

@@ -11,17 +11,44 @@ This creates a visible inter-agent dialogue: dev explains choices, QA responds.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
-from shared.llm_adapter import LLMProvider, LLMResponse
-from shared.observability.metrics import llm_tokens
+from shared.llm_adapter import LLMProvider
+from shared.llm_adapter.models import LLMRequest
+from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
+from shared.llm_adapter.parse_retry import generate_text_with_parse_retry
+from shared.llm_adapter.tool_loop_budget import (
+    loop_tokens_exceeds_budget,
+    plan_tool_loop_try_add_tokens,
+    tool_calls_exceeds_budget,
+    tool_loop_budget_from_env,
+)
+from shared.observability.metrics import (
+    agent_tool_calls_total,
+    agent_tool_loop_llm_rounds,
+    agent_tool_loop_outcomes_total,
+    llm_tokens,
+)
 from shared.policies import rules_for_language, Rule
+from shared.tools import ToolRegistry, execute_tool
+from shared.tools.models import ToolExecutionResult
 from services.qa_service.config import DANGEROUS_PATTERNS
-from services.qa_service.prompts import QA_REVIEW_PROMPT, QA_REVIEW_PROMPT_NO_PRIOR
+from services.qa_service.prompts import (
+    QA_REVIEW_PROMPT,
+    QA_REVIEW_PROMPT_NO_PRIOR,
+    QA_TOOL_LOOP_SYSTEM,
+)
 
 logger = logging.getLogger(__name__)
+
+ADMADC_TOOL_LOOP_QA = "[ADMADC_TOOL_LOOP_QA]"
+_QA_READ_TOOLS = ("read_file", "search_in_repo")
+_QA_PARSE_REPAIR = (
+    "Incluye obligatoriamente la línea VERDICT: PASS o VERDICT: FAIL y el resto de secciones del formato."
+)
 
 @dataclass
 class ReviewResult:
@@ -88,6 +115,65 @@ async def review_code(
     )
 
 
+async def review_code_with_tool_loop(
+    llm: LLMProvider,
+    code: str,
+    file_path: str,
+    language: str,
+    task_description: str,
+    dev_reasoning: str = "",
+    short_term_memory: str = "",
+    static_analysis_report: str = "",
+    *,
+    registry: ToolRegistry,
+    max_steps: int = 8,
+    plan_id: str | None = None,
+    redis_url: str | None = None,
+) -> tuple[ReviewResult, int, int]:
+    static_issues = _static_check(code)
+    if static_issues:
+        reasoning = (
+            f"Static analysis detected {len(static_issues)} dangerous pattern(s) "
+            "before LLM review. Immediate rejection applied regardless of "
+            "developer's stated rationale."
+        )
+        logger.warning("Static check FAILED for %s: %s", file_path, static_issues)
+        return (
+            ReviewResult(
+                passed=False,
+                issues=static_issues,
+                reasoning=reasoning,
+                structured_feedback={
+                    "functionality": [],
+                    "style": [],
+                    "security": [
+                        {
+                            "severity": "critical",
+                            "title": "Patrones estáticos peligrosos detectados antes del QA LLM",
+                            "details": "; ".join(static_issues),
+                        }
+                    ],
+                },
+            ),
+            0,
+            0,
+        )
+    return await _llm_review_with_tool_loop(
+        llm,
+        code,
+        file_path,
+        language,
+        task_description,
+        dev_reasoning,
+        short_term_memory=short_term_memory,
+        static_analysis_report=static_analysis_report,
+        registry=registry,
+        max_steps=max_steps,
+        plan_id=plan_id,
+        redis_url=redis_url,
+    )
+
+
 def _static_check(code: str) -> list[str]:
     """Detect known dangerous patterns. O(n*m) but code is small."""
     issues: list[str] = []
@@ -134,8 +220,7 @@ def _heuristic_suspicious_snippets(code: str) -> list[str]:
     return findings
 
 
-async def _llm_review(
-    llm: LLMProvider,
+def _build_llm_review_prompt(
     code: str,
     file_path: str,
     language: str,
@@ -143,11 +228,11 @@ async def _llm_review(
     dev_reasoning: str = "",
     short_term_memory: str = "",
     static_analysis_report: str = "",
-) -> tuple[ReviewResult, int, int]:
+) -> str:
     qa_rules_block = _build_qa_rules_block(language)
 
     if dev_reasoning.strip():
-        prompt = QA_REVIEW_PROMPT.format(
+        return QA_REVIEW_PROMPT.format(
             language=language,
             file_path=file_path,
             code=code,
@@ -158,27 +243,234 @@ async def _llm_review(
             or "No static analysis issues or warnings were reported by tools.",
             qa_rules_block=qa_rules_block,
         )
-    else:
-        prompt = QA_REVIEW_PROMPT_NO_PRIOR.format(
-            language=language,
-            file_path=file_path,
-            code=code,
-            description=task_description,
-            static_analysis_report=static_analysis_report.strip()
-            or "No static analysis issues or warnings were reported by tools.",
-            qa_rules_block=qa_rules_block,
+    return QA_REVIEW_PROMPT_NO_PRIOR.format(
+        language=language,
+        file_path=file_path,
+        code=code,
+        description=task_description,
+        static_analysis_report=static_analysis_report.strip()
+        or "No static analysis issues or warnings were reported by tools.",
+        qa_rules_block=qa_rules_block,
+    )
+
+
+async def _llm_review(
+    llm: LLMProvider,
+    code: str,
+    file_path: str,
+    language: str,
+    task_description: str,
+    dev_reasoning: str = "",
+    short_term_memory: str = "",
+    static_analysis_report: str = "",
+) -> tuple[ReviewResult, int, int]:
+    prompt = _build_llm_review_prompt(
+        code,
+        file_path,
+        language,
+        task_description,
+        dev_reasoning,
+        short_term_memory,
+        static_analysis_report,
+    )
+
+    def _parse(raw: str) -> tuple[ReviewResult | None, bool]:
+        r = _parse_review_response(raw or "")
+        ok = "VERDICT:" in (raw or "").upper()
+        return r, ok
+
+    result, pt, ct = await generate_text_with_parse_retry(
+        llm,
+        initial_prompt=prompt,
+        repair_instruction=_QA_PARSE_REPAIR,
+        parse=_parse,
+        service_name=SERVICE_NAME,
+        max_attempts=2,
+    )
+    return result, pt, ct
+
+
+def _qa_tool_payload(result: ToolExecutionResult) -> str:
+    if result.success:
+        return json.dumps(result.output, default=str)
+    return json.dumps({"success": False, "error": result.error or "unknown"})
+
+
+async def _llm_review_with_tool_loop(
+    llm: LLMProvider,
+    code: str,
+    file_path: str,
+    language: str,
+    task_description: str,
+    dev_reasoning: str = "",
+    short_term_memory: str = "",
+    static_analysis_report: str = "",
+    *,
+    registry: ToolRegistry,
+    max_steps: int = 8,
+    plan_id: str | None = None,
+    redis_url: str | None = None,
+) -> tuple[ReviewResult, int, int]:
+    tools = tools_openai_from_registry(registry, _QA_READ_TOOLS)
+    if not tools:
+        logger.warning("QA tool loop: sin herramientas en registry; revisión single-shot")
+        agent_tool_loop_outcomes_total.labels(
+            service=SERVICE_NAME, outcome="fallback_single_shot"
+        ).inc()
+        return await _llm_review(
+            llm,
+            code,
+            file_path,
+            language,
+            task_description,
+            dev_reasoning,
+            short_term_memory,
+            static_analysis_report,
         )
 
-    response: LLMResponse = await llm.generate_text(prompt)
+    base_prompt = _build_llm_review_prompt(
+        code,
+        file_path,
+        language,
+        task_description,
+        dev_reasoning,
+        short_term_memory,
+        static_analysis_report,
+    )
+    user_content = f"{ADMADC_TOOL_LOOP_QA}\n\n{base_prompt}"
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": QA_TOOL_LOOP_SYSTEM},
+        {"role": "user", "content": user_content},
+    ]
 
-    pt = response.prompt_tokens or 0
-    ct = response.completion_tokens or 0
-    if pt or ct:
-        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
-        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+    total_pt = 0
+    total_ct = 0
+    llm_rounds = 0
+    tools_executed = 0
+    budget = tool_loop_budget_from_env(max_steps)
 
-    result = _parse_review_response(response.content)
-    return result, pt, ct
+    for _step in range(max(1, budget.max_steps)):
+        llm_rounds += 1
+        req = LLMRequest(
+            prompt="",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+        resp = await llm.generate(req)
+        pt = resp.prompt_tokens or 0
+        ct = resp.completion_tokens or 0
+        total_pt += pt
+        total_ct += ct
+        if pt or ct:
+            llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
+            llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+        if loop_tokens_exceeds_budget(total_pt, total_ct, budget.max_tokens_loop):
+            agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+            agent_tool_loop_outcomes_total.labels(
+                service=SERVICE_NAME, outcome="budget_exceeded"
+            ).inc()
+            r = _parse_review_response(
+                "REASONING: QA tool loop detenido por presupuesto de tokens del bucle.\n"
+                "VERDICT: FAIL\nISSUES:\n- [error|functional] budget_exceeded\n"
+                "  DETAILS: Se superó ADMADC_TOOL_LOOP_MAX_TOKENS_PER_LOOP.\n"
+            )
+            return r, total_pt, total_ct
+        if budget.max_tokens_plan > 0:
+            allowed = await plan_tool_loop_try_add_tokens(
+                redis_url, plan_id, pt + ct, budget.max_tokens_plan
+            )
+            if not allowed:
+                agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                agent_tool_loop_outcomes_total.labels(
+                    service=SERVICE_NAME, outcome="budget_exceeded"
+                ).inc()
+                r = _parse_review_response(
+                    "REASONING: QA tool loop detenido por presupuesto de tokens acumulados del plan.\n"
+                    "VERDICT: FAIL\nISSUES:\n- [error|functional] budget_exceeded\n"
+                    "  DETAILS: Se superó ADMADC_PLAN_TOOL_LOOP_MAX_TOKENS.\n"
+                )
+                return r, total_pt, total_ct
+
+        if resp.tool_calls:
+            asst: dict[str, Any] = {
+                "role": "assistant",
+                "tool_calls": resp.tool_calls,
+            }
+            asst["content"] = (resp.content or "").strip() or None
+            messages.append(asst)
+            for tc in resp.tool_calls:
+                fn = tc.get("function") or {}
+                name = str(fn.get("name") or "")
+                raw_args = fn.get("arguments")
+                if isinstance(raw_args, str):
+                    try:
+                        args_dict: Any = json.loads(raw_args.strip() or "{}")
+                    except json.JSONDecodeError:
+                        args_dict = None
+                elif isinstance(raw_args, dict):
+                    args_dict = raw_args
+                else:
+                    args_dict = {}
+                if not isinstance(args_dict, dict):
+                    exec_result = ToolExecutionResult(
+                        success=False,
+                        error="Tool arguments must be a JSON object",
+                    )
+                else:
+                    exec_result = await execute_tool(registry, name, args_dict)
+                tools_executed += 1
+                if tool_calls_exceeds_budget(tools_executed, budget.max_tool_calls):
+                    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                    agent_tool_loop_outcomes_total.labels(
+                        service=SERVICE_NAME, outcome="budget_exceeded"
+                    ).inc()
+                    r = _parse_review_response(
+                        "REASONING: QA tool loop detenido por límite de llamadas a herramientas.\n"
+                        "VERDICT: FAIL\nISSUES:\n- [error|functional] budget_exceeded\n"
+                        "  DETAILS: Se superó ADMADC_TOOL_LOOP_MAX_TOOL_CALLS.\n"
+                    )
+                    return r, total_pt, total_ct
+                agent_tool_calls_total.labels(
+                    service=SERVICE_NAME,
+                    tool_name=name or "unknown",
+                    result="success" if exec_result.success else "failure",
+                ).inc()
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(tc.get("id") or ""),
+                        "content": _qa_tool_payload(exec_result),
+                    }
+                )
+            continue
+
+        raw = resp.content or ""
+        result = _parse_review_response(raw)
+        if "VERDICT:" not in raw.upper():
+            messages.append(
+                {
+                    "role": "user",
+                    "content": _QA_PARSE_REPAIR + " Responde sin herramientas.",
+                }
+            )
+            continue
+        agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+        agent_tool_loop_outcomes_total.labels(
+            service=SERVICE_NAME, outcome="completed"
+        ).inc()
+        return result, total_pt, total_ct
+
+    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+    agent_tool_loop_outcomes_total.labels(
+        service=SERVICE_NAME, outcome="exhausted"
+    ).inc()
+    r = _parse_review_response(
+        "REASONING: QA tool loop agotó el máximo de pasos sin veredicto final.\n"
+        "VERDICT: FAIL\nISSUES:\n- [error|functional] exhausted\n"
+        "  DETAILS: Aumenta QA_TOOL_LOOP_MAX_STEPS o reduce el alcance.\n"
+    )
+    return r, total_pt, total_ct
 
 
 def _build_qa_rules_block(language: str) -> str:

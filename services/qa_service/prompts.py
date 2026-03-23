@@ -92,6 +92,16 @@ OPTIONAL_IMPROVEMENTS:
 """
 
 
+QA_TOOL_LOOP_SYSTEM = """Eres el mismo revisor QA estricto que en el prompt de usuario.
+
+Antes del veredicto final puedes llamar a herramientas read_file y search_in_repo para contrastar
+el parche con el resto del repositorio (solo lectura). Sé breve: pocas llamadas, rutas relativas al repo.
+
+Cuando termines, responde SIN herramientas con el mismo formato obligatorio que el prompt de usuario:
+REASONING:, VERDICT:, ISSUES:, REQUIRED_CHANGES:, OPTIONAL_IMPROVEMENTS: (en español, etiquetas exactas).
+"""
+
+
 QA_REVIEW_PROMPT_NO_PRIOR = """You are a strict senior code and security reviewer performing a quality assurance check.
 
 Your review is authoritative and the developer agent must follow your REQUIRED_CHANGES exactly to reach PASS.

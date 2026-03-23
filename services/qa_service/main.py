@@ -64,7 +64,11 @@ async def lifespan(application: FastAPI):
     await event_bus.connect()
 
     asyncio.create_task(_consume_code_generated())
-    logger.info("QA Service ready (max_qa_retries=%d)", cfg.max_qa_retries)
+    logger.info(
+        "QA Service ready (max_qa_retries=%d, tool_loop=%s)",
+        cfg.max_qa_retries,
+        getattr(cfg, "enable_tool_loop", False),
+    )
     yield
 
     logger.info("Shutting down")
