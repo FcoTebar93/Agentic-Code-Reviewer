@@ -1,0 +1,41 @@
+groups:
+  - name: admadc_slis
+    interval: 30s
+    rules:
+      - alert: AdmadcTargetDown
+        expr: |
+          up{job=~"gateway_service|meta_planner|memory_service|dev_service|qa_service|spec_service|security_service|replanner_service|github_service"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scrape caído: {{ $labels.job }}"
+          description: "Prometheus no recibe métricas de este job durante al menos 2m."
+
+      - alert: AdmadcLLMHighErrorRatio
+        expr: |
+          (
+            sum(rate(llm_requests_total{outcome!="ok"}[5m]))
+            /
+            sum(rate(llm_requests_total[5m]))
+          ) > 0.5
+          and on() (sum(rate(llm_requests_total[5m])) > 0.01)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ratio alto de fallos LLM (>50 % del tráfico en 5m)"
+          description: "Umbral provisional; definir SLO en SLIS.md y bajar el ratio en esta regla."
+
+      - alert: AdmadcAgentExecutionP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, service) (rate(agent_execution_time_seconds_bucket[10m]))
+          ) > 600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 agent_execution_time > 600s (servicio {{ $labels.service }})"
+          description: "Umbral provisional (10 min); ajustad según SLI 3 en SLIS.md."
