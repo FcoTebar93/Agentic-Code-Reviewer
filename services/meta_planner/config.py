@@ -14,6 +14,8 @@ class PlannerConfig:
     agent_goal: str
     token_budget_per_plan: int
     strategy: str
+    enable_tool_loop: bool
+    tool_loop_max_steps: int
 
     @classmethod
     def from_env(cls) -> PlannerConfig:
@@ -32,4 +34,11 @@ class PlannerConfig:
             ),
             token_budget_per_plan=int(os.environ.get("TOKEN_BUDGET_PER_PLAN", "60000")),
             strategy=os.environ.get("AGENT_STRATEGY", "architectural_planning"),
+            enable_tool_loop=os.environ.get(
+                "META_PLANNER_ENABLE_TOOL_LOOP", "false"
+            ).lower()
+            in ("1", "true", "yes"),
+            tool_loop_max_steps=int(
+                os.environ.get("META_PLANNER_TOOL_LOOP_MAX_STEPS", "8")
+            ),
         )

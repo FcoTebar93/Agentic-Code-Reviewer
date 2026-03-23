@@ -26,7 +26,7 @@ from shared.llm_adapter import get_llm_provider
 from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
 from services.replanner_service.config import ReplannerConfig
-from services.replanner_service.critic import analyse_outcome
+from services.replanner_service.critic import analyse_outcome, analyse_outcome_with_tool_loop
 from services.replanner_service.tools import build_replanner_tool_registry
 
 SERVICE_NAME = "replanner_service"
@@ -190,14 +190,28 @@ async def _analyse_and_emit_revision(
             llm = get_llm_provider(provider_name=cfg.llm_provider)
             memory_context = await _fetch_memory_context(plan_id)
 
-            result, prompt_tokens, completion_tokens = await analyse_outcome(
-                llm=llm,
-                agent_goal=cfg.agent_goal,
-                plan_id=plan_id,
-                outcome=outcome,
-                memory_context=memory_context,
-                outcome_type=outcome_type,
-            )
+            if cfg.enable_tool_loop and tool_registry is not None:
+                result, prompt_tokens, completion_tokens = (
+                    await analyse_outcome_with_tool_loop(
+                        llm,
+                        tool_registry,
+                        agent_goal=cfg.agent_goal,
+                        plan_id=plan_id,
+                        outcome=outcome,
+                        memory_context=memory_context,
+                        outcome_type=outcome_type,
+                        max_steps=cfg.tool_loop_max_steps,
+                    )
+                )
+            else:
+                result, prompt_tokens, completion_tokens = await analyse_outcome(
+                    llm=llm,
+                    agent_goal=cfg.agent_goal,
+                    plan_id=plan_id,
+                    outcome=outcome,
+                    memory_context=memory_context,
+                    outcome_type=outcome_type,
+                )
 
             if prompt_tokens or completion_tokens:
                 tok_event = metrics_tokens_used(

@@ -49,7 +49,7 @@ from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
 from services.meta_planner.config import PlannerConfig
 from services.meta_planner.deps import MetaPlannerDeps
-from services.meta_planner.planner import decompose_tasks
+from services.meta_planner.planner import decompose_tasks, decompose_tasks_with_tool_loop
 from services.meta_planner.tools import build_planner_tool_registry
 
 SERVICE_NAME = "meta_planner"
@@ -276,9 +276,20 @@ async def _execute_plan(
     with agent_execution_time.labels(service=SERVICE_NAME, operation="plan").time():
         llm = get_llm_provider(provider_name=cfg.llm_provider)
         memory_context = await _fetch_memory_context(prompt)
-        plan_result, prompt_tokens, completion_tokens = await decompose_tasks(
-            llm, prompt, memory_context=memory_context
-        )
+        if cfg.enable_tool_loop and tool_registry is not None:
+            plan_result, prompt_tokens, completion_tokens = (
+                await decompose_tasks_with_tool_loop(
+                    llm,
+                    tool_registry,
+                    prompt,
+                    memory_seed=memory_context,
+                    max_steps=cfg.tool_loop_max_steps,
+                )
+            )
+        else:
+            plan_result, prompt_tokens, completion_tokens = await decompose_tasks(
+                llm, prompt, memory_context=memory_context
+            )
         seen_paths: set[str] = set()
         task_specs = []
         for spec in plan_result.tasks:

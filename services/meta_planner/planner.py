@@ -14,14 +14,32 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from shared.contracts.events import TaskSpec
 from shared.llm_adapter import LLMProvider, LLMResponse
-from shared.observability.metrics import llm_tokens
+from shared.llm_adapter.models import LLMRequest
+from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
+from shared.observability.metrics import (
+    agent_tool_calls_total,
+    agent_tool_loop_llm_rounds,
+    agent_tool_loop_outcomes_total,
+    llm_tokens,
+)
+from shared.tools import ToolRegistry, execute_tool
+from shared.tools.models import ToolExecutionResult
 
 logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "meta_planner"
+
+ADMADC_TOOL_LOOP_MARKER = "[ADMADC_TOOL_LOOP]"
+
+_PLANNER_TOOL_NAMES = (
+    "semantic_search_memory",
+    "query_events",
+    "failure_patterns",
+)
 
 PLANNING_PROMPT_TEMPLATE = """You are a senior software architect acting as the PLANNER in a multi-agent CI pipeline.
 
@@ -76,6 +94,27 @@ User request:
 """
 
 
+PLANNER_TOOL_LOOP_SYSTEM = """You are a senior software architect (PLANNER) in a multi-agent CI pipeline.
+
+Call memory tools when you need past events, semantic recall, or failure-by-module patterns.
+Keep tasks small (ideally one file), avoid huge cross-cutting changes, and respect QA/security hotspots from tool data.
+
+Final message must have NO tool calls, exactly:
+REASONING: <architectural reasoning in 2-4 sentences>
+TASKS: <JSON array of objects with keys: description, file_path, language and optionally edit_scope, group_id>
+"""
+
+
+PLANNER_TOOL_LOOP_USER = ADMADC_TOOL_LOOP_MARKER + """
+
+User request:
+{prompt}
+
+Pre-fetched memory summary (use tools if you need more; may be partial):
+{memory_seed}
+"""
+
+
 @dataclass
 class PlanResult:
     tasks: list[TaskSpec]
@@ -107,6 +146,123 @@ async def decompose_tasks(
         reasoning[:80],
     )
     return PlanResult(tasks=tasks, reasoning=reasoning), pt, ct
+
+
+def _tool_payload(result: ToolExecutionResult) -> str:
+    if result.success:
+        return json.dumps(result.output, default=str)
+    return json.dumps({"success": False, "error": result.error or "unknown"})
+
+
+async def decompose_tasks_with_tool_loop(
+    llm: LLMProvider,
+    registry: ToolRegistry,
+    user_prompt: str,
+    memory_seed: str = "",
+    *,
+    max_steps: int = 8,
+) -> tuple[PlanResult, int, int]:
+    """
+    Multi-turn planning with memory_service tools before REASONING/TASKS.
+    """
+    tools = tools_openai_from_registry(registry, _PLANNER_TOOL_NAMES)
+    if not tools:
+        logger.warning("Planner tool loop: no tools in registry; single-shot planning")
+        agent_tool_loop_outcomes_total.labels(
+            service=SERVICE_NAME, outcome="fallback_single_shot"
+        ).inc()
+        return await decompose_tasks(llm, user_prompt, memory_context=memory_seed)
+
+    user_content = PLANNER_TOOL_LOOP_USER.format(
+        prompt=user_prompt,
+        memory_seed=(memory_seed.strip() or "None."),
+    )
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": PLANNER_TOOL_LOOP_SYSTEM},
+        {"role": "user", "content": user_content},
+    ]
+
+    total_pt = 0
+    total_ct = 0
+    llm_rounds = 0
+
+    for _step in range(max(1, max_steps)):
+        llm_rounds += 1
+        req = LLMRequest(
+            prompt="",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+        resp = await llm.generate(req)
+        pt = resp.prompt_tokens or 0
+        ct = resp.completion_tokens or 0
+        total_pt += pt
+        total_ct += ct
+        if pt or ct:
+            llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
+            llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+
+        if resp.tool_calls:
+            asst: dict[str, Any] = {
+                "role": "assistant",
+                "tool_calls": resp.tool_calls,
+            }
+            asst["content"] = (resp.content or "").strip() or None
+            messages.append(asst)
+            for tc in resp.tool_calls:
+                fn = tc.get("function") or {}
+                name = str(fn.get("name") or "")
+                raw_args = fn.get("arguments")
+                if isinstance(raw_args, str):
+                    try:
+                        args_dict: Any = json.loads(raw_args.strip() or "{}")
+                    except json.JSONDecodeError:
+                        args_dict = None
+                elif isinstance(raw_args, dict):
+                    args_dict = raw_args
+                else:
+                    args_dict = {}
+                if not isinstance(args_dict, dict):
+                    exec_result = ToolExecutionResult(
+                        success=False,
+                        error="Tool arguments must be a JSON object",
+                    )
+                else:
+                    exec_result = await execute_tool(registry, name, args_dict)
+                agent_tool_calls_total.labels(
+                    service=SERVICE_NAME,
+                    tool_name=name or "unknown",
+                    result="success" if exec_result.success else "failure",
+                ).inc()
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(tc.get("id") or ""),
+                        "content": _tool_payload(exec_result),
+                    }
+                )
+            continue
+
+        reasoning, tasks = _parse_response(resp.content or "")
+        agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+        agent_tool_loop_outcomes_total.labels(
+            service=SERVICE_NAME, outcome="completed"
+        ).inc()
+        logger.info(
+            "Planner tool-loop decomposed into %d tasks. Reasoning: %s",
+            len(tasks),
+            reasoning[:80],
+        )
+        return PlanResult(tasks=tasks, reasoning=reasoning), total_pt, total_ct
+
+    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+    agent_tool_loop_outcomes_total.labels(
+        service=SERVICE_NAME, outcome="exhausted"
+    ).inc()
+    reasoning, tasks = _parse_response("")
+    logger.warning("Planner tool loop exhausted max_steps=%s", max_steps)
+    return PlanResult(tasks=tasks, reasoning=reasoning), total_pt, total_ct
 
 
 def _parse_response(raw: str) -> tuple[str, list[TaskSpec]]:

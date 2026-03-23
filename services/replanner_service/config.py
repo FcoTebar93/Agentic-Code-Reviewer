@@ -14,6 +14,8 @@ class ReplannerConfig:
     agent_goal: str
     token_budget_per_plan: int
     strategy: str
+    enable_tool_loop: bool
+    tool_loop_max_steps: int
 
     @classmethod
     def from_env(cls) -> "ReplannerConfig":
@@ -32,5 +34,12 @@ class ReplannerConfig:
             ),
             token_budget_per_plan=int(os.environ.get("TOKEN_BUDGET_PER_PLAN", "30000")),
             strategy=os.environ.get("AGENT_STRATEGY", "critic_replanning"),
+            enable_tool_loop=os.environ.get(
+                "REPLANNER_ENABLE_TOOL_LOOP", "false"
+            ).lower()
+            in ("1", "true", "yes"),
+            tool_loop_max_steps=int(
+                os.environ.get("REPLANNER_TOOL_LOOP_MAX_STEPS", "8")
+            ),
         )
 
