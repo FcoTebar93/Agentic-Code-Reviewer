@@ -1,0 +1,64 @@
+#we've created this deployment as generic as possible so we can use it for any project
+
+global:
+  resolve_timeout: 5m
+  # smtp_smarthost: 'smtp.tu-proveedor.com:587'
+  # smtp_from: 'alertmanager@tu-dominio.com'
+  # smtp_auth_username: 'usuario'
+  # smtp_auth_password: 'contraseña'
+
+route:
+  receiver: default
+  group_by: [alertname, job]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  # routes:
+  #   - matchers: [severity="critical"]
+  #     receiver: critico
+  #   - matchers: [severity="warning"]
+  #     receiver: avisos
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: 'http://127.0.0.1:9/noop'
+        send_resolved: false
+        # max_alerts: 0  # 0 = enviar todas en un solo POST
+
+    # slack_configs:
+    #   - channel: '#alertas'
+    #     title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+    #     text: >-
+    #       {{ range .Alerts }}
+    #       *Resumen:* {{ .Annotations.summary }}
+    #       *Detalle:* {{ .Annotations.description }}
+    #       {{ end }}
+    #     send_resolved: true
+
+    # email_configs:
+    #   - to: 'equipo@ejemplo.com'
+    #     headers:
+    #       Subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+
+    # discord_configs:
+    #   - webhook_url: 'https://discord.com/api/webhooks/ID/TOKEN'
+    #     title: '{{ .CommonLabels.alertname }}'
+    #     message: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+    # telegram_configs:
+    #   - bot_token: 'BOT_TOKEN'
+    #     chat_id: 123456789
+
+    # pagerduty_configs:
+    #   - routing_key: '<integration_key>'
+
+    # opsgenie_configs:
+    #   - api_key: '<api_key>'
+    #     message: '{{ .CommonLabels.alertname }}'
+
+# inhibit_rules:
+#   - source_matchers: [severity="critical"]
+#     target_matchers: [severity="warning"]
+#     equal: [alertname, job]

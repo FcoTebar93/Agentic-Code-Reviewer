@@ -153,7 +153,9 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - `shared/utils` → EventBus (aio‑pika), memoria de corto plazo, helpers HTTP para hablar con Memory Service, etc.
   - `shared/tools` → registro y ejecución de herramientas (modelos Pydantic + `ToolRegistry`); nombres por servicio en [Herramientas LLM](#herramientas-llm).
   - `shared/llm_adapter` → factoría de proveedores LLM (OpenAI, Groq, Gemini, OpenRouter, local…) con caché opcional en Redis.
-  - `shared/logging`, `shared/observability` → logging JSON en stdout y métricas Prometheus (`/metrics`); detalle operativo en la sección **Observabilidad**.
+  - `shared/logging`, `shared/observability` → logging estructurado y métricas Prometheus.
+  - SLIs acordados para paneles y alertas: `infrastructure/observability/SLIS.md` (dashboard Grafana **ADMADC · SLIs**, reglas Prometheus en `infrastructure/prometheus/rules/slis_alerts.yml`).
+>>>>>>> feat/add-grafana-and-prometheus-features
 
 - **Frontend (`frontend/`)**
   - Aplicación React/TypeScript + Vite.
@@ -213,7 +215,7 @@ Cada agente construye un `ToolRegistry` (`shared/tools`): los nombres son los qu
   - **RabbitMQ** (bus de eventos).
   - **Qdrant** (vector DB).
   - **Redis** (caché).
-  - **Prometheus** + **Grafana** (observabilidad).
+  - **Prometheus** + **Alertmanager** + **Grafana** + **Loki** / **Promtail** (observabilidad).
 
 ---
 
@@ -297,7 +299,7 @@ Esto arranca:
 
 - Servicios agenticos: gateway, meta_planner, spec, dev, qa, security, replanner, memory, github.
 - Servicios de soporte: PostgreSQL, RabbitMQ, Redis, Qdrant.
-- Observabilidad: Prometheus, Grafana.
+- Observabilidad: Prometheus, Alertmanager, Grafana, Loki (logs vía Promtail).
 - Frontend: panel web.
 
 4. **Acceder a la plataforma**

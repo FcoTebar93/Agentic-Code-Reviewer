@@ -13,3 +13,5 @@ __pycache__
 .dockerignore
 infrastructure/prometheus
 infrastructure/grafana
+infrastructure/loki
+infrastructure/alertmanager

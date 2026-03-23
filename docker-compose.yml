@@ -10,6 +10,8 @@ volumes:
   github_workspace:
   prometheus_data:
   grafana_data:
+  loki_data:
+  alertmanager_data:
 
 services:
   postgres:
@@ -358,6 +360,66 @@ services:
     networks:
       - admadc_net
 
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: admadc_loki
+    restart: unless-stopped
+    user: "0:0"
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infrastructure/loki/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/config.yaml
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:3100/ready || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - admadc_net
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: admadc_promtail
+    restart: unless-stopped
+    user: "0:0"
+    volumes:
+      - ./infrastructure/loki/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - admadc_net
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: admadc_alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infrastructure/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - admadc_net
+
   prometheus:
     image: prom/prometheus:v2.53.0
     container_name: admadc_prometheus
@@ -366,11 +428,21 @@ services:
       - "9090:9090"
     volumes:
       - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
+    depends_on:
+      - alertmanager
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - admadc_net
 
@@ -385,8 +457,25 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admadc
     volumes:
       - ./infrastructure/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./infrastructure/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+      alertmanager:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:3000/api/health >/dev/null || exit 1",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     networks:
       - admadc_net
