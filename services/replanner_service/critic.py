@@ -6,9 +6,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from shared.contracts.events import QAResultPayload, SecurityResultPayload
-from shared.llm_adapter import LLMProvider, LLMResponse
+from shared.llm_adapter import LLMProvider
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
+from shared.llm_adapter.parse_retry import generate_text_with_parse_retry
+from shared.llm_adapter.tool_loop_budget import (
+    loop_tokens_exceeds_budget,
+    plan_tool_loop_try_add_tokens,
+    tool_calls_exceeds_budget,
+    tool_loop_budget_from_env,
+)
 from shared.observability.metrics import (
     agent_tool_calls_total,
     agent_tool_loop_llm_rounds,
@@ -66,6 +73,10 @@ IMPORTANT (Security denied): The code was BLOCKED by the security scan. Your SUG
 """
 
 
+_REPLANNER_PARSE_REPAIR = (
+    "Debes incluir REVISION_NEEDED: yes o no, SEVERITY:, REASON: y SUGGESTIONS: exactamente como en la plantilla."
+)
+
 REPLANNER_TOOL_LOOP_SYSTEM = """You are a replanning critic in a multi-agent dev pipeline.
 
 Use semantic_outcome_memory (with the plan id) and failure_patterns when you need richer memory than the summary below.
@@ -109,15 +120,19 @@ async def analyse_outcome(
         security_instruction=security_instruction,
     )
 
-    response: LLMResponse = await llm.generate_text(prompt)
+    def _parse(raw: str) -> tuple[ReplanDecision | None, bool]:
+        d = _parse_replanner_response(raw)
+        ok = "REVISION_NEEDED:" in (raw or "").upper()
+        return d, ok
 
-    pt = response.prompt_tokens or 0
-    ct = response.completion_tokens or 0
-    if pt or ct:
-        llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
-        llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
-
-    decision = _parse_replanner_response(response.content)
+    decision, pt, ct = await generate_text_with_parse_retry(
+        llm,
+        initial_prompt=prompt,
+        repair_instruction=_REPLANNER_PARSE_REPAIR,
+        parse=_parse,
+        service_name=SERVICE_NAME,
+        max_attempts=2,
+    )
 
     logger.info(
         "Replanner analysed outcome for plan %s: revision_needed=%s, severity=%s, reason=%s",
@@ -145,6 +160,7 @@ async def analyse_outcome_with_tool_loop(
     memory_context: str,
     outcome_type: str = "qa_failed",
     max_steps: int = 8,
+    redis_url: str | None = None,
 ) -> tuple[ReplanDecision, int, int]:
     """Multi-turn replanner with memory tools before structured verdict."""
     tools = tools_openai_from_registry(registry, _REPLANNER_TOOL_NAMES)
@@ -183,8 +199,10 @@ async def analyse_outcome_with_tool_loop(
     total_pt = 0
     total_ct = 0
     llm_rounds = 0
+    tools_executed = 0
+    budget = tool_loop_budget_from_env(max_steps)
 
-    for _step in range(max(1, max_steps)):
+    for _step in range(max(1, budget.max_steps)):
         llm_rounds += 1
         req = LLMRequest(
             prompt="",
@@ -200,6 +218,22 @@ async def analyse_outcome_with_tool_loop(
         if pt or ct:
             llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
             llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+        if loop_tokens_exceeds_budget(total_pt, total_ct, budget.max_tokens_loop):
+            agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+            agent_tool_loop_outcomes_total.labels(
+                service=SERVICE_NAME, outcome="budget_exceeded"
+            ).inc()
+            return _parse_replanner_response(""), total_pt, total_ct
+        if budget.max_tokens_plan > 0:
+            allowed = await plan_tool_loop_try_add_tokens(
+                redis_url, plan_id, pt + ct, budget.max_tokens_plan
+            )
+            if not allowed:
+                agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                agent_tool_loop_outcomes_total.labels(
+                    service=SERVICE_NAME, outcome="budget_exceeded"
+                ).inc()
+                return _parse_replanner_response(""), total_pt, total_ct
 
         if resp.tool_calls:
             asst: dict[str, Any] = {
@@ -228,6 +262,13 @@ async def analyse_outcome_with_tool_loop(
                     )
                 else:
                     exec_result = await execute_tool(registry, name, args_dict)
+                tools_executed += 1
+                if tool_calls_exceeds_budget(tools_executed, budget.max_tool_calls):
+                    agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
+                    agent_tool_loop_outcomes_total.labels(
+                        service=SERVICE_NAME, outcome="budget_exceeded"
+                    ).inc()
+                    return _parse_replanner_response(""), total_pt, total_ct
                 agent_tool_calls_total.labels(
                     service=SERVICE_NAME,
                     tool_name=name or "unknown",
@@ -243,6 +284,9 @@ async def analyse_outcome_with_tool_loop(
             continue
 
         decision = _parse_replanner_response(resp.content or "")
+        if "REVISION_NEEDED:" not in (resp.content or "").upper():
+            messages.append({"role": "user", "content": _REPLANNER_PARSE_REPAIR})
+            continue
         agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
         agent_tool_loop_outcomes_total.labels(
             service=SERVICE_NAME, outcome="completed"

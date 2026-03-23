@@ -201,6 +201,7 @@ async def _analyse_and_emit_revision(
                         memory_context=memory_context,
                         outcome_type=outcome_type,
                         max_steps=cfg.tool_loop_max_steps,
+                        redis_url=cfg.redis_url,
                     )
                 )
             else:

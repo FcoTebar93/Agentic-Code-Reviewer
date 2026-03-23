@@ -8,6 +8,7 @@ from dataclasses import dataclass
 class ReplannerConfig:
     rabbitmq_url: str
     memory_service_url: str
+    redis_url: str
     llm_provider: str
     log_level: str
     agent_name: str
@@ -22,6 +23,7 @@ class ReplannerConfig:
         return cls(
             rabbitmq_url=os.environ["RABBITMQ_URL"],
             memory_service_url=os.environ["MEMORY_SERVICE_URL"],
+            redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
             llm_provider=os.environ.get(
                 "REPLANNER_LLM_PROVIDER",
                 os.environ.get("LLM_PROVIDER", "mock"),
