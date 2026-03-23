@@ -14,7 +14,9 @@ To switch to a real model, set in .env:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+from typing import Any
 
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
@@ -55,7 +57,9 @@ def _extract_codegen_context(prompt: str) -> tuple[str, str, str]:
     if task_match:
         desc = task_match.group(1).strip()[:200]
 
-    file_match = re.search(r"written for file:\s*(.+)", prompt)
+    file_match = re.search(
+        r"(?:written for file|Target file):\s*(.+?)(?:\s*$|\s*\n)", prompt, re.I | re.M
+    )
     if file_match:
         file_path = file_match.group(1).strip()
 
@@ -146,6 +150,109 @@ def _to_func_name(name: str) -> str:
     clean = re.sub(r"[^a-zA-Z0-9_]", "_", name).lower()
     return clean if clean and clean[0].isalpha() else f"run_{clean}"
 
+
+def _effective_prompt_text(request: LLMRequest) -> str:
+    """Flatten user/system content for heuristics (single- or multi-turn)."""
+    parts: list[str] = []
+    if (request.prompt or "").strip():
+        parts.append(request.prompt.strip())
+    if request.messages:
+        for m in request.messages:
+            role = m.get("role")
+            if role not in ("user", "system"):
+                continue
+            c = m.get("content")
+            if isinstance(c, str) and c.strip():
+                parts.append(c.strip())
+    return "\n\n".join(parts) if parts else ""
+
+
+def _is_spec_tool_prompt(effective: str) -> bool:
+    """Heuristic: spec_service user prompt vs dev_service codegen prompt."""
+    return "TASK DESCRIPTION:" in effective and "TARGET FILE:" in effective
+
+
+def _extract_target_file_from_spec_prompt(prompt: str) -> str:
+    m = re.search(r"TARGET FILE:\s*\n\s*(.+)", prompt, re.I | re.M)
+    if m:
+        return m.group(1).strip().splitlines()[0].strip()
+    return "src/main.py"
+
+
+def _spec_tool_loop_final_response(prompt: str) -> str:
+    """Deterministic SPEC/TESTS for mock after a simulated read_file round."""
+    fp = _extract_target_file_from_spec_prompt(prompt)
+    desc_match = re.search(
+        r"TASK DESCRIPTION:\s*\n(.+?)(?:\n\n|\nTARGET FILE:)", prompt, re.S | re.I
+    )
+    desc = (desc_match.group(1).strip()[:120] if desc_match else "la tarea indicada")
+    return (
+        f"SPEC:\n"
+        f"El cambio en `{fp}` debe cumplir: {desc}. "
+        "Incluir validación de entradas, errores explícitos y comportamiento acorde al plan.\n\n"
+        "TESTS:\n"
+        "- [CRITICAL] Importación y construcción básica del módulo sin errores.\n"
+        "- [CRITICAL] Caso feliz principal alineado con la descripción de la tarea.\n"
+        "- [OPTIONAL] Caso límite o error esperado (entrada inválida o estado vacío).\n"
+    )
+
+
+def _mock_tool_loop_response(request: LLMRequest, prompt_hash: str) -> LLMResponse:
+    """
+    Simulate one tool round (read_file) then a normal completion,
+    for dev_service (codegen) or spec_service (SPEC/TESTS) tool loops.
+    """
+    effective = _effective_prompt_text(request)
+    msgs = request.messages or []
+    saw_tool = any(m.get("role") == "tool" for m in msgs)
+
+    if saw_tool:
+        if _is_spec_tool_prompt(effective):
+            content = _spec_tool_loop_final_response(effective)
+        else:
+            content = _codegen_response(effective)
+        fake_pt = len(effective.split())
+        fake_ct = len(content.split())
+        return LLMResponse(
+            content=content,
+            model="mock-contextual",
+            prompt_tokens=fake_pt,
+            completion_tokens=fake_ct,
+            total_tokens=fake_pt + fake_ct,
+            cached=False,
+            prompt_hash=prompt_hash,
+            tool_calls=None,
+        )
+
+    if _is_spec_tool_prompt(effective):
+        file_path = _extract_target_file_from_spec_prompt(effective)
+    else:
+        _desc, file_path, _lang = _extract_codegen_context(effective)
+    args = {"path": file_path or "src/main.py", "max_bytes": 32000}
+    tool_calls: list[dict[str, Any]] = [
+        {
+            "id": "mock-tool-call-1",
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "arguments": json.dumps(args),
+            },
+        }
+    ]
+    fake_pt = len(effective.split())
+    fake_ct = 12
+    return LLMResponse(
+        content="",
+        model="mock-contextual",
+        prompt_tokens=fake_pt,
+        completion_tokens=fake_ct,
+        total_tokens=fake_pt + fake_ct,
+        cached=False,
+        prompt_hash=prompt_hash,
+        tool_calls=tool_calls,
+    )
+
+
 class MockProvider(LLMProvider):
     """
     Deterministic mock that generates contextual reasoning from real prompt content.
@@ -158,19 +265,27 @@ class MockProvider(LLMProvider):
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         self._call_count += 1
-        prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
-        prompt_type = _detect_prompt_type(request.prompt)
+        effective = _effective_prompt_text(request)
+        key_src = effective if effective else (request.prompt or "")
+        prompt_hash = hashlib.sha256(key_src.encode()).hexdigest()
+
+        if request.tools and request.messages is not None:
+            return _mock_tool_loop_response(request, prompt_hash)
+
+        prompt_type = _detect_prompt_type(effective or request.prompt)
 
         if prompt_type == "planning":
-            content = _plan_response(request.prompt)
+            content = _plan_response(effective or request.prompt)
         elif prompt_type == "codegen":
-            content = _codegen_response(request.prompt)
+            content = _codegen_response(effective or request.prompt)
         elif prompt_type == "qa":
-            content = _qa_response(request.prompt)
+            content = _qa_response(effective or request.prompt)
         else:
-            content = _generic_response(request.prompt, prompt_hash, self._call_count)
+            content = _generic_response(
+                effective or request.prompt, prompt_hash, self._call_count
+            )
 
-        fake_prompt_tokens = len(request.prompt.split())
+        fake_prompt_tokens = len((effective or request.prompt).split())
         fake_completion_tokens = len(content.split())
 
         return LLMResponse(
@@ -181,4 +296,5 @@ class MockProvider(LLMProvider):
             total_tokens=fake_prompt_tokens + fake_completion_tokens,
             cached=False,
             prompt_hash=prompt_hash,
+            tool_calls=None,
         )

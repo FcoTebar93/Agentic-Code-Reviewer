@@ -13,8 +13,9 @@ Temperature is forced to 0 at the adapter level for system-wide determinism.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from shared.llm_adapter.base import LLMProvider
@@ -34,6 +35,51 @@ _DEFAULT_MODELS: dict[str, str] = {
     "gemini":     "gemini-2.0-flash",
     "openrouter": "meta-llama/llama-3.3-70b-instruct:free",
 }
+
+
+def _chat_messages(request: LLMRequest) -> list[dict[str, Any]]:
+    if request.messages is not None:
+        return list(request.messages)
+    return [{"role": "user", "content": request.prompt}]
+
+
+def _normalize_tool_calls_from_json(
+    raw: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]] | None:
+    if not raw:
+        return None
+    out: list[dict[str, Any]] = []
+    for tc in raw:
+        fn = tc.get("function") or {}
+        out.append(
+            {
+                "id": tc.get("id", ""),
+                "type": tc.get("type") or "function",
+                "function": {
+                    "name": fn.get("name", ""),
+                    "arguments": fn.get("arguments") or "",
+                },
+            }
+        )
+    return out or None
+
+
+def _normalize_tool_calls_from_sdk(raw: Any) -> list[dict[str, Any]] | None:
+    if not raw:
+        return None
+    out: list[dict[str, Any]] = []
+    for tc in raw:
+        out.append(
+            {
+                "id": tc.id,
+                "type": getattr(tc, "type", None) or "function",
+                "function": {
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments or "",
+                },
+            }
+        )
+    return out or None
 
 
 class OpenAIProvider(LLMProvider):
@@ -112,7 +158,11 @@ class OpenAIProvider(LLMProvider):
         - timeout: HTTP/transport timeout
         - error:   non-timeout error (4xx/5xx or client error)
         """
-        prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
+        messages = _chat_messages(request)
+        key_material = request.prompt.encode()
+        if request.messages is not None:
+            key_material = json.dumps(messages, sort_keys=True).encode()
+        prompt_hash = hashlib.sha256(key_material).hexdigest()
         model = self._model if request.model in ("", "gpt-4o") else request.model
         provider = self._provider_name
 
@@ -126,22 +176,32 @@ class OpenAIProvider(LLMProvider):
             while attempt <= max_retries:
                 try:
                     if getattr(self, "_use_raw_http", False):
+                        payload: dict[str, Any] = {
+                            "model": model,
+                            "temperature": 0.0,
+                            "max_tokens": request.max_tokens,
+                            "messages": messages,
+                        }
+                        if request.tools:
+                            payload["tools"] = request.tools
+                            payload["tool_choice"] = (
+                                request.tool_choice
+                                if request.tool_choice is not None
+                                else "auto"
+                            )
+
                         resp = await self._http_client.post(
                             "/chat/completions",
-                            json={
-                                "model": model,
-                                "temperature": 0.0,
-                                "max_tokens": request.max_tokens,
-                                "messages": [
-                                    {"role": "user", "content": request.prompt}
-                                ],
-                            },
+                            json=payload,
                         )
                         resp.raise_for_status()
                         data = resp.json()
 
                         choice = data["choices"][0]
                         usage = data.get("usage") or {}
+                        msg = choice.get("message") or {}
+                        raw_tcs = msg.get("tool_calls")
+                        tool_calls = _normalize_tool_calls_from_json(raw_tcs)
 
                         llm_requests.labels(
                             provider=provider,
@@ -151,24 +211,38 @@ class OpenAIProvider(LLMProvider):
                         ).inc()
 
                         return LLMResponse(
-                            content=choice["message"]["content"] or "",
+                            content=(msg.get("content") or "") or "",
                             model=data.get("model", model),
                             prompt_tokens=usage.get("prompt_tokens", 0),
                             completion_tokens=usage.get("completion_tokens", 0),
                             total_tokens=usage.get("total_tokens", 0),
                             cached=False,
                             prompt_hash=prompt_hash,
+                            tool_calls=tool_calls,
                         )
 
-                    response = await self._client.chat.completions.create(
-                        model=model,
-                        temperature=0.0,
-                        max_tokens=request.max_tokens,
-                        messages=[{"role": "user", "content": request.prompt}],
-                    )
+                    kwargs: dict[str, Any] = {
+                        "model": model,
+                        "temperature": 0.0,
+                        "max_tokens": request.max_tokens,
+                        "messages": messages,
+                    }
+                    if request.tools:
+                        kwargs["tools"] = request.tools
+                        kwargs["tool_choice"] = (
+                            request.tool_choice
+                            if request.tool_choice is not None
+                            else "auto"
+                        )
+
+                    response = await self._client.chat.completions.create(**kwargs)
 
                     choice = response.choices[0]
                     usage = response.usage
+                    msg = choice.message
+                    tool_calls = _normalize_tool_calls_from_sdk(
+                        getattr(msg, "tool_calls", None)
+                    )
 
                     llm_requests.labels(
                         provider=provider,
@@ -178,13 +252,14 @@ class OpenAIProvider(LLMProvider):
                     ).inc()
 
                     return LLMResponse(
-                        content=choice.message.content or "",
+                        content=msg.content or "",
                         model=response.model,
                         prompt_tokens=usage.prompt_tokens if usage else 0,
                         completion_tokens=usage.completion_tokens if usage else 0,
                         total_tokens=usage.total_tokens if usage else 0,
                         cached=False,
                         prompt_hash=prompt_hash,
+                        tool_calls=tool_calls,
                     )
                 except (httpx.TimeoutException, TimeoutError) as exc:
                     last_exc = exc

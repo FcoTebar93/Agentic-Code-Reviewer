@@ -47,6 +47,9 @@ class CachedLLMProvider(LLMProvider):
                 )
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
+        if request.messages is not None or request.tools:
+            return await self._inner.generate(request)
+
         cache_key = self._make_key(request)
 
         cached = await self._get(cache_key)
