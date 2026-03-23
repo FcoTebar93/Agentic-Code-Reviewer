@@ -30,6 +30,7 @@ from shared.http.client import create_async_http_client
 from pydantic import BaseModel
 
 from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import metrics_response, agent_execution_time, tasks_completed, llm_tokens
 from shared.contracts.events import (
     BaseEvent,
@@ -185,6 +186,7 @@ app = FastAPI(
     description="Orchestrates task decomposition and agent coordination",
     lifespan=lifespan,
 )
+install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
 
 @app.get("/health")

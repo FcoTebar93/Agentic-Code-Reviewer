@@ -28,6 +28,7 @@ from fastapi import FastAPI
 
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import metrics_response
 from shared.contracts.events import BaseEvent, EventType, CodeGeneratedPayload
 from shared.utils import EventBus, IdempotencyStore
@@ -79,6 +80,7 @@ app = FastAPI(
     description="Quality gate: reviews generated code before PR creation",
     lifespan=lifespan,
 )
+install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
 
 @app.get("/health")

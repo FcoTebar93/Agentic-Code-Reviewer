@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import metrics_response, agent_execution_time
 from shared.contracts.events import (
     BaseEvent,
@@ -83,6 +84,7 @@ app = FastAPI(
     description="Generates task specifications and test suggestions before dev_service runs",
     lifespan=lifespan,
 )
+install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
 
 

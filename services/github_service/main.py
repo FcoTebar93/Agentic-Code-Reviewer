@@ -22,6 +22,7 @@ from fastapi import FastAPI
 
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import metrics_response, pr_creation_latency, tasks_completed
 from shared.contracts.events import (
     BaseEvent,
@@ -82,6 +83,7 @@ app = FastAPI(
     description="Handles git operations, branching, and PR creation",
     lifespan=lifespan,
 )
+install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
 
 

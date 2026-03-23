@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
 from shared.utils import EventBus
 from services.gateway_service.config import GatewayConfig
 from services.gateway_service.constants import SERVICE_NAME
@@ -77,6 +78,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+install_correlation_middleware(app)
 
 app.include_router(health_router)
 app.include_router(proxy_router)
