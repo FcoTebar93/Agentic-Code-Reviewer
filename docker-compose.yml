@@ -11,6 +11,7 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  alertmanager_data:
 
 services:
   postgres:
@@ -387,6 +388,21 @@ services:
     networks:
       - admadc_net
 
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: admadc_alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infrastructure/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    networks:
+      - admadc_net
+
   prometheus:
     image: prom/prometheus:v2.53.0
     container_name: admadc_prometheus
@@ -401,6 +417,8 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
+    depends_on:
+      - alertmanager
     networks:
       - admadc_net
 

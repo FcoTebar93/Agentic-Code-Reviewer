@@ -14,3 +14,4 @@ __pycache__
 infrastructure/prometheus
 infrastructure/grafana
 infrastructure/loki
+infrastructure/alertmanager
