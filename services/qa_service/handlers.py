@@ -27,6 +27,11 @@ from shared.llm_adapter import get_llm_provider
 from shared.observability.metrics import agent_execution_time, tasks_completed
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import EventBus, build_short_term_memory_window, store_event
+from shared.prompt_locale import (
+    qa_hot_module_note,
+    qa_hot_module_stm_block,
+    qa_memory_section_headers,
+)
 from shared.policies import load_project_policy, policy_for_path, effective_mode
 from services.qa_service.config import QAConfig
 from services.qa_service.reviewer import review_code, ReviewResult
@@ -83,6 +88,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
 
         module = _infer_module_from_path(payload.file_path)
         is_hot_module = await _is_hot_module(module, deps)
+        user_locale = getattr(payload, "user_locale", None) or "en"
 
         raw_mode = getattr(payload, "mode", "normal") or "normal"
         try:
@@ -139,30 +145,46 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 prefix = f"FRAMEWORK HINT: {framework_hint}\n\n"
                 stm_block = prefix + (stm_block or "")
             if is_hot_module:
-                hot_note = (
-                    "MODULO EN ZONA CALIENTE:\n"
-                    f"- Este archivo pertenece al módulo '{module}', que tiene un historial "
-                    "de fallos QA/seguridad según los patrones agregados.\n"
-                    "- Sé más estricto con validaciones de entrada, manejo de errores y "
-                    "casos borde, y NO aceptes soluciones frágiles aunque parezcan pasar tests simples.\n\n"
-                )
-                stm_block = hot_note + (stm_block or "")
+                stm_block = qa_hot_module_stm_block(user_locale, module) + (stm_block or "")
             qa_context = _build_qa_context(
                 short_term_memory=stm_block,
                 repo_context=repo_context,
+                user_locale=user_locale,
             )
-            result, prompt_tokens, completion_tokens = await review_code(
-                llm=llm,
-                code=payload.code,
-                file_path=payload.file_path,
-                language=payload.language,
-                task_description=(
-                    f"Generate {payload.language} code for {payload.file_path}"
-                ),
-                dev_reasoning=dev_reasoning,
-                short_term_memory=qa_context,
-                static_analysis_report=static_report,
-            )
+            if deps.cfg.enable_tool_loop and deps.tool_registry is not None:
+                result, prompt_tokens, completion_tokens = (
+                    await review_code_with_tool_loop(
+                        llm=llm,
+                        code=payload.code,
+                        file_path=payload.file_path,
+                        language=payload.language,
+                        task_description=(
+                            f"Generate {payload.language} code for {payload.file_path}"
+                        ),
+                        dev_reasoning=dev_reasoning,
+                        short_term_memory=qa_context,
+                        static_analysis_report=static_report,
+                        registry=deps.tool_registry,
+                        max_steps=deps.cfg.tool_loop_max_steps,
+                        plan_id=plan_id,
+                        redis_url=deps.cfg.redis_url,
+                        user_locale=user_locale,
+                    )
+                )
+            else:
+                result, prompt_tokens, completion_tokens = await review_code(
+                    llm=llm,
+                    code=payload.code,
+                    file_path=payload.file_path,
+                    language=payload.language,
+                    task_description=(
+                        f"Generate {payload.language} code for {payload.file_path}"
+                    ),
+                    dev_reasoning=dev_reasoning,
+                    short_term_memory=qa_context,
+                    static_analysis_report=static_report,
+                    user_locale=user_locale,
+                )
 
     if prompt_tokens or completion_tokens:
         tok_event = metrics_tokens_used(
@@ -183,11 +205,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
 
     reasoning = result.reasoning or ""
     if is_hot_module:
-        suffix = (
-            "\n[QA] Esta revisión se ha aplicado con mayor rigor porque el módulo "
-            f"'{module}' aparece como zona caliente en patrones históricos de fallos."
-        )
-        reasoning = (reasoning + suffix).strip()
+        reasoning = (reasoning + qa_hot_module_note(user_locale, module)).strip()
 
     deps.qa_reasoning_cache[task_id] = reasoning
 
@@ -207,6 +225,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         mode=mode,
         module=module,
         severity_hint=severity_hint,
+        user_locale=user_locale,
     )
 
     if result.passed:
@@ -295,6 +314,7 @@ async def _retry_task(
         task=retry_spec,
         qa_feedback=feedback,
         mode=getattr(original, "mode", "normal"),
+        user_locale=getattr(original, "user_locale", None) or "en",
     )
     retry_event = task_assigned("qa_service", retry_payload)
     await deps.event_bus.publish(retry_event)
@@ -331,6 +351,9 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
         if not all(t["status"] == "qa_passed" for t in all_tasks):
             return
 
+        plan_mode = await _infer_plan_mode(plan_id, deps)
+        plan_user_locale = await _infer_plan_user_locale(plan_id, deps)
+
         seen_paths: set[str] = set()
         files: list[CodeGeneratedPayload] = []
         for t in all_tasks:
@@ -349,10 +372,9 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
                         deps.dev_reasoning_cache,
                         deps.qa_reasoning_cache,
                     ),
+                    user_locale=plan_user_locale,
                 )
             )
-
-        plan_mode = await _infer_plan_mode(plan_id, deps)
 
         deps.pr_requested_plan_ids.add(plan_id)
         repo_url = next((t.get("repo_url", "") for t in all_tasks), "")
@@ -364,6 +386,7 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
             commit_message=f"feat: implement plan {plan_id[:8]} (QA approved)",
             security_approved=False,
             mode=plan_mode,
+            user_locale=plan_user_locale,
         )
         pr_event = pr_requested("qa_service", pr_payload)
         await deps.event_bus.publish(pr_event)
@@ -411,6 +434,31 @@ async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
     except Exception:
         deps.logger.exception("Error inferring plan mode for %s", plan_id[:8])
         return "normal"
+
+
+async def _infer_plan_user_locale(plan_id: str, deps: QADeps) -> str:
+    """Best-effort user_locale from plan.created (defaults to en)."""
+    try:
+        resp = await deps.http_client.get(
+            "/events",
+            params={
+                "event_type": EventType.PLAN_CREATED.value,
+                "plan_id": plan_id,
+                "limit": 1,
+            },
+        )
+        if resp.status_code != 200:
+            return "en"
+        events = resp.json()
+        if not isinstance(events, list) or not events:
+            return "en"
+        evt = events[0] or {}
+        payload = evt.get("payload") or {}
+        raw = payload.get("user_locale", "en") or "en"
+        return str(raw).strip().lower() or "en"
+    except Exception:
+        deps.logger.exception("Error inferring plan user_locale for %s", plan_id[:8])
+        return "en"
 
 
 def _build_chain_reasoning(
@@ -498,23 +546,22 @@ def _build_qa_context(
     short_term_memory: str,
     repo_context: str,
     max_chars: int = 2500,
+    *,
+    user_locale: str = "en",
 ) -> str:
     """
-    Construye un contexto compacto y estructurado para el LLM de QA.
-
-    - Da prioridad a la memoria reciente del plan.
-    - Añade un pequeño bloque con usos relacionados en el repositorio.
-    - Recorta el resultado para mantener bajo el uso de tokens.
+    Compact structured context for the QA LLM: plan memory first, then repo snippets.
     """
+    mem_title, repo_title = qa_memory_section_headers(user_locale)
     blocks: list[str] = []
 
     stm = (short_term_memory or "").strip()
     if stm:
-        blocks.append("MEMORIA RECIENTE DEL PLAN:\n" + stm[:1800])
+        blocks.append(mem_title + stm[:1800])
 
     repo = (repo_context or "").strip()
     if repo:
-        blocks.append("CONTEXTO DEL REPOSITORIO:\n" + repo[:500])
+        blocks.append(repo_title + repo[:500])
 
     combined = "\n\n".join(blocks)
     if len(combined) > max_chars:

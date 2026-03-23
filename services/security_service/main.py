@@ -38,6 +38,10 @@ from shared.contracts.events import (
     security_blocked,
 )
 from shared.utils import EventBus, IdempotencyStore, store_event
+from shared.prompt_locale import (
+    natural_language_rules_for_locale,
+    security_memory_context_prefix,
+)
 from services.security_service.config import SecurityConfig
 from services.security_service.scanner import scan_files
 from services.security_service.prompts import SECURITY_REVIEW_PROMPT
@@ -115,6 +119,7 @@ async def _consume_pr_requests() -> None:
 
 async def _handle_security_scan(payload: PRRequestedPayload) -> None:
     plan_id = payload.plan_id
+    user_locale = getattr(payload, "user_locale", None) or "en"
     raw_mode = getattr(payload, "mode", "normal") or "normal"
 
     try:
@@ -148,7 +153,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         memory_ctx = await _fetch_security_memory_context(plan_id)
         if memory_ctx:
             reasoning = (reasoning + "\n\n" if reasoning else "") + (
-                "Contexto histórico de seguridad relevante:\n" + memory_ctx
+                security_memory_context_prefix(user_locale) + memory_ctx
             )
 
         try:
@@ -198,6 +203,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
         pr_context=payload.model_dump(),
         reasoning=reasoning,
         severity_hint=severity_hint,
+        user_locale=user_locale,
     )
 
     if result.approved:

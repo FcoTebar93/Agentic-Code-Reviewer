@@ -61,8 +61,10 @@ Severity levels:
 
 If you believe any blocker rule is clearly violated, you MUST return VERDICT: FAIL, even if the rest looks fine.
 
+RESPONSE LANGUAGE:
+{response_language_rules}
+
 IMPORTANT:
-- Write all explanations and details in Spanish.
 - Keep all section headers and labels (REASONING, VERDICT, ISSUES, REQUIRED_CHANGES, OPTIONAL_IMPROVEMENTS) EXACTLY as specified below.
 - Use plain text only (no markdown lists other than the requested bullets).
 
@@ -89,6 +91,19 @@ OPTIONAL_IMPROVEMENTS:
 - <optional improvement 1 (small refactor, style, minor perf, etc.)>
 - <optional improvement 2>
 (write "OPTIONAL_IMPROVEMENTS: none" if you have no optional suggestions)
+"""
+
+
+QA_TOOL_LOOP_SYSTEM = """You are the same strict QA reviewer as in the user prompt.
+
+Before the final verdict you may call read_file and search_in_repo to compare the patch with the rest
+of the repository (read-only). Be brief: few calls, repo-relative paths.
+
+When finished, respond with NO tool calls using the exact required format from the user prompt:
+REASONING:, VERDICT:, ISSUES:, REQUIRED_CHANGES:, OPTIONAL_IMPROVEMENTS: (exact labels).
+
+RESPONSE LANGUAGE:
+{response_language_rules}
 """
 
 
@@ -132,8 +147,10 @@ Severity levels:
 
 If you believe any blocker rule is clearly violated, you MUST return VERDICT: FAIL, even if the rest looks fine.
 
+RESPONSE LANGUAGE:
+{response_language_rules}
+
 IMPORTANT:
-- Write all explanations and details in Spanish.
 - Keep all section headers and labels (REASONING, VERDICT, ISSUES, REQUIRED_CHANGES, OPTIONAL_IMPROVEMENTS) EXACTLY as specified below.
 - Use plain text only (no markdown lists other than the requested bullets).
 

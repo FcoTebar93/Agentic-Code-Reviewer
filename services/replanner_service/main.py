@@ -161,6 +161,8 @@ async def _analyse_and_emit_revision(
     if cfg is None:
         return
 
+    user_locale = getattr(outcome, "user_locale", None) or "en"
+
     target_group_ids: list[str] = []
     if isinstance(outcome, QAResultPayload):
         fp = (outcome.file_path or "").strip()
@@ -188,14 +190,31 @@ async def _analyse_and_emit_revision(
             llm = get_llm_provider(provider_name=cfg.llm_provider)
             memory_context = await _fetch_memory_context(plan_id)
 
-            result, prompt_tokens, completion_tokens = await analyse_outcome(
-                llm=llm,
-                agent_goal=cfg.agent_goal,
-                plan_id=plan_id,
-                outcome=outcome,
-                memory_context=memory_context,
-                outcome_type=outcome_type,
-            )
+            if cfg.enable_tool_loop and tool_registry is not None:
+                result, prompt_tokens, completion_tokens = (
+                    await analyse_outcome_with_tool_loop(
+                        llm,
+                        tool_registry,
+                        agent_goal=cfg.agent_goal,
+                        plan_id=plan_id,
+                        outcome=outcome,
+                        memory_context=memory_context,
+                        outcome_type=outcome_type,
+                        max_steps=cfg.tool_loop_max_steps,
+                        redis_url=cfg.redis_url,
+                        user_locale=user_locale,
+                    )
+                )
+            else:
+                result, prompt_tokens, completion_tokens = await analyse_outcome(
+                    llm=llm,
+                    agent_goal=cfg.agent_goal,
+                    plan_id=plan_id,
+                    outcome=outcome,
+                    memory_context=memory_context,
+                    outcome_type=outcome_type,
+                    user_locale=user_locale,
+                )
 
             if prompt_tokens or completion_tokens:
                 tok_event = metrics_tokens_used(

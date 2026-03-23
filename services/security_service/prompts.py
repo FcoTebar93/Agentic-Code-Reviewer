@@ -31,18 +31,21 @@ Your goals:
 4. If the scanner approved the PR, briefly state what you checked and any
    remaining low-risk concerns (if relevant).
 
-IMPORTANT:
-- Write your explanations in Spanish, but keep technical terms or rule IDs in English.
-- Be concise and actionable; this text will be read in a PR approval panel.
+RESPONSE LANGUAGE:
+{response_language_rules}
+
+Be concise and actionable; this text will be read in a PR approval panel.
+Keep technical terms and rule IDs in English when they are standard identifiers.
 
 Format your response EXACTLY as:
-RESUMEN:
-<2-3 frases explicando el estado general de seguridad de este cambio>
+SUMMARY:
+<2-3 sentences on the overall security posture of this change>
 
-DETALLES:
-- <detalle 1 sobre la naturaleza de los problemas o por qué son relevantes>
-- <detalle 2 (opcional)>
+DETAILS:
+- <detail about the nature of issues or why they matter>
+- <optional second detail>
 
-REMEDIACIONES:
-- <acción 1 que el equipo debería tomar para mejorar la seguridad de este PR>
-- <acción 2 (opcional)>
+REMEDIATIONS:
+- <action the team should take to improve security for this PR>
+- <optional second action>
+"""
