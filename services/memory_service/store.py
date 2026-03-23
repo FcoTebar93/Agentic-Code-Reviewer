@@ -35,6 +35,7 @@ from services.memory_service.database import (
     get_session,
 )
 from shared.contracts.events import BaseEvent, EventType
+from shared.llm_adapter.tool_loop_budget import semantic_index_dedup_key
 
 logger = logging.getLogger(__name__)
 
@@ -385,6 +386,22 @@ class MemoryStore:
         text, importance, impact, extra_payload = self._event_to_index_text(event)
         if not text.strip():
             return
+
+        dedup_ttl = int(os.environ.get("MEMORY_SEMANTIC_INDEX_DEDUP_TTL_SEC", "0"))
+        if dedup_ttl > 0:
+            key = semantic_index_dedup_key(text)
+            try:
+                was_set = await self._redis.set(
+                    key, event.event_id, nx=True, ex=dedup_ttl
+                )
+                if was_set is None:
+                    logger.debug(
+                        "Skipping duplicate semantic index for event %s (dedup key)",
+                        event.event_id[:8],
+                    )
+                    return
+            except Exception:
+                logger.debug("Semantic index dedup check failed", exc_info=True)
 
         vector = await self._embed_text(text)
         payload: dict[str, Any] = {
