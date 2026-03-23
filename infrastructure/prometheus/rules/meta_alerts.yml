@@ -1,0 +1,12 @@
+groups:
+  - name: admadc_observability_meta
+    interval: 30s
+    rules:
+      - alert: AdmadcObservabilityComponentDown
+        expr: up{job=~"prometheus|alertmanager|loki"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Componente de observabilidad caído ({{ $labels.job }})"
+          description: "El scrape de Prometheus para este job falla; revisa el contenedor y la red."
