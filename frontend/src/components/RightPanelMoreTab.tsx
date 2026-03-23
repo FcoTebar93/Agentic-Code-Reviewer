@@ -80,6 +80,7 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
         <div className="space-y-1.5">
           {[
             { label: "Grafana", url: "http://localhost:3000" },
+            { label: "Grafana · SLIs", url: "http://localhost:3000/d/admadc-slis" },
             { label: "Prometheus", url: "http://localhost:9090" },
             { label: "Loki", url: "http://localhost:3100/ready" },
             { label: "RabbitMQ UI", url: "http://localhost:15672" },
