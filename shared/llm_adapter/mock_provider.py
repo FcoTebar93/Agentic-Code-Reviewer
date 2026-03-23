@@ -93,10 +93,14 @@ def _plan_response(prompt: str) -> str:
         "Determined a single self-contained module is sufficient given the scope. "
         "Chose `src/main.py` as entry point to keep the structure minimal and testable."
     )
-    task_json = (
-        '[{"description": "Implement: ' + _safe_json_str(user_request[:120]) + '", '
-        '"file_path": "src/main.py", "language": "python"}]'
-    )
+    tasks_obj = [
+        {
+            "description": f"Implement: {user_request[:120]}",
+            "file_path": "src/main.py",
+            "language": "python",
+        }
+    ]
+    task_json = json.dumps(tasks_obj, ensure_ascii=False)
     return f"REASONING: {reasoning}\nTASKS: {task_json}"
 
 
@@ -212,6 +216,10 @@ def _is_replanner_tool_loop(effective: str) -> bool:
     )
 
 
+def _is_qa_tool_loop(effective: str) -> bool:
+    return "[ADMADC_TOOL_LOOP_QA]" in effective
+
+
 def _extract_plan_uuid_for_mock(prompt: str) -> str:
     m = re.search(
         r"plan with id ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
@@ -244,6 +252,8 @@ def _mock_tool_loop_response(request: LLMRequest, prompt_hash: str) -> LLMRespon
     if saw_tool:
         if _is_spec_tool_prompt(effective):
             content = _spec_tool_loop_final_response(effective)
+        elif _is_qa_tool_loop(effective):
+            content = _qa_response(effective)
         elif _is_replanner_tool_loop(effective):
             content = _replanner_tool_final_response()
         elif _is_planner_tool_loop(effective):
@@ -267,6 +277,10 @@ def _mock_tool_loop_response(request: LLMRequest, prompt_hash: str) -> LLMRespon
         pid = _extract_plan_uuid_for_mock(effective)
         args = {"plan_id": pid, "limit": 5}
         fn_name = "semantic_outcome_memory"
+    elif _is_qa_tool_loop(effective):
+        file_path, _language, _lines = _extract_qa_context(effective)
+        args = {"path": file_path or "src/main.py", "max_bytes": 32000}
+        fn_name = "read_file"
     elif _is_planner_tool_loop(effective):
         q = _extract_user_request(effective)
         args = {"query": (q or "implementation")[:200], "limit": 5}
