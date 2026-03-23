@@ -23,6 +23,7 @@ class LLMRequest(BaseModel):
     messages: list[dict[str, Any]] | None = None
     tools: list[dict[str, Any]] | None = None
     tool_choice: str | dict[str, Any] | None = None
+    response_format: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _require_prompt_or_messages(self) -> LLMRequest:

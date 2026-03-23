@@ -189,6 +189,8 @@ class OpenAIProvider(LLMProvider):
                                 if request.tool_choice is not None
                                 else "auto"
                             )
+                        if request.response_format is not None:
+                            payload["response_format"] = request.response_format
 
                         resp = await self._http_client.post(
                             "/chat/completions",
@@ -234,6 +236,8 @@ class OpenAIProvider(LLMProvider):
                             if request.tool_choice is not None
                             else "auto"
                         )
+                    if request.response_format is not None:
+                        kwargs["response_format"] = request.response_format
 
                     response = await self._client.chat.completions.create(**kwargs)
 

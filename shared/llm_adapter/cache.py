@@ -72,6 +72,7 @@ class CachedLLMProvider(LLMProvider):
                 "prompt": request.prompt,
                 "model": request.model,
                 "max_tokens": request.max_tokens,
+                "response_format": request.response_format,
             },
             sort_keys=True,
         )
