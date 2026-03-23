@@ -149,6 +149,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - `shared/tools` → registro y ejecución de herramientas (`read_file`, `list_project_files`, `run_tests`, linters, semgrep, búsqueda semántica…).
   - `shared/llm_adapter` → factoría de proveedores LLM (OpenAI, Groq, Gemini, OpenRouter, local…) con caché opcional en Redis.
   - `shared/logging`, `shared/observability` → logging estructurado y métricas Prometheus.
+  - SLIs acordados para paneles y alertas: `infrastructure/observability/SLIS.md`.
 
 - **Frontend (`frontend/`)**
   - Aplicación React/TypeScript + Vite.
@@ -194,7 +195,7 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - **RabbitMQ** (bus de eventos).
   - **Qdrant** (vector DB).
   - **Redis** (caché).
-  - **Prometheus** + **Grafana** (observabilidad).
+  - **Prometheus** + **Grafana** + **Loki** / **Promtail** (observabilidad).
 
 ---
 
@@ -243,7 +244,7 @@ Esto arranca:
 
 - Servicios agenticos: gateway, meta_planner, spec, dev, qa, security, replanner, memory, github.
 - Servicios de soporte: PostgreSQL, RabbitMQ, Redis, Qdrant.
-- Observabilidad: Prometheus, Grafana.
+- Observabilidad: Prometheus, Grafana, Loki (logs vía Promtail).
 - Frontend: panel web.
 
 4. **Acceder a la plataforma**
