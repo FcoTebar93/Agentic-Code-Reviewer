@@ -6,6 +6,7 @@ and publishes events for the dev_service to consume.
 
 Entry points:
 - HTTP POST /plan  (user-facing)
+- HTTP POST /ask  (Q&A over semantic memory + optional plan events)
 - RabbitMQ consumer for plan.requested events
 
 Idempotency: identical request (prompt, project, repo, mode, user_locale) within
@@ -26,7 +27,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from shared.http.client import create_async_http_client
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Any
 
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
@@ -49,6 +51,7 @@ from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
 from services.meta_planner.config import PlannerConfig
 from services.meta_planner.deps import MetaPlannerDeps
+from services.meta_planner.ask_agent import run_ask_agent
 from services.meta_planner.planner import decompose_tasks, decompose_tasks_with_tool_loop
 from services.meta_planner.tools import build_planner_tool_registry
 
@@ -212,6 +215,19 @@ class PlanResponse(BaseModel):
     tasks: list[dict]
 
 
+class AskRequest(BaseModel):
+    question: str
+    plan_id: str | None = None
+    user_locale: str = "en"
+
+
+class AskResponse(BaseModel):
+    answer: str
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
 @app.post("/plan", response_model=PlanResponse)
 async def create_plan(req: PlanRequest):
     key = plan_idempotency_key_meta_planner(req.model_dump())
@@ -265,6 +281,52 @@ async def create_plan(req: PlanRequest):
                 "error_type": type(e).__name__,
             },
         )
+
+
+@app.post("/ask", response_model=AskResponse)
+async def agent_ask(req: AskRequest):
+    """Answer questions using semantic memory and optional plan-scoped events."""
+    global http_client, cfg
+    if http_client is None or cfg is None:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Service not ready"},
+        )
+    q = (req.question or "").strip()
+    if not q:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "question must be non-empty"},
+        )
+    try:
+        llm = get_llm_provider(provider_name=cfg.llm_provider)
+        answer, sources, pt, ct = await run_ask_agent(
+            llm,
+            memory_client=http_client,
+            question=q,
+            plan_id=(req.plan_id or "").strip() or None,
+            user_locale=getattr(req, "user_locale", None) or "en",
+        )
+        if pt or ct:
+            llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt)
+            llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
+        return AskResponse(
+            answer=answer,
+            sources=sources,
+            prompt_tokens=pt,
+            completion_tokens=ct,
+        )
+    except Exception as e:
+        logger.exception("agent ask failed")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Agent ask failed",
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
+
 
 async def _execute_plan(
     prompt: str,
