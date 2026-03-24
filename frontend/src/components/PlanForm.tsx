@@ -8,6 +8,35 @@ interface PlanResult {
   tasks: Array<{ task_id: string; description: string; file_path: string }>;
 }
 
+const LOCALE_OPTIONS = [
+  { value: "auto", label: "Auto (browser language)" },
+  { value: "en", label: "English" },
+  { value: "es", label: "Español" },
+  { value: "fr", label: "Français" },
+  { value: "de", label: "Deutsch" },
+  { value: "pt", label: "Português" },
+  { value: "it", label: "Italiano" },
+] as const;
+
+const SUPPORTED_PRIMARY = new Set([
+  "en",
+  "es",
+  "fr",
+  "de",
+  "pt",
+  "it",
+  "ja",
+  "zh",
+  "ko",
+]);
+
+function effectiveUserLocale(choice: string): string {
+  if (choice !== "auto") return choice;
+  if (typeof navigator === "undefined") return "en";
+  const primary = (navigator.language || "en").split("-")[0].toLowerCase();
+  return SUPPORTED_PRIMARY.has(primary) ? primary : "en";
+}
+
 export function PlanForm() {
   const [prompt, setPrompt] = useState("");
   const [projectName, setProjectName] = useState("my-project");
@@ -15,6 +44,7 @@ export function PlanForm() {
   const [mode, setMode] = useState<"normal" | "save">("normal");
   const [replannerAggressiveness, setReplannerAggressiveness] = useState<"0" | "1" | "2">("1");
   const [plannerProvider, setPlannerProvider] = useState<string>("default");
+  const [userLocaleChoice, setUserLocaleChoice] = useState<string>("auto");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +63,7 @@ export function PlanForm() {
       const body: Record<string, string> = {
         prompt: prompt.trim(),
         project_name: projectName,
+        user_locale: effectiveUserLocale(userLocaleChoice),
       };
       if (repoUrl.trim()) {
         body.repo_url = repoUrl.trim();
@@ -82,6 +113,23 @@ export function PlanForm() {
           >
             <option value="normal">normal (more context, more tokens)</option>
             <option value="save">save (reduced context, fewer tokens)</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-neutral-500 text-xs font-mono mb-1">
+            Agent response language
+          </label>
+          <select
+            value={userLocaleChoice}
+            onChange={(e) => setUserLocaleChoice(e.target.value)}
+            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
+          >
+            {LOCALE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
           </select>
         </div>
 
