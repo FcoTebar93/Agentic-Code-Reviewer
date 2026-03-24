@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import time
@@ -9,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from shared.plan_idempotency import plan_idempotency_key_gateway
 from shared.contracts.events import (
     PlanRevisionPayload,
     plan_revision_confirmed,
@@ -41,12 +41,7 @@ async def create_plan(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
 ):
     try:
-        prompt = (request_body.get("prompt") or "").strip()
-        project_name = (request_body.get("project_name") or "default").strip()
-        repo_url = (request_body.get("repo_url") or "").strip()
-        key = hashlib.sha256(
-            f"{prompt}|{project_name}|{repo_url}".encode()
-        ).hexdigest()
+        key = plan_idempotency_key_gateway(request_body)
         now = time.monotonic()
         if key in rt.plan_idem_cache:
             cached_content, cached_at = rt.plan_idem_cache[key]
