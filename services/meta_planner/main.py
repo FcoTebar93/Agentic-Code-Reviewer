@@ -8,7 +8,7 @@ Entry points:
 - HTTP POST /plan  (user-facing)
 - RabbitMQ consumer for plan.requested events
 
-Idempotency: identical request (prompt + project_name + repo_url) within
+Idempotency: identical request (prompt, project, repo, mode, user_locale) within
 IDEM_TTL_SECONDS returns the same plan without re-running the pipeline,
 avoiding duplicate task.assigned and duplicate files.
 """
@@ -16,7 +16,6 @@ avoiding duplicate task.assigned and duplicate files.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import os
 import time
@@ -44,6 +43,7 @@ from shared.contracts.events import (
     task_assigned,
     metrics_tokens_used,
 )
+from shared.plan_idempotency import plan_idempotency_key_meta_planner
 from shared.llm_adapter import get_llm_provider
 from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
@@ -214,9 +214,7 @@ class PlanResponse(BaseModel):
 
 @app.post("/plan", response_model=PlanResponse)
 async def create_plan(req: PlanRequest):
-    key = hashlib.sha256(
-        f"{req.prompt}|{req.project_name}|{req.repo_url}".encode()
-    ).hexdigest()
+    key = plan_idempotency_key_meta_planner(req.model_dump())
     now = time.monotonic()
     if key in _plan_idem_cache:
         cached_plan_id, cached_resp, cached_at = _plan_idem_cache[key]

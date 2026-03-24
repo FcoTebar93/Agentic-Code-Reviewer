@@ -33,6 +33,15 @@ from shared.observability.metrics import (
     llm_tokens,
 )
 from shared.policies import rules_for_language, Rule
+from shared.prompt_locale import (
+    natural_language_rules_for_locale,
+    qa_heuristic_fs_warning,
+    qa_heuristic_network_warning,
+    qa_heuristic_secrets_warning,
+    qa_parse_repair_no_tools_suffix,
+    qa_synthetic_budget_fail,
+    qa_static_pattern_security_title,
+)
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
 from services.qa_service.config import DANGEROUS_PATTERNS
@@ -47,7 +56,7 @@ logger = logging.getLogger(__name__)
 ADMADC_TOOL_LOOP_QA = "[ADMADC_TOOL_LOOP_QA]"
 _QA_READ_TOOLS = ("read_file", "search_in_repo")
 _QA_PARSE_REPAIR = (
-    "Incluye obligatoriamente la línea VERDICT: PASS o VERDICT: FAIL y el resto de secciones del formato."
+    "You must include the line VERDICT: PASS or VERDICT: FAIL and all other sections in the required format."
 )
 
 @dataclass
@@ -131,8 +140,9 @@ async def review_code_with_tool_loop(
     max_steps: int = 8,
     plan_id: str | None = None,
     redis_url: str | None = None,
+    user_locale: str = "en",
 ) -> tuple[ReviewResult, int, int]:
-    static_issues = _static_check(code)
+    static_issues = _static_check(code, user_locale=user_locale)
     if static_issues:
         reasoning = (
             f"Static analysis detected {len(static_issues)} dangerous pattern(s) "
@@ -151,7 +161,7 @@ async def review_code_with_tool_loop(
                     "security": [
                         {
                             "severity": "critical",
-                            "title": "Patrones estáticos peligrosos detectados antes del QA LLM",
+                            "title": qa_static_pattern_security_title(user_locale),
                             "details": "; ".join(static_issues),
                         }
                     ],
@@ -173,6 +183,7 @@ async def review_code_with_tool_loop(
         max_steps=max_steps,
         plan_id=plan_id,
         redis_url=redis_url,
+        user_locale=user_locale,
     )
 
 
@@ -219,6 +230,7 @@ def _build_llm_review_prompt(
     dev_reasoning: str = "",
     short_term_memory: str = "",
     static_analysis_report: str = "",
+    user_locale: str = "en",
 ) -> str:
     qa_rules_block = _build_qa_rules_block(language)
     response_language_rules = natural_language_rules_for_locale(user_locale)
@@ -244,6 +256,7 @@ def _build_llm_review_prompt(
         static_analysis_report=static_analysis_report.strip()
         or "No static analysis issues or warnings were reported by tools.",
         qa_rules_block=qa_rules_block,
+        response_language_rules=response_language_rules,
     )
 
 
@@ -256,6 +269,7 @@ async def _llm_review(
     dev_reasoning: str = "",
     short_term_memory: str = "",
     static_analysis_report: str = "",
+    user_locale: str = "en",
 ) -> tuple[ReviewResult, int, int]:
     prompt = _build_llm_review_prompt(
         code,
@@ -265,6 +279,7 @@ async def _llm_review(
         dev_reasoning,
         short_term_memory,
         static_analysis_report,
+        user_locale=user_locale,
     )
 
     def _parse(raw: str) -> tuple[ReviewResult | None, bool]:
@@ -303,10 +318,11 @@ async def _llm_review_with_tool_loop(
     max_steps: int = 8,
     plan_id: str | None = None,
     redis_url: str | None = None,
+    user_locale: str = "en",
 ) -> tuple[ReviewResult, int, int]:
     tools = tools_openai_from_registry(registry, _QA_READ_TOOLS)
     if not tools:
-        logger.warning("QA tool loop: sin herramientas en registry; revisión single-shot")
+        logger.warning("QA tool loop: no tools in registry; single-shot review")
         agent_tool_loop_outcomes_total.labels(
             service=SERVICE_NAME, outcome="fallback_single_shot"
         ).inc()
@@ -319,6 +335,7 @@ async def _llm_review_with_tool_loop(
             dev_reasoning,
             short_term_memory,
             static_analysis_report,
+            user_locale=user_locale,
         )
 
     base_prompt = _build_llm_review_prompt(
@@ -329,10 +346,17 @@ async def _llm_review_with_tool_loop(
         dev_reasoning,
         short_term_memory,
         static_analysis_report,
+        user_locale=user_locale,
     )
     user_content = f"{ADMADC_TOOL_LOOP_QA}\n\n{base_prompt}"
+    system_rules = natural_language_rules_for_locale(user_locale)
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": QA_TOOL_LOOP_SYSTEM},
+        {
+            "role": "system",
+            "content": QA_TOOL_LOOP_SYSTEM.format(
+                response_language_rules=system_rules,
+            ),
+        },
         {"role": "user", "content": user_content},
     ]
 
@@ -364,9 +388,7 @@ async def _llm_review_with_tool_loop(
                 service=SERVICE_NAME, outcome="budget_exceeded"
             ).inc()
             r = _parse_review_response(
-                "REASONING: QA tool loop detenido por presupuesto de tokens del bucle.\n"
-                "VERDICT: FAIL\nISSUES:\n- [error|functional] budget_exceeded\n"
-                "  DETAILS: Se superó ADMADC_TOOL_LOOP_MAX_TOKENS_PER_LOOP.\n"
+                qa_synthetic_budget_fail(user_locale, "loop_tokens")
             )
             return r, total_pt, total_ct
         if budget.max_tokens_plan > 0:
@@ -379,9 +401,7 @@ async def _llm_review_with_tool_loop(
                     service=SERVICE_NAME, outcome="budget_exceeded"
                 ).inc()
                 r = _parse_review_response(
-                    "REASONING: QA tool loop detenido por presupuesto de tokens acumulados del plan.\n"
-                    "VERDICT: FAIL\nISSUES:\n- [error|functional] budget_exceeded\n"
-                    "  DETAILS: Se superó ADMADC_PLAN_TOOL_LOOP_MAX_TOKENS.\n"
+                    qa_synthetic_budget_fail(user_locale, "plan_tokens")
                 )
                 return r, total_pt, total_ct
 
@@ -419,9 +439,7 @@ async def _llm_review_with_tool_loop(
                         service=SERVICE_NAME, outcome="budget_exceeded"
                     ).inc()
                     r = _parse_review_response(
-                        "REASONING: QA tool loop detenido por límite de llamadas a herramientas.\n"
-                        "VERDICT: FAIL\nISSUES:\n- [error|functional] budget_exceeded\n"
-                        "  DETAILS: Se superó ADMADC_TOOL_LOOP_MAX_TOOL_CALLS.\n"
+                        qa_synthetic_budget_fail(user_locale, "tool_calls")
                     )
                     return r, total_pt, total_ct
                 agent_tool_calls_total.labels(
@@ -444,7 +462,7 @@ async def _llm_review_with_tool_loop(
             messages.append(
                 {
                     "role": "user",
-                    "content": _QA_PARSE_REPAIR + " Responde sin herramientas.",
+                    "content": _QA_PARSE_REPAIR + qa_parse_repair_no_tools_suffix(user_locale),
                 }
             )
             continue
@@ -458,11 +476,7 @@ async def _llm_review_with_tool_loop(
     agent_tool_loop_outcomes_total.labels(
         service=SERVICE_NAME, outcome="exhausted"
     ).inc()
-    r = _parse_review_response(
-        "REASONING: QA tool loop agotó el máximo de pasos sin veredicto final.\n"
-        "VERDICT: FAIL\nISSUES:\n- [error|functional] exhausted\n"
-        "  DETAILS: Aumenta QA_TOOL_LOOP_MAX_STEPS o reduce el alcance.\n"
-    )
+    r = _parse_review_response(qa_synthetic_budget_fail(user_locale, "exhausted"))
     return r, total_pt, total_ct
 
 
