@@ -30,6 +30,7 @@ from shared.utils import (
     EventBus,
     build_repo_style_hints,
     build_short_term_memory_window,
+    short_term_memory_event_limit,
     store_event,
 )
 from shared.prompt_locale import (
@@ -135,7 +136,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 provider_name=deps.cfg.llm_provider,
                 redis_url=deps.cfg.redis_url,
             )
-            short_term_memory = await _build_short_term_memory(plan_id, deps, limit=15)
+            short_term_memory = await _build_short_term_memory(plan_id, deps)
             repo_context = ""
             if not deps.cfg.enable_tool_loop:
                 repo_context = await _build_repo_context(
@@ -522,13 +523,16 @@ async def _update_task_state(
 async def _build_short_term_memory(
     plan_id: str,
     deps: QADeps,
-    limit: int = 15,
+    limit: int | None = None,
 ) -> str:
     """
     Build a compact short-term memory window for QA using the tool query_events.
     """
     if not deps.tool_registry:
         return ""
+
+    if limit is None:
+        limit = short_term_memory_event_limit()
 
     try:
         result = await execute_tool(

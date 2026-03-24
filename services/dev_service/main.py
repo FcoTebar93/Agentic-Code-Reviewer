@@ -40,9 +40,11 @@ from shared.utils import (
     IdempotencyStore,
     build_repo_style_hints,
     build_short_term_memory_window,
+    short_term_memory_event_limit,
     store_event,
     guarded_http_get,
 )
+from shared.utils.code_change_guard import large_change_note
 from services.dev_service.config import DevConfig
 from services.dev_service.deps import DevPipelineDeps
 from services.dev_service.generator import generate_code, generate_code_with_tool_loop
@@ -281,6 +283,25 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                             ).strip()
             except Exception:
                 pass
+
+        if cfg.large_diff_warn_enabled:
+            prev_disk = _read_existing_repo_full_text(task.file_path or "")
+            diff_note = large_change_note(
+                prev_disk,
+                formatted_code,
+                soft_line_limit=max(10, cfg.large_diff_soft_lines),
+                similarity_warn_below=min(0.95, max(0.1, cfg.large_diff_similarity)),
+                qa_retry=bool((qa_feedback or "").strip()),
+            )
+            if diff_note:
+                logger.warning(
+                    "Large-change heuristic for %s: %s",
+                    task.file_path,
+                    diff_note,
+                )
+                combined_reasoning = (
+                    combined_reasoning + f"\n[Dev Service] {diff_note}"
+                ).strip()
 
         cg_payload = CodeGeneratedPayload(
             plan_id=plan_id,
@@ -552,13 +573,33 @@ async def _maybe_read_existing_file(file_path: str) -> str:
     except Exception:
         return ""
 
-async def _build_short_term_memory(plan_id: str, limit: int = 15) -> str:
+def _read_existing_repo_full_text(file_path: str, max_bytes: int = 400_000) -> str:
+    """Best-effort full text of target path under REPO_ROOT (for diff heuristics)."""
+    if not file_path.strip():
+        return ""
+    root = REPO_ROOT.resolve()
+    try:
+        p = (root / file_path).resolve()
+        if not str(p).startswith(str(root)):
+            return ""
+        if not p.is_file():
+            return ""
+        data = p.read_bytes()[:max_bytes]
+        return data.decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+async def _build_short_term_memory(plan_id: str, limit: int | None = None) -> str:
     """
     Build a compact short-term memory window for a given plan_id by querying
     recent events from the memory_service.
     """
     if http_client is None:
         return ""
+
+    if limit is None:
+        limit = short_term_memory_event_limit()
 
     try:
         resp = await guarded_http_get(

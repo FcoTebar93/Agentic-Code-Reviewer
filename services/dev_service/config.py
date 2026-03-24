@@ -25,6 +25,9 @@ class DevConfig:
     enable_tool_loop: bool
     tool_loop_max_steps: int
     tool_loop_include_ci_tools: bool
+    large_diff_warn_enabled: bool
+    large_diff_soft_lines: int
+    large_diff_similarity: float
 
     @classmethod
     def from_env(cls) -> DevConfig:
@@ -57,4 +60,10 @@ class DevConfig:
                 "DEV_TOOL_LOOP_INCLUDE_CI_TOOLS", "false"
             ).lower()
             in ("1", "true", "yes"),
+            large_diff_warn_enabled=os.environ.get("DEV_LARGE_DIFF_WARN", "true").lower()
+            in ("1", "true", "yes"),
+            large_diff_soft_lines=int(os.environ.get("DEV_LARGE_DIFF_LINE_SOFT", "120")),
+            large_diff_similarity=float(
+                os.environ.get("DEV_LARGE_DIFF_SIMILARITY", "0.52")
+            ),
         )
