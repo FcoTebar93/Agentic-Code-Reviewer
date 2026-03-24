@@ -50,6 +50,8 @@ You must:
 5. Check code quality (readability, unnecessary complexity, dead code).
 6. Consider whether the code is likely to pass standard linters and formatters for this language. If not, mention what should be changed (you may recommend running an auto-formatter or specific lint fixes instead of requesting large stylistic rewrites).
 7. Decide a strict final verdict PASS or FAIL based on the above and the QA rules.
+8. Staff-engineer perspective: flag unnecessary coupling, misleading names, abstraction leaks, harmful duplication, and designs that force wide edits for small extensions.
+9. Spec / acceptance alignment: if the task description embeds or references concrete acceptance criteria, SPEC excerpts, or CRITICAL test intent, verify the implementation satisfies them; obvious gaps on CRITICAL behaviour should bias toward VERDICT = FAIL.
 
 You must also evaluate the code against the following QA rules for the {language} language:
 {qa_rules_block}
@@ -136,6 +138,8 @@ You must:
 3. Check for security anti-patterns (hardcoded secrets, dangerous functions, SQL injection, XSS, RCE, insecure deserialisation, lack of input validation, etc.).
 4. Check code quality (readability, unnecessary complexity, dead code).
 5. Decide a strict final verdict PASS or FAIL based on the above and the QA rules.
+6. Staff-engineer perspective: flag unnecessary coupling, misleading names, abstraction leaks, harmful duplication, and designs that force wide edits for small extensions.
+7. Spec / acceptance alignment: if the task description embeds or references concrete acceptance criteria, SPEC excerpts, or CRITICAL test intent, verify the implementation satisfies them; obvious gaps on CRITICAL behaviour should bias toward VERDICT = FAIL.
 
 You must also evaluate the code against the following QA rules for the {language} language:
 {qa_rules_block}

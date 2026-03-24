@@ -59,13 +59,16 @@ Instructions:
    - In STRICT mode: prioritise edge cases and additional CRITICAL tests, even if the change looks small.
    - In NORMAL mode: balance coverage with the maintenance cost of tests.
    - In SAVE mode: focus on the most important cases and avoid over-designing optional tests.
+10. State key domain invariants and how failures should surface (user-visible vs internal), not only the happy path.
+11. If the change affects a public contract (HTTP API, events, shared types, CLI flags), note whether it is breaking or backward-compatible and any minimal migration expectation.
+12. Where useful, phrase expected behaviour so CRITICAL tests map to a clear, testable surface (inputs/outputs, observable effects) without forcing a specific implementation.
 
 RESPONSE LANGUAGE:
 {response_language_rules}
 
 Format your response EXACTLY as:
 SPEC:
-<1-2 paragraphs or bullet points describing the expected behaviour, inputs/outputs and edge cases>
+<1-2 paragraphs or bullet points: behaviour, inputs/outputs, edge cases, invariants/failure surfacing, and compatibility notes if contracts change>
 
 TESTS:
 - [CRITICAL] <test 1: what it checks and why it is important>
@@ -84,7 +87,7 @@ Use tools when you need real paths or file contents; avoid redundant calls.
 When finished, send a final message with NO tool calls, exactly in this shape:
 
 SPEC:
-<concise behaviour: inputs, outputs, edge cases>
+<concise behaviour: inputs, outputs, edge cases, invariants/failures, compatibility if APIs or shared contracts change>
 
 TESTS:
 - [CRITICAL] <short test description>

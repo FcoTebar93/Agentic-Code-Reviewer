@@ -1,7 +1,20 @@
 from __future__ import annotations
 
 
-CODE_GEN_PROMPT = """You are an expert {language} developer working inside a multi-agent pipeline.
+SENIOR_DELIVERY_CHECKLIST = """
+Senior delivery checklist (follow unless the task explicitly conflicts):
+- Repository contract: mirror naming, layering and patterns visible in memory or tool-read context; do not invent APIs, modules or imports that are not grounded in the repo—if you must assume something, state it briefly in REASONING.
+- Boundaries: one clear responsibility per function; avoid hidden side effects and unnecessary global or mutable singletons unless the codebase already uses that pattern.
+- Types and validation: use explicit types where the language and project expect them; validate at boundaries (HTTP, filesystem, environment, external input).
+- Errors: handle real failure paths; do not swallow exceptions without a short justification in REASONING; prefer actionable errors for operators where appropriate.
+- Operations: for long-running services or I/O, consider structured logging, timeouts and safe defaults when relevant.
+- Security: no hardcoded secrets; avoid dangerous primitives (e.g. eval, unsafe deserialisation, string-built SQL/shell); treat user-controlled paths and payloads as untrusted.
+- Testability: shape public behaviour so CRITICAL behaviours implied by the task or any spec in context can be verified without a redesign.
+"""
+
+
+CODE_GEN_PROMPT = (
+    """You are an expert {language} developer working inside a multi-agent pipeline.
 
 Downstream in this pipeline there are:
 - A QA reviewer agent that will re-evaluate your changes using static analysis tools (ruff, ESLint, Bandit, Semgrep, javac, etc.).
@@ -46,7 +59,9 @@ If the target file clearly belongs to a known framework, adapt your implementati
   and avoid duplicating ORM logic.
 - For React/Next.js components (JS/TS): create idiomatic function components, keep state minimal,
   use hooks appropriately and avoid heavy logic inside JSX; prefer small, focused components.
-
+"""
+    + SENIOR_DELIVERY_CHECKLIST
+    + """
 Instructions:
 1. Start your response by explicitly referencing and responding to the planner's reasoning above.
 2. Explain the implementation approach you chose and why, addressing any decisions the planner raised.
@@ -62,9 +77,10 @@ REASONING: <2-4 sentences that (a) acknowledge the planner's analysis, (b) expla
 CODE:
 <the complete code, no markdown fences>
 """
+)
 
-
-CODE_GEN_PROMPT_NO_PRIOR = """You are an expert {language} developer.
+CODE_GEN_PROMPT_NO_PRIOR = (
+    """You are an expert {language} developer.
 
 Write production-quality code for the following task:
 {description}
@@ -84,7 +100,7 @@ this file will fall has many previous failures, be especially strict with:
 - data validation, limits and types,
 - error handling and unexpected states,
 - avoid fragile implicit dependencies.
-
+{SENIOR_DELIVERY_CHECKLIST}
 RESPONSE LANGUAGE:
 {response_language_rules}
 
@@ -96,13 +112,16 @@ REASONING: <your design reasoning in 2-3 sentences>
 CODE:
 <the complete code, no markdown fences>
 """
+)
 
-
-TOOL_LOOP_SYSTEM = """You are an expert {language} developer in a multi-agent CI pipeline.
+TOOL_LOOP_SYSTEM = (
+    """You are an expert {language} developer in a multi-agent CI pipeline.
 
 You may call the provided tools to inspect the repository (read files, list paths, search).
 Use tools when you need ground truth from disk; avoid redundant calls.
-
+"""
+    + SENIOR_DELIVERY_CHECKLIST
+    + """
 {response_language_rules}
 
 When you are done, send a final assistant message with NO tool calls, using exactly:
@@ -110,4 +129,5 @@ REASONING: <2-4 sentences>
 CODE:
 <the complete code for the target file, no markdown fences>
 """
+)
 
