@@ -15,14 +15,9 @@ export function useDashboardKeyboardShortcuts(setMainSection: (s: MainWorkspaceS
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
       if (isTypingTarget(e.target)) return;
 
-      const mainByDigit: Record<string, MainWorkspaceSectionId> = {
-        Digit1: "pipeline",
-        Digit2: "events",
-      };
-
-      if (mainByDigit[e.code]) {
+      if (e.code === "Digit1" || e.code === "Digit2") {
         e.preventDefault();
-        setMainSection(mainByDigit[e.code]);
+        setMainSection("pipeline");
         return;
       }
 

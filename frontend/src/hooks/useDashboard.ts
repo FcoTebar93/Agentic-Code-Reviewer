@@ -168,7 +168,7 @@ export function useDashboard(wsUrl: string): DashboardProps {
     const prev = prevEventsCount.current;
     prevEventsCount.current = n;
     if (prev !== null && n > prev && n > 0) {
-      setMainSection("events");
+      setMainSection("pipeline");
     }
   }, [events.length]);
 

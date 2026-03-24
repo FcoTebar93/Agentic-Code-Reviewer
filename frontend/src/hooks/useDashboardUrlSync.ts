@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { isMainWorkspaceSectionId, type MainWorkspaceSectionId } from "../components/ui/MainWorkspaceNav";
+import {
+  normalizeMainWorkspaceSectionFromUrl,
+  type MainWorkspaceSectionId,
+} from "../components/ui/MainWorkspaceNav";
 import { DEFAULT_RIGHT_PANEL_TAB, normalizeRightPanelTabFromUrl, type RightPanelTabId } from "../components/ui/RightPanelTabs";
 
 const PLAN_QUERY = "plan";
@@ -46,10 +49,7 @@ export function useDashboardUrlSync(
     if (normalized) {
       setRightTab(normalized);
     }
-    const rawMain = params.get(MAIN_QUERY);
-    if (rawMain && isMainWorkspaceSectionId(rawMain)) {
-      setMainSection(rawMain);
-    }
+    setMainSection(normalizeMainWorkspaceSectionFromUrl(params.get(MAIN_QUERY)));
     setTabHydrated(true);
   }, [setRightTab, setMainSection]);
 
@@ -83,12 +83,7 @@ export function useDashboardUrlSync(
         setRightTab(DEFAULT_RIGHT_PANEL_TAB);
       }
 
-      const rawMain = params.get(MAIN_QUERY);
-      if (rawMain && isMainWorkspaceSectionId(rawMain)) {
-        setMainSection(rawMain);
-      } else {
-        setMainSection("pipeline");
-      }
+      setMainSection(normalizeMainWorkspaceSectionFromUrl(params.get(MAIN_QUERY)));
 
       const fromPlan = params.get(PLAN_QUERY)?.trim() ?? "";
       if (!fromPlan) {
