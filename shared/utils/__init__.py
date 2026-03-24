@@ -4,11 +4,13 @@ from typing import Any
 
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from shared.utils.memory_window import build_short_term_memory_window
+from shared.utils.repo_style_hints import build_repo_style_hints
 
 __all__ = [
     "EventBus",
     "IdempotencyStore",
     "build_short_term_memory_window",
+    "build_repo_style_hints",
     "store_event",
     "infer_framework_hint",
     "guarded_http_get",
@@ -107,7 +109,6 @@ async def guarded_http_get(http_client, path: str, logger: logging.Logger | None
 
     try:
         resp = await http_client.get(path, **kwargs)
-        # Éxito o fallo controlado: reseteamos contador si la llamada respondió.
         state["errors"] = 0
         state["open_until"] = 0.0
         _CB_STATE[key] = state
