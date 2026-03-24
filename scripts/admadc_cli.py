@@ -140,18 +140,31 @@ def cmd_status(base: str) -> None:
         print(json.dumps(r.json(), indent=2))
 
 
+def _normalize_cli_user_locale(raw: str) -> str:
+    """Match shared.prompt_locale.normalize_user_locale (primary BCP-47 tag)."""
+    if not raw or not str(raw).strip():
+        return "en"
+    loc = str(raw).strip().lower().replace("_", "-")
+    primary = loc.split("-", 1)[0]
+    if primary in {"en", "es", "fr", "de", "pt", "it", "ja", "zh", "ko"}:
+        return primary
+    return "en"
+
+
 def cmd_plan(
     base: str,
     prompt: str,
     project: str = "default",
     repo_url: str = "",
     mode: str = "normal",
+    user_locale: str = "en",
 ) -> str | None:
     with _get_client(base) as client:
         body = {
             "prompt": prompt,
             "project_name": project,
             "repo_url": repo_url or "",
+            "user_locale": _normalize_cli_user_locale(user_locale),
         }
         mode_norm = (mode or "normal").strip().lower()
         if mode_norm not in {"normal", "save"}:
@@ -597,6 +610,12 @@ def main() -> None:
         help="normal = full context; save = reduced-token mode (alias: 'ahorro')",
     )
     p_plan.add_argument(
+        "--locale",
+        default="en",
+        metavar="TAG",
+        help="Agent response language (primary BCP-47 tag, e.g. es, en, fr). Default: en.",
+    )
+    p_plan.add_argument(
         "--watch",
         action="store_true",
         help="After creating the plan, stream its events in real time (WebSocket)",
@@ -703,6 +722,7 @@ def main() -> None:
             project=args.project,
             repo_url=args.repo_url or "",
             mode=args.mode,
+            user_locale=args.locale,
         )
         if args.watch and plan_id:
             try:
