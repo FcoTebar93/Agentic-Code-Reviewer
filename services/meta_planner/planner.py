@@ -53,7 +53,20 @@ _PLANNER_TOOL_NAMES = (
     "failure_patterns",
 )
 
-PLANNING_PROMPT_TEMPLATE = """You are a senior software architect acting as the PLANNER in a multi-agent CI pipeline.
+PLANNER_SENIOR_GUIDELINES = """
+Delivery quality and dependencies:
+- For non-trivial work, add focused tasks when they materially reduce risk: for example shared validation or error
+  contracts, typing/schema boundaries, small refactors that unblock correct implementation, or hardening after HOT SPOTS—
+  not every plan needs these; avoid busywork on trivial requests.
+- When tasks depend on each other, order the TASKS JSON array in a dependency-safe sequence (e.g. shared models,
+  protocols, or public API surfaces before callers and UI that consume them).
+- In REASONING, briefly state implementation or review order when it matters (what should land first and why), and how
+  grouped tasks relate within the same group_id.
+"""
+
+
+PLANNING_PROMPT_TEMPLATE = (
+    """You are a senior software architect acting as the PLANNER in a multi-agent CI pipeline.
 
 Given the following user request, decompose it into a list of concrete development tasks that are:
 - SMALL and FOCUSED (each task should have a single clear goal).
@@ -82,7 +95,9 @@ you MUST:
 For large or cross-cutting changes, break the work into several smaller tasks grouped
 by module/directory, instead of a single huge task that touches many different parts
 of the repository.
-
+"""
+    + PLANNER_SENIOR_GUIDELINES
+    + """
 MEMORY CONTEXT:
 {memory_context}
 
@@ -90,36 +105,43 @@ RESPONSE LANGUAGE:
 {response_language_rules}
 
 First, explain your reasoning: why these tasks, what architectural decisions you made,
-how you are using MEMORY CONTEXT (especially failure patterns and severity hints), and how tasks relate
-to each other.
+how you are using MEMORY CONTEXT (especially failure patterns and severity hints), how tasks relate to each other,
+and (when relevant) the intended order of work or review across dependent tasks.
 
 Then output the task list. For simple requests (e.g. "create a Hello World in X"),
 output a SINGLE task with one file_path. Do not duplicate the same file_path.
 
 Format your response EXACTLY as:
-REASONING: <your architectural reasoning in 2-3 sentences>
+REASONING: <your architectural reasoning in 2-4 sentences>
 TASKS: <JSON array of objects with keys: description, file_path, language and, optionally, edit_scope and group_id>
 
 Conventions:
 - Use edit_scope=\"file\" when possible, or \"module\" when a change spans a small, coherent package.
 - Use group_id to group related tasks by module/directory (for example: \"services/dev_service\", \"frontend/src/components\").
+- List TASKS in dependency-safe order when one change must exist before another can be implemented correctly.
 
 User request:
 {prompt}
 """
+)
 
 
-PLANNER_TOOL_LOOP_SYSTEM = """You are a senior software architect (PLANNER) in a multi-agent CI pipeline.
+PLANNER_TOOL_LOOP_SYSTEM = (
+    """You are a senior software architect (PLANNER) in a multi-agent CI pipeline.
 
 Call memory tools when you need past events, semantic recall, or failure-by-module patterns.
 Keep tasks small (ideally one file), avoid huge cross-cutting changes, and respect QA/security hotspots from tool data.
 
+"""
+    + PLANNER_SENIOR_GUIDELINES
+    + """
 {response_language_rules}
 
 Final message must have NO tool calls, exactly:
-REASONING: <architectural reasoning in 2-4 sentences>
-TASKS: <JSON array of objects with keys: description, file_path, language and optionally edit_scope, group_id>
+REASONING: <architectural reasoning in 2-4 sentences (include task order when dependencies exist)>
+TASKS: <JSON array in dependency-safe order when applicable; keys: description, file_path, language and optionally edit_scope, group_id>
 """
+)
 
 
 PLANNER_TOOL_LOOP_USER = ADMADC_TOOL_LOOP_MARKER + """
