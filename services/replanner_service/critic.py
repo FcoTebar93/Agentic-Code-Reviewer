@@ -34,9 +34,20 @@ ADMADC_TOOL_LOOP_MARKER = "[ADMADC_TOOL_LOOP]"
 
 _REPLANNER_TOOL_NAMES = ("semantic_outcome_memory", "failure_patterns")
 
+REPLANNER_SENIOR_BAR = """
+Professional replanning bar (same quality expectations as planner/QA):
+- Ground every SUGGESTION in the CURRENT OUTCOME SUMMARY, MEMORY CONTEXT or tool results; avoid generic or boilerplate advice.
+- Prefer the smallest plan delta: explicit tasks with clear file/module intent, dependency-safe ordering when you imply a sequence, and focused test or validation tasks when risk is high.
+- Treat repeated QA failures on the same file or security blockers as signals to harden boundaries (validation, error contracts, removal/replacement of unsafe APIs), not as a prompt for vague full rewrites.
+- Suggestions must be actionable for downstream planner and dev agents (what to add, what to re-run, what to narrow in scope), not line-by-line code edits.
+"""
 
-REPLANNER_PROMPT = """You are an autonomous replanning agent in a multi-agent dev pipeline.
 
+REPLANNER_PROMPT = (
+    """You are an autonomous replanning agent in a multi-agent dev pipeline.
+"""
+    + REPLANNER_SENIOR_BAR
+    + """
 Your goal:
 {agent_goal}
 
@@ -72,6 +83,7 @@ SUGGESTIONS:
 - <suggestion 1 (if any)>
 - <suggestion 2 (if any)>
 """
+)
 SECURITY_BLOCKED_INSTRUCTION = """
 IMPORTANT (Security denied): The code was BLOCKED by the security scan. Your SUGGESTIONS must directly address EACH violation and the security reasoning above, so that the next implementation satisfies the security rules and the next run succeeds. Each suggestion should state what to remove, change or add to comply with security.
 """
@@ -81,11 +93,15 @@ _REPLANNER_PARSE_REPAIR = (
     "You must include REVISION_NEEDED: yes or no, SEVERITY:, REASON:, and SUGGESTIONS: exactly as in the template."
 )
 
-REPLANNER_TOOL_LOOP_SYSTEM = """You are a replanning critic in a multi-agent dev pipeline.
+REPLANNER_TOOL_LOOP_SYSTEM = (
+    """You are a replanning critic in a multi-agent dev pipeline.
 
 Use semantic_outcome_memory (with the plan id) and failure_patterns when you need richer memory than the summary below.
 Prefer minimal, targeted tool calls.
 
+"""
+    + REPLANNER_SENIOR_BAR
+    + """
 RESPONSE LANGUAGE:
 {response_language_rules}
 
@@ -96,6 +112,7 @@ REVISION_NEEDED: yes|no
 SUGGESTIONS:
 - <suggestion or "none">
 """
+)
 
 
 @dataclass

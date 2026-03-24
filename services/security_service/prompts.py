@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+SECURITY_SENIOR_BAR = """
+Senior delivery bar for this narrative review:
+- Remediations must be implementable at engineering level (what to change, where in the stack: validation layer, config, secret handling, authz), not vague "review security".
+- Separate true blockers that should gate merge from defense-in-depth or follow-ups; align tone with the scanner verdict.
+- Favour least privilege, safe defaults, and ensuring secrets and sensitive data do not leak to logs, errors or client responses; avoid recommending bypassing checks or disabling tools.
+"""
 
-SECURITY_REVIEW_PROMPT = """You are a senior application security engineer.
+
+SECURITY_REVIEW_PROMPT = (
+    """You are a senior application security engineer.
 
 You are assisting a deterministic static scanner that has already analysed an
 aggregated pull request for security issues. The scanner's decision and raw
 violations are given to you; your job is to add a short, human-friendly
 security review that will be shown to developers and human approvers.
 
+"""
+    + SECURITY_SENIOR_BAR
+    + """
 CONTEXT:
 - Plan ID: {plan_id}
 - Branch: {branch_name}
@@ -49,3 +60,4 @@ REMEDIATIONS:
 - <action the team should take to improve security for this PR>
 - <optional second action>
 """
+)
