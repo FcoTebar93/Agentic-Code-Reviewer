@@ -25,6 +25,7 @@ from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
     IdempotencyStore,
+    build_repo_style_hints,
     store_event,
     guarded_http_get,
 )
@@ -34,7 +35,7 @@ from services.spec_service.spec_generator import (
     generate_spec,
     generate_spec_with_tool_loop,
 )
-from services.spec_service.tools import build_spec_tool_registry
+from services.spec_service.tools import REPO_ROOT, build_spec_tool_registry
 
 
 SERVICE_NAME = "spec_service"
@@ -163,6 +164,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 plan_id,
                 task.task_id,
                 task.file_path,
+                language=task.language,
                 skip_repo_prefetch=cfg.enable_tool_loop,
             )
             test_layout = _infer_test_layout(task.file_path, task.language)
@@ -248,6 +250,7 @@ async def _build_plan_context(
     task_id: str,
     file_path: str,
     *,
+    language: str = "",
     skip_repo_prefetch: bool = False,
 ) -> str:
     """
@@ -355,6 +358,17 @@ async def _build_plan_context(
         if qa_hist:
             lines.append("Previous QA failures for this file (truncated):")
             lines.append(qa_hist)
+
+        style_hints = build_repo_style_hints(
+            REPO_ROOT,
+            language=language,
+            file_path=file_path or "",
+            max_total_chars=600,
+        )
+        if style_hints:
+            lines.append("")
+            lines.append("Repository linter & style config (truncated):")
+            lines.append(style_hints)
 
         if not skip_repo_prefetch:
             repo_ctx = await _build_repo_context_for_spec(file_path)

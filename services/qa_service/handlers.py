@@ -26,7 +26,12 @@ from shared.contracts.events import (
 from shared.llm_adapter import get_llm_provider
 from shared.observability.metrics import agent_execution_time, tasks_completed
 from shared.tools import ToolRegistry, execute_tool
-from shared.utils import EventBus, build_short_term_memory_window, store_event
+from shared.utils import (
+    EventBus,
+    build_repo_style_hints,
+    build_short_term_memory_window,
+    store_event,
+)
 from shared.prompt_locale import (
     qa_hot_module_note,
     qa_hot_module_stm_block,
@@ -34,6 +39,7 @@ from shared.prompt_locale import (
 )
 from shared.policies import load_project_policy, policy_for_path, effective_mode
 from services.qa_service.config import QAConfig
+from services.qa_service.tools import REPO_ROOT
 from services.qa_service.reviewer import (
     ReviewResult,
     review_code,
@@ -97,8 +103,6 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         raw_mode = getattr(payload, "mode", "normal") or "normal"
         try:
             if deps.project_policy is None:
-                from services.qa_service.tools import REPO_ROOT
-
                 deps.project_policy = load_project_policy(REPO_ROOT)
         except Exception:
             deps.project_policy = {"default_mode": "normal", "paths": {}}
@@ -140,6 +144,17 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             patterns_context = await _build_failure_patterns_context(
                 payload.file_path, deps
             )
+            style_cfg = build_repo_style_hints(
+                REPO_ROOT,
+                language=payload.language,
+                file_path=payload.file_path or "",
+                max_total_chars=480,
+            )
+            if style_cfg:
+                if repo_context:
+                    repo_context = style_cfg + "\n\n" + repo_context
+                else:
+                    repo_context = style_cfg
             if patterns_context:
                 if repo_context:
                     repo_context = repo_context + "\n\n" + patterns_context

@@ -38,6 +38,7 @@ from shared.llm_adapter import get_llm_provider
 from shared.utils import (
     EventBus,
     IdempotencyStore,
+    build_repo_style_hints,
     build_short_term_memory_window,
     store_event,
     guarded_http_get,
@@ -171,12 +172,19 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         files_in_dir = await _list_files_in_task_directory(task)
         spec_block = await _fetch_task_spec(plan_id, task.task_id)
         failure_patterns_block = await _build_failure_patterns_for_dev(task.file_path)
+        repo_style_hints = build_repo_style_hints(
+            REPO_ROOT,
+            language=task.language,
+            file_path=task.file_path or "",
+            max_total_chars=550,
+        )
         dev_context = _build_dev_context(
             short_term_memory=short_term_memory,
             existing_file_preview=existing_file_preview,
             files_in_dir=files_in_dir,
             spec_block=spec_block,
             failure_patterns_block=failure_patterns_block,
+            repo_style_hints=repo_style_hints,
         )
         if cfg.enable_tool_loop and tool_registry is not None:
             code_result, prompt_tokens, completion_tokens = (
@@ -713,7 +721,8 @@ def _build_dev_context(
     files_in_dir: str,
     spec_block: str = "",
     failure_patterns_block: str = "",
-    max_chars: int = 2500,
+    repo_style_hints: str = "",
+    max_chars: int = 2600,
 ) -> str:
     """
     Construye un contexto compacto y estructurado para el LLM del dev_service.
@@ -721,6 +730,7 @@ def _build_dev_context(
     - Da prioridad a los eventos recientes (short_term_memory).
     - Añade un pequeño preview del archivo objetivo si existe.
     - Añade un resumen de archivos del directorio de trabajo.
+    - Puede incluir recortes de config del repo (ruff, eslint, etc.).
     - Recorta el resultado total para mantener bajo el uso de tokens.
     """
     blocks: list[str] = []
@@ -728,6 +738,10 @@ def _build_dev_context(
     spec = (spec_block or "").strip()
     if spec:
         blocks.append("TASK SPEC & TESTS:\n" + spec[:700])
+
+    style = (repo_style_hints or "").strip()
+    if style:
+        blocks.append("REPO STYLE & LINTER CONFIG (truncated):\n" + style[:520])
 
     stm = (short_term_memory or "").strip()
     if stm:
