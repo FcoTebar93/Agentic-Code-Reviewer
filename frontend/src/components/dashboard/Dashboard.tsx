@@ -69,7 +69,7 @@ export function Dashboard(props: DashboardProps) {
       <HeaderBar
         title="ADMADC"
         subtitle="Autonomous Deterministic Multi-Agent Dev Company"
-        shortcutsHint="Atajos: Alt+1 Pipeline · Alt+2 Eventos · Alt+3–6 panel (Métricas…Más)"
+        shortcutsHint="Atajos: Alt+1–2 vista plan · Alt+3–6 panel (Métricas…Más)"
         right={
           <>
             <button
@@ -107,70 +107,70 @@ export function Dashboard(props: DashboardProps) {
         )}
 
         <div className="flex flex-col min-h-0 order-1 min-w-0 flex-1">
-          <MainWorkspaceNav
-            active={mainSection}
-            onChange={setMainSectionWithHistory}
-            panels={{
-              pipeline: (
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <PipelineGraph latestEvent={latestEvent} />
-                </div>
-              ),
-              events: (
-                <div className="flex flex-1 min-h-0 min-w-0 flex-row gap-3">
-                  <div className="flex flex-col flex-1 min-h-0 min-w-0 basis-0">
-                    <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 mb-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
-                          Event Feed
-                        </span>
-                        <PlanFilterChips
-                          planIds={knownPlanIds}
-                          activePlanId={activePlanId}
-                          onChange={setActivePlanIdWithHistory}
-                        />
-                      </div>
-                      {visibleEvents.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            pushUrlIfChanged({ planId: null });
-                            setVisibleEvents([]);
-                            setActivePlanId(null);
-                            setKnownPlanIds([]);
-                          }}
-                          className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
-                        >
-                          clear logs
-                        </button>
-                      )}
+          <div className="flex flex-1 min-h-0 min-w-0 flex-row gap-3">
+            <MainWorkspaceNav
+              active={mainSection}
+              onChange={setMainSectionWithHistory}
+              panels={{
+                pipeline: (
+                  <div className="flex flex-col flex-1 min-h-0 min-w-0 gap-3 overflow-hidden">
+                    <div className="shrink-0 overflow-x-auto pr-1">
+                      <PipelineGraph latestEvent={latestEvent} />
                     </div>
-                    <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-                      <EventFeed events={filteredEvents} />
+                    <div className="flex flex-col flex-1 min-h-0 min-w-0 border-t border-neutral-800 pt-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 mb-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
+                            Registro de ejecución
+                          </span>
+                          <PlanFilterChips
+                            planIds={knownPlanIds}
+                            activePlanId={activePlanId}
+                            onChange={setActivePlanIdWithHistory}
+                          />
+                        </div>
+                        {visibleEvents.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              pushUrlIfChanged({ planId: null });
+                              setVisibleEvents([]);
+                              setActivePlanId(null);
+                              setKnownPlanIds([]);
+                            }}
+                            className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
+                          >
+                            clear logs
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+                        <EventFeed events={filteredEvents} />
+                      </div>
                     </div>
                   </div>
-                  <aside
-                    className="flex flex-col shrink-0 min-h-0 w-[min(200px,36vw)] min-w-[132px] sm:w-[min(220px,34vw)] lg:w-[min(300px,32%)] border-l border-neutral-800 pl-3 overflow-y-auto"
-                    aria-label="Lanzar plan"
-                  >
-                    <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider shrink-0 mb-2">
-                      Lanzar
-                    </span>
-                    <div className="min-h-0 flex-1 flex flex-col gap-4">
-                      <Suspense fallback={<PanelTabFallback />}>
-                        <LazyPlanForm />
-                      </Suspense>
-                      <div className="shrink-0 border-t border-neutral-800 pt-3">
-                        <Suspense fallback={<PanelTabFallback />}>
-                          <LazyAgentAskCard defaultPlanId={activePlanId} />
-                        </Suspense>
-                      </div>
-                    </div>
-                  </aside>
+                ),
+              }}
+            />
+            <aside
+              className="flex flex-col shrink-0 min-h-0 w-[min(200px,36vw)] min-w-[132px] sm:w-[min(220px,34vw)] lg:w-[min(300px,32%)] border-l border-neutral-800 pl-3 overflow-y-auto"
+              aria-label="Lanzar plan y preguntas"
+            >
+              <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider shrink-0 mb-2">
+                Lanzar
+              </span>
+              <div className="min-h-0 flex-1 flex flex-col gap-4">
+                <Suspense fallback={<PanelTabFallback />}>
+                  <LazyPlanForm />
+                </Suspense>
+                <div className="shrink-0 border-t border-neutral-800 pt-3">
+                  <Suspense fallback={<PanelTabFallback />}>
+                    <LazyAgentAskCard defaultPlanId={activePlanId} />
+                  </Suspense>
                 </div>
-              ),
-            }}
-          />
+              </div>
+            </aside>
+          </div>
         </div>
 
         <div

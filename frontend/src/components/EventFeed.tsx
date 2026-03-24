@@ -330,8 +330,8 @@ export function EventFeed({ events }: Props) {
           )
         }
       >
-        Event Feed{" "}
-        <span className="text-neutral-600 normal-case">({events.length} events)</span>
+        Eventos del pipeline{" "}
+        <span className="text-neutral-600 normal-case">({events.length})</span>
       </SectionHeader>
 
       <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">

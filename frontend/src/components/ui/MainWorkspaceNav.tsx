@@ -1,19 +1,28 @@
 import type { ReactNode } from "react";
 
-export type MainWorkspaceSectionId = "pipeline" | "events";
+/** Single workspace: pipeline graph + execution log share one view. */
+export type MainWorkspaceSectionId = "pipeline";
 
-export const MAIN_WORKSPACE_SECTION_IDS: MainWorkspaceSectionId[] = [
-  "pipeline",
-  "events",
-];
+export const MAIN_WORKSPACE_SECTION_IDS: MainWorkspaceSectionId[] = ["pipeline"];
+
+/** Legacy URLs used `main=events`; normalize to the unified pipeline view. */
+export function normalizeMainWorkspaceSectionFromUrl(
+  raw: string | null,
+): MainWorkspaceSectionId {
+  if (raw === "pipeline" || raw === "events") return "pipeline";
+  return "pipeline";
+}
 
 export function isMainWorkspaceSectionId(s: string): s is MainWorkspaceSectionId {
-  return (MAIN_WORKSPACE_SECTION_IDS as string[]).includes(s);
+  return s === "pipeline";
 }
 
 const SECTIONS: { id: MainWorkspaceSectionId; label: string; hint: string }[] = [
-  { id: "pipeline", label: "Pipeline", hint: "Grafo de agentes" },
-  { id: "events", label: "Eventos", hint: "Feed + lanzar plan" },
+  {
+    id: "pipeline",
+    label: "Plan y ejecución",
+    hint: "Agentes activos arriba, registro del plan abajo",
+  },
 ];
 
 type Props = {
@@ -23,6 +32,15 @@ type Props = {
 };
 
 export function MainWorkspaceNav({ active, onChange, panels }: Props) {
+  if (SECTIONS.length === 1) {
+    const only = SECTIONS[0].id;
+    return (
+      <div className="flex flex-col min-h-0 flex-1 min-w-0 basis-0">
+        {panels[only]}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-0 flex-1 gap-2 lg:gap-3 lg:flex-row">
       <nav
