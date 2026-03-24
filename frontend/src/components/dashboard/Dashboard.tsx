@@ -13,6 +13,9 @@ import { STATUS_DOT } from "../../lib/dashboardUtils";
 const LazyPlanForm = lazy(() =>
   import("../PlanForm").then((m) => ({ default: m.PlanForm })),
 );
+const LazyAgentAskCard = lazy(() =>
+  import("../AgentAskCard").then((m) => ({ default: m.AgentAskCard })),
+);
 const LazyPlanMetrics = lazy(() =>
   import("../PlanMetrics").then((m) => ({ default: m.PlanMetrics })),
 );
@@ -153,10 +156,15 @@ export function Dashboard(props: DashboardProps) {
                     <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider shrink-0 mb-2">
                       Lanzar
                     </span>
-                    <div className="min-h-0 flex-1">
+                    <div className="min-h-0 flex-1 flex flex-col gap-4">
                       <Suspense fallback={<PanelTabFallback />}>
                         <LazyPlanForm />
                       </Suspense>
+                      <div className="shrink-0 border-t border-neutral-800 pt-3">
+                        <Suspense fallback={<PanelTabFallback />}>
+                          <LazyAgentAskCard defaultPlanId={activePlanId} />
+                        </Suspense>
+                      </div>
                     </div>
                   </aside>
                 </div>
