@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from services.security_service.config import SECURITY_RULES, SecurityConfig
+from shared.agent_subprocess import run_sync_hardened
 
 logger = logging.getLogger(__name__)
 
@@ -180,14 +180,13 @@ def _run_bandit_security_checks(file_path: str, code: str) -> list[str]:
     disponible o si algo va mal (no rompe el pipeline).
     """
     try:
-        try:
-            subprocess.run(
-                ["python", "-m", "bandit", "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-        except Exception:
+        probe = run_sync_hardened(
+            ["python", "-m", "bandit", "--version"],
+            timeout_s=20.0,
+            max_stdout_bytes=8_192,
+            max_stderr_bytes=8_192,
+        )
+        if probe.timed_out or probe.returncode != 0:
             logger.debug("Bandit no está instalado; omitiendo bandit en security_service")
             return []
 
@@ -196,11 +195,12 @@ def _run_bandit_security_checks(file_path: str, code: str) -> list[str]:
             target = tmp_path / "tmp.py"
             target.write_text(code, encoding="utf-8")
 
-            proc = subprocess.run(
+            proc = run_sync_hardened(
                 ["python", "-m", "bandit", "-q", "-f", "json", str(target)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                cwd=str(tmp_path),
+                timeout_s=45.0,
+                max_stdout_bytes=512_000,
+                max_stderr_bytes=128_000,
             )
 
             stdout = proc.stdout.strip()
@@ -251,26 +251,25 @@ def _run_semgrep_security_checks(
         return []
 
     try:
-        use_python_module = False
-        try:
-            subprocess.run(
-                ["python", "-m", "semgrep", "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+        py_sem = run_sync_hardened(
+            ["python", "-m", "semgrep", "--version"],
+            timeout_s=20.0,
+            max_stdout_bytes=8_192,
+            max_stderr_bytes=8_192,
+        )
+        if not py_sem.timed_out and py_sem.returncode == 0:
             use_python_module = True
-        except Exception:
-            try:
-                subprocess.run(
-                    ["semgrep", "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            except Exception:
+        else:
+            bin_sem = run_sync_hardened(
+                ["semgrep", "--version"],
+                timeout_s=20.0,
+                max_stdout_bytes=8_192,
+                max_stderr_bytes=8_192,
+            )
+            if bin_sem.timed_out or bin_sem.returncode != 0:
                 logger.debug("Semgrep no está instalado; omitiendo semgrep en security_service")
                 return []
+            use_python_module = False
 
         ext = supported_langs[lang]
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -286,12 +285,12 @@ def _run_semgrep_security_checks(
                 "--quiet",
                 str(target),
             ]
-            proc = subprocess.run(
+            proc = run_sync_hardened(
                 cmd,
                 cwd=str(tmp_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                timeout_s=90.0,
+                max_stdout_bytes=1_048_576,
+                max_stderr_bytes=256_000,
             )
 
             stdout = proc.stdout.strip()

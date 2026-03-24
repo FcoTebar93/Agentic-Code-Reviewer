@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import re
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from pydantic import Field
 
+from shared.agent_subprocess import (
+    parse_and_validate_repo_cli_command,
+    run_async_hardened,
+    run_sync_hardened,
+)
 from shared.tools import (
     ToolInput,
     ToolDefinition,
@@ -239,14 +242,13 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
 
     if lang in {"python", "py"}:
         try:
-            try:
-                subprocess.run(
-                    ["python", "-m", "black", "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            except Exception:
+            probe = run_sync_hardened(
+                ["python", "-m", "black", "--version"],
+                timeout_s=15.0,
+                max_stdout_bytes=8_192,
+                max_stderr_bytes=8_192,
+            )
+            if probe.timed_out or probe.returncode != 0:
                 return {
                     "supported": False,
                     "language": args.language,
@@ -262,12 +264,12 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(args.code, encoding="utf-8")
 
-                proc = subprocess.run(
+                proc = run_sync_hardened(
                     ["python", "-m", "black", str(target)],
                     cwd=str(tmp_path),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
+                    timeout_s=25.0,
+                    max_stdout_bytes=32_768,
+                    max_stderr_bytes=32_768,
                 )
 
                 formatted = target.read_text(encoding="utf-8", errors="replace")
@@ -291,14 +293,13 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
 
     if lang in {"javascript", "js", "typescript", "ts"}:
         try:
-            try:
-                subprocess.run(
-                    ["npx", "prettier", "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            except Exception:
+            probe = run_sync_hardened(
+                ["npx", "prettier", "--version"],
+                timeout_s=30.0,
+                max_stdout_bytes=8_192,
+                max_stderr_bytes=8_192,
+            )
+            if probe.timed_out or probe.returncode != 0:
                 return {
                     "supported": False,
                     "language": args.language,
@@ -315,7 +316,7 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(args.code, encoding="utf-8")
 
-                proc = subprocess.run(
+                proc = run_sync_hardened(
                     [
                         "npx",
                         "prettier",
@@ -323,9 +324,9 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
                         str(target),
                     ],
                     cwd=str(tmp_path),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
+                    timeout_s=45.0,
+                    max_stdout_bytes=32_768,
+                    max_stderr_bytes=32_768,
                 )
 
                 formatted = target.read_text(encoding="utf-8", errors="replace")
@@ -366,30 +367,27 @@ async def run_tests_tool(args: RunTestsInput) -> dict[str, Any]:
     por el agente, no en cada tarea, ya que puede ser costoso.
     """
     try:
-        proc = await asyncio.create_subprocess_shell(
-            args.command,
-            cwd=str(REPO_ROOT),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=args.timeout_s
-            )
-            exit_code = proc.returncode
-            timed_out = False
-        except asyncio.TimeoutError:
-            proc.kill()
-            stdout, stderr = await proc.communicate()
-            exit_code = -1
-            timed_out = True
+        argv, err = parse_and_validate_repo_cli_command(args.command)
+        if argv is None:
+            return {
+                "command": args.command,
+                "exit_code": -1,
+                "timed_out": False,
+                "stdout": "",
+                "stderr": err,
+            }
 
+        result = await run_async_hardened(
+            argv,
+            cwd=str(REPO_ROOT),
+            timeout_s=args.timeout_s,
+        )
         return {
             "command": args.command,
-            "exit_code": exit_code,
-            "timed_out": timed_out,
-            "stdout": (stdout or b"").decode("utf-8", errors="replace")[-8000:],
-            "stderr": (stderr or b"").decode("utf-8", errors="replace")[-8000:],
+            "exit_code": result.returncode,
+            "timed_out": result.timed_out,
+            "stdout": result.stdout[-8000:],
+            "stderr": result.stderr[-8000:],
         }
     except Exception as exc:
         return {
@@ -408,30 +406,27 @@ async def run_lints_tool(args: RunLintsInput) -> dict[str, Any]:
     Pensado para comandos como 'ruff .', 'npm run lint' o 'npx eslint .'.
     """
     try:
-        proc = await asyncio.create_subprocess_shell(
-            args.command,
-            cwd=str(REPO_ROOT),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=args.timeout_s
-            )
-            exit_code = proc.returncode
-            timed_out = False
-        except asyncio.TimeoutError:
-            proc.kill()
-            stdout, stderr = await proc.communicate()
-            exit_code = -1
-            timed_out = True
+        argv, err = parse_and_validate_repo_cli_command(args.command)
+        if argv is None:
+            return {
+                "command": args.command,
+                "exit_code": -1,
+                "timed_out": False,
+                "stdout": "",
+                "stderr": err,
+            }
 
+        result = await run_async_hardened(
+            argv,
+            cwd=str(REPO_ROOT),
+            timeout_s=args.timeout_s,
+        )
         return {
             "command": args.command,
-            "exit_code": exit_code,
-            "timed_out": timed_out,
-            "stdout": (stdout or b"").decode("utf-8", errors="replace")[-8000:],
-            "stderr": (stderr or b"").decode("utf-8", errors="replace")[-8000:],
+            "exit_code": result.returncode,
+            "timed_out": result.timed_out,
+            "stdout": result.stdout[-8000:],
+            "stderr": result.stderr[-8000:],
         }
     except Exception as exc:
         return {

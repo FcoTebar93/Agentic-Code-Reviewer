@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 from pydantic import Field
 
+from shared.agent_subprocess import run_sync_hardened
 from shared.tools import (
     ToolInput,
     ToolDefinition,
@@ -160,14 +161,15 @@ def python_lint_tool(args: LintInput) -> dict[str, Any]:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(args.code, encoding="utf-8")
 
-            proc = subprocess.run(
+            proc = run_sync_hardened(
                 ["python", "-m", "ruff", "check", str(target)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                cwd=str(tmp_path),
+                timeout_s=15.0,
+                max_stdout_bytes=256_000,
+                max_stderr_bytes=64_000,
             )
             issues: list[dict[str, Any]] = []
-            for line in proc.stdout.splitlines():
+            for line in (proc.stdout or "").splitlines():
                 parts = line.split(":", 3)
                 if len(parts) < 4:
                     continue
@@ -306,14 +308,13 @@ def js_ts_lint_tool(args: LintInput) -> dict[str, Any]:
         }
 
     try:
-        try:
-            subprocess.run(
-                ["npx", "eslint", "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-        except Exception:
+        probe = run_sync_hardened(
+            ["npx", "eslint", "--version"],
+            timeout_s=30.0,
+            max_stdout_bytes=8_192,
+            max_stderr_bytes=8_192,
+        )
+        if probe.timed_out or probe.returncode != 0:
             return {
                 "supported": False,
                 "issues": [],
@@ -329,12 +330,12 @@ def js_ts_lint_tool(args: LintInput) -> dict[str, Any]:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(args.code, encoding="utf-8")
 
-            proc = subprocess.run(
+            proc = run_sync_hardened(
                 ["npx", "eslint", "--format", "json", str(target)],
                 cwd=str(tmp_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                timeout_s=30.0,
+                max_stdout_bytes=512_000,
+                max_stderr_bytes=128_000,
             )
 
             issues: list[dict[str, Any]] = []
@@ -393,14 +394,7 @@ def java_lint_tool(args: LintInput) -> dict[str, Any]:
         }
 
     try:
-        try:
-            subprocess.run(
-                ["javac", "-version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-        except Exception:
+        if not shutil.which("javac"):
             return {
                 "supported": False,
                 "issues": [],
@@ -415,12 +409,12 @@ def java_lint_tool(args: LintInput) -> dict[str, Any]:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(args.code, encoding="utf-8")
 
-            proc = subprocess.run(
+            proc = run_sync_hardened(
                 ["javac", str(target)],
                 cwd=str(tmp_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                timeout_s=30.0,
+                max_stdout_bytes=256_000,
+                max_stderr_bytes=256_000,
             )
 
             issues: list[dict[str, Any]] = []
@@ -483,29 +477,28 @@ def semgrep_tool(args: LintInput) -> dict[str, Any]:
         }
 
     try:
-        try:
-            subprocess.run(
-                ["python", "-m", "semgrep", "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+        py_sem = run_sync_hardened(
+            ["python", "-m", "semgrep", "--version"],
+            timeout_s=20.0,
+            max_stdout_bytes=8_192,
+            max_stderr_bytes=8_192,
+        )
+        if not py_sem.timed_out and py_sem.returncode == 0:
             use_python_module = True
-        except Exception:
-            try:
-                subprocess.run(
-                    ["semgrep", "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-                use_python_module = False
-            except Exception:
+        else:
+            bin_sem = run_sync_hardened(
+                ["semgrep", "--version"],
+                timeout_s=20.0,
+                max_stdout_bytes=8_192,
+                max_stderr_bytes=8_192,
+            )
+            if bin_sem.timed_out or bin_sem.returncode != 0:
                 return {
                     "supported": False,
                     "issues": [],
                     "note": "semgrep no está instalado; omitiendo análisis semgrep",
                 }
+            use_python_module = False
 
         ext = supported_langs[lang]
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -524,12 +517,12 @@ def semgrep_tool(args: LintInput) -> dict[str, Any]:
                 "--quiet",
                 str(target),
             ]
-            proc = subprocess.run(
+            proc = run_sync_hardened(
                 cmd,
                 cwd=str(tmp_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                timeout_s=60.0,
+                max_stdout_bytes=1_048_576,
+                max_stderr_bytes=256_000,
             )
 
             issues: list[dict[str, Any]] = []
@@ -593,14 +586,13 @@ def python_security_tool(args: LintInput) -> dict[str, Any]:
         }
 
     try:
-        try:
-            subprocess.run(
-                ["python", "-m", "bandit", "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-        except Exception:
+        probe = run_sync_hardened(
+            ["python", "-m", "bandit", "--version"],
+            timeout_s=20.0,
+            max_stdout_bytes=8_192,
+            max_stderr_bytes=8_192,
+        )
+        if probe.timed_out or probe.returncode != 0:
             return {
                 "supported": False,
                 "issues": [],
@@ -613,11 +605,12 @@ def python_security_tool(args: LintInput) -> dict[str, Any]:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(args.code, encoding="utf-8")
 
-            proc = subprocess.run(
+            proc = run_sync_hardened(
                 ["python", "-m", "bandit", "-q", "-f", "json", str(target)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                cwd=str(tmp_path),
+                timeout_s=30.0,
+                max_stdout_bytes=512_000,
+                max_stderr_bytes=128_000,
             )
 
             issues: list[dict[str, Any]] = []
@@ -674,14 +667,13 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
 
     if lang in {"python", "py"}:
         try:
-            try:
-                subprocess.run(
-                    ["python", "-m", "black", "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            except Exception:
+            probe = run_sync_hardened(
+                ["python", "-m", "black", "--version"],
+                timeout_s=15.0,
+                max_stdout_bytes=8_192,
+                max_stderr_bytes=8_192,
+            )
+            if probe.timed_out or probe.returncode != 0:
                 return {
                     "supported": False,
                     "language": args.language,
@@ -697,12 +689,12 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(args.code, encoding="utf-8")
 
-                proc = subprocess.run(
+                proc = run_sync_hardened(
                     ["python", "-m", "black", str(target)],
                     cwd=str(tmp_path),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
+                    timeout_s=25.0,
+                    max_stdout_bytes=32_768,
+                    max_stderr_bytes=32_768,
                 )
 
                 formatted = target.read_text(encoding="utf-8", errors="replace")
@@ -726,14 +718,13 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
 
     if lang in {"javascript", "js", "typescript", "ts"}:
         try:
-            try:
-                subprocess.run(
-                    ["npx", "prettier", "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            except Exception:
+            probe = run_sync_hardened(
+                ["npx", "prettier", "--version"],
+                timeout_s=30.0,
+                max_stdout_bytes=8_192,
+                max_stderr_bytes=8_192,
+            )
+            if probe.timed_out or probe.returncode != 0:
                 return {
                     "supported": False,
                     "language": args.language,
@@ -750,7 +741,7 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(args.code, encoding="utf-8")
 
-                proc = subprocess.run(
+                proc = run_sync_hardened(
                     [
                         "npx",
                         "prettier",
@@ -758,9 +749,9 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
                         str(target),
                     ],
                     cwd=str(tmp_path),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
+                    timeout_s=45.0,
+                    max_stdout_bytes=32_768,
+                    max_stderr_bytes=32_768,
                 )
 
                 formatted = target.read_text(encoding="utf-8", errors="replace")
