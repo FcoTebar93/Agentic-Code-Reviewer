@@ -66,6 +66,27 @@ async def create_plan(
         return JSONResponse(content={"error": str(exc)}, status_code=502)
 
 
+@router.post("/agent_ask")
+async def agent_ask(
+    request_body: dict[str, Any],
+    rt: GatewayRuntime = Depends(get_gateway_runtime),
+):
+    """
+    Q&A over pipeline semantic memory (and optional plan events).
+    Body: { "question": str, "plan_id"?: str, "user_locale"?: str }
+    """
+    try:
+        resp = await rt.http_client.post(
+            f"{rt.cfg.meta_planner_url}/ask",
+            json=request_body,
+        )
+        content = _proxy_json(resp)
+        return JSONResponse(content=content, status_code=resp.status_code)
+    except Exception as exc:
+        logger.exception("Failed to proxy /api/agent_ask")
+        return JSONResponse(content={"error": str(exc)}, status_code=502)
+
+
 @router.post("/replan")
 async def confirm_replan(
     request_body: dict[str, Any],

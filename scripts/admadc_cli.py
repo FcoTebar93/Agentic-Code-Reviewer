@@ -4,6 +4,7 @@ ADMADC CLI — lightweight client for the gateway API.
 Usage:
   python scripts/admadc_cli.py status
   python scripts/admadc_cli.py plan --prompt "Add a health endpoint" [--mode save]
+  python scripts/admadc_cli.py ask --question "What patterns appear in QA failures?" [--plan-id UUID]
   python scripts/admadc_cli.py events [--limit 20]
   python scripts/admadc_cli.py tasks <plan_id>
   python scripts/admadc_cli.py metrics <plan_id>
@@ -182,6 +183,24 @@ def cmd_plan(
         if plan_id:
             print(f"\n# Plan ID: {plan_id}", file=sys.stderr)
         return plan_id
+
+
+def cmd_agent_ask(
+    base: str,
+    question: str,
+    plan_id: str = "",
+    locale: str = "en",
+) -> None:
+    with _get_client(base) as client:
+        body: dict[str, Any] = {
+            "question": question,
+            "user_locale": _normalize_cli_user_locale(locale),
+        }
+        if (plan_id or "").strip():
+            body["plan_id"] = plan_id.strip()
+        r = client.post("/api/agent_ask", json=body)
+        r.raise_for_status()
+        print(json.dumps(r.json(), indent=2))
 
 
 def cmd_events(
@@ -621,6 +640,23 @@ def main() -> None:
         help="After creating the plan, stream its events in real time (WebSocket)",
     )
 
+    p_ask = sub.add_parser(
+        "ask",
+        help="Q&A over semantic memory (POST /api/agent_ask → meta_planner /ask)",
+    )
+    p_ask.add_argument("--question", required=True, help="Question for the agent")
+    p_ask.add_argument(
+        "--plan-id",
+        default="",
+        help="Optional plan UUID to include recent events for that plan",
+    )
+    p_ask.add_argument(
+        "--locale",
+        default="en",
+        metavar="TAG",
+        help="Response language (primary BCP-47 tag). Default: en.",
+    )
+
     p_events = sub.add_parser("events", help="List recent events (GET /api/events)")
     p_events.add_argument("--limit", type=int, default=50, help="Max events to return")
     p_events.add_argument(
@@ -715,6 +751,13 @@ def main() -> None:
         cmd_doctor(base)
     elif args.command == "shell":
         cmd_shell(base)
+    elif args.command == "ask":
+        cmd_agent_ask(
+            base,
+            question=args.question,
+            plan_id=getattr(args, "plan_id", "") or "",
+            locale=getattr(args, "locale", "en") or "en",
+        )
     elif args.command == "plan":
         plan_id = cmd_plan(
             base,
