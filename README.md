@@ -1,14 +1,5 @@
 ## ADMADC – Plataforma agentica de Dev & QA
 
-**Elevator pitch (30s):** ADMADC convierte una petición de producto en un flujo completo de entrega asistida por agentes (planificación, implementación, QA, seguridad y aprobación humana) con trazabilidad end-to-end.
-
-### Por qué destaca en portfolio
-
-- Arquitectura event-driven con separación real por responsabilidades.
-- Puertas de calidad y seguridad antes de crear PR.
-- Human-in-the-loop para decisión final, evitando automatización ciega.
-- Observabilidad completa (métricas, logs, alertas y SLIs) para operar el sistema.
-
 ADMADC es una **plataforma agentica de desarrollo de software**: un conjunto de microservicios que colaboran para:
 
 - Entender un **prompt de alto nivel**.
@@ -281,6 +272,55 @@ También puedes instalar hooks locales de commit:
 pre-commit install
 pre-commit run --all-files
 ```
+
+---
+
+## Decisiones arquitectónicas (ADRs)
+
+Decisiones clave del proyecto y sus trade-offs:
+
+- `docs/adr/ADR-001-event-driven-orchestration.md`
+- `docs/adr/ADR-002-human-in-the-loop-before-pr.md`
+- `docs/adr/ADR-003-centralized-memory-service.md`
+
+---
+
+## Métricas operativas recomendadas
+
+Métricas recomendadas para evaluar el estado del sistema:
+
+- **Lead time de plan a conclusión**: tiempo desde `plan.created` hasta `pipeline.conclusion`.
+- **Tasa de éxito end-to-end**: % de planes que terminan en `pr.created` sobre planes iniciados.
+- **Rework por QA**: media de reintentos por tarea (`qa_attempt`) antes de `qa.passed`.
+- **Bloqueos de seguridad**: ratio `security.blocked` / `pr.requested`.
+- **Coste estimado por plan**: agregación de `metrics.tokens_used` por plan (prompt + completion).
+
+Sugerencia de reporte periódico:
+
+- P50/P95 de lead time.
+- Tasa de éxito de las últimas 2 semanas.
+- Coste promedio por plan y distribución por servicio (planner/dev/qa/replanner).
+
+---
+
+## Trade-offs explícitos
+
+Decisiones de diseño y su coste asumido:
+
+- **Event-driven vs sync puro**: ganamos desacoplamiento y resiliencia, asumimos mayor complejidad operativa.
+- **HITL antes de PR**: ganamos control y gobernanza, asumimos más lead time.
+- **Memory service único**: ganamos consistencia y trazabilidad, asumimos un potencial cuello de botella.
+- **Microservicios por dominio**: ganamos claridad de responsabilidades, asumimos overhead de despliegue y observabilidad.
+
+---
+
+## Roadmap técnico (próximos pasos)
+
+- **R1 - Confiabilidad:** SLOs formales por servicio + tests de resiliencia (timeouts/retries/fallos de cola).
+- **R2 - Testing E2E:** suite de smoke e integración con escenarios completos plan→QA→security→HITL.
+- **R3 - Seguridad aplicada:** política de secretos y hardening para entorno no-local (rotación, RBAC básico).
+- **R4 - Cost governance:** presupuestos por plan/proyecto y alertas de coste por token.
+- **R5 - Productización:** perfiles de despliegue (`local`, `staging`) con configuración y documentación separadas.
 
 ---
 
