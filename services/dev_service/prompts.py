@@ -100,7 +100,6 @@ this file will fall has many previous failures, be especially strict with:
 - data validation, limits and types,
 - error handling and unexpected states,
 - avoid fragile implicit dependencies.
-{SENIOR_DELIVERY_CHECKLIST}
 RESPONSE LANGUAGE:
 {response_language_rules}
 
@@ -112,6 +111,7 @@ REASONING: <your design reasoning in 2-3 sentences>
 CODE:
 <the complete code, no markdown fences>
 """
+    + SENIOR_DELIVERY_CHECKLIST
 )
 
 TOOL_LOOP_SYSTEM = (
