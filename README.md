@@ -1,5 +1,14 @@
 ## ADMADC – Plataforma agentica de Dev & QA
 
+**Elevator pitch (30s):** ADMADC convierte una petición de producto en un flujo completo de entrega asistida por agentes (planificación, implementación, QA, seguridad y aprobación humana) con trazabilidad end-to-end.
+
+### Por qué destaca en portfolio
+
+- Arquitectura event-driven con separación real por responsabilidades.
+- Puertas de calidad y seguridad antes de crear PR.
+- Human-in-the-loop para decisión final, evitando automatización ciega.
+- Observabilidad completa (métricas, logs, alertas y SLIs) para operar el sistema.
+
 ADMADC es una **plataforma agentica de desarrollo de software**: un conjunto de microservicios que colaboran para:
 
 - Entender un **prompt de alto nivel**.
@@ -155,7 +164,6 @@ La arquitectura se puede ver como una línea de ensamblaje impulsada por eventos
   - `shared/llm_adapter` → factoría de proveedores LLM (OpenAI, Groq, Gemini, OpenRouter, local…) con caché opcional en Redis.
   - `shared/logging`, `shared/observability` → logging estructurado y métricas Prometheus.
   - SLIs acordados para paneles y alertas: `infrastructure/observability/SLIS.md` (dashboard Grafana **ADMADC · SLIs**, reglas Prometheus en `infrastructure/prometheus/rules/slis_alerts.yml`).
->>>>>>> feat/add-grafana-and-prometheus-features
 
 - **Frontend (`frontend/`)**
   - Aplicación React/TypeScript + Vite.
@@ -246,6 +254,33 @@ En el frontend, la pestaña **Más** incluye atajos a Grafana (incl. dashboard *
 ### Documentación y checklist
 
 - **SLIs, checklist de cierre y pasos 2–3**: `infrastructure/observability/SLIS.md`.
+
+---
+
+## Quality gates (local)
+
+Para validar cambios antes de abrir PR:
+
+- **Backend**
+  - `pip install -r shared/requirements.txt`
+  - `pip install ruff mypy pytest pre-commit`
+  - `ruff check .`
+  - `mypy shared services`
+  - `pytest -q tests`
+- **Frontend**
+  - `cd frontend`
+  - `npm install`
+  - `npm run lint`
+  - `npm run typecheck`
+  - `npm run test`
+  - `npm run build`
+
+También puedes instalar hooks locales de commit:
+
+```bash
+pre-commit install
+pre-commit run --all-files
+```
 
 ---
 
