@@ -142,12 +142,20 @@
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
           "expr": "sum by (service) (rate(tasks_completed_total[15m]))",
-          "legendFormat": "{{service}}",
+          "legendFormat": "completed {{service}}",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (service, reason) (rate(tasks_failed_total[15m]))",
+          "legendFormat": "failed {{service}}/{{reason}}",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "SLI 4 · tasks_completed (tasa / 15m)",
+      "title": "SLI 4 · tasks completed/failed (tasa / 15m)",
       "type": "timeseries"
     },
     {
@@ -198,6 +206,40 @@
       ],
       "title": "SLI 5 · líneas ERROR (logs)",
       "type": "logs"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 46 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, path) (rate(http_request_latency_seconds_bucket{service=\"gateway_service\"}[5m])))",
+          "legendFormat": "p95 {{path}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, path) (rate(http_request_latency_seconds_bucket{service=\"gateway_service\"}[5m])))",
+          "legendFormat": "p99 {{path}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "SLI adicional · Latencia HTTP gateway (p95/p99 por ruta)",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -209,6 +251,6 @@
   "timezone": "browser",
   "title": "ADMADC · SLIs",
   "uid": "admadc-slis",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

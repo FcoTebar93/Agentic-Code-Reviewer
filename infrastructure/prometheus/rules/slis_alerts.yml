@@ -39,3 +39,28 @@ groups:
         annotations:
           summary: "p95 agent_execution_time > 600s (servicio {{ $labels.service }})"
           description: "Umbral provisional (10 min); ajustad según SLI 3 en SLIS.md."
+
+      - alert: AdmadcGatewayHttpP99High
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, path) (
+              rate(http_request_latency_seconds_bucket{service="gateway_service"}[10m])
+            )
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gateway HTTP p99 > 2s (ruta {{ $labels.path }})"
+          description: "Latencia HTTP alta en gateway_service (umbral provisional, revisar con baseline real)."
+
+      - alert: AdmadcTasksFailedRateHigh
+        expr: |
+          sum(rate(tasks_failed_total[15m])) > 0.02
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tasa de tasks_failed_total elevada"
+          description: "Se detectan fallos de tareas sostenidos en la ventana de 15m."
