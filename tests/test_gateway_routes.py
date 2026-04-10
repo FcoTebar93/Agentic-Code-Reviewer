@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from services.gateway_service.routes.approvals import (
+    approvals_audit_summary,
     approve_pr,
     list_approvals,
     reject_pr,
@@ -55,6 +56,7 @@ def _build_runtime() -> Any:
             approvals_rate_limit_enabled=False,
             approvals_rate_limit_window_seconds=60,
             approvals_rate_limit_max_requests=20,
+            approvals_audit_summary_enabled=False,
         ),
     )
 
@@ -156,6 +158,38 @@ def test_approve_pr_rate_limited_when_enabled() -> None:
             raise AssertionError("Expected HTTPException 429")
         except HTTPException as exc:
             assert exc.status_code == 429
+
+    asyncio.run(_run())
+
+
+def test_approvals_audit_summary_returns_404_when_disabled() -> None:
+    async def _run() -> None:
+        rt = _build_runtime()
+        try:
+            await approvals_audit_summary(rt)
+            raise AssertionError("Expected HTTPException 404")
+        except HTTPException as exc:
+            assert exc.status_code == 404
+
+    asyncio.run(_run())
+
+
+def test_approvals_audit_summary_includes_rate_buckets_after_approve() -> None:
+    async def _run() -> None:
+        rt = _build_runtime()
+        rt.cfg.approvals_audit_summary_enabled = True
+        rt.cfg.approvals_rate_limit_enabled = True
+        rt.cfg.approvals_rate_limit_window_seconds = 60
+        rt.cfg.approvals_rate_limit_max_requests = 5
+
+        await approve_pr("approval-1", rt)
+        summary = await approvals_audit_summary(rt)
+        assert summary["service"] == "gateway_service"
+        assert summary["rate_limit"]["enabled"] is True
+        assert summary["pending_approvals_count"] == 0
+        assert summary["tracked_keys"] >= 1
+        keys = {b["key"] for b in summary["buckets"]}
+        assert "approve:approval-1" in keys
 
     asyncio.run(_run())
 

@@ -87,6 +87,54 @@ def _enforce_approvals_rate_limit(
     rt.approvals_rate_limit_counters[key] = bucket
 
 
+def _approvals_rate_limit_snapshot(rt: GatewayRuntime) -> dict:
+    """In-window counts per rate-limit key (monotonic clock), for ops diagnostics."""
+    now = time.monotonic()
+    window = float(rt.cfg.approvals_rate_limit_window_seconds)
+    buckets: list[dict[str, str | int | float]] = []
+    for key, stamps in list(rt.approvals_rate_limit_counters.items()):
+        in_window = [ts for ts in stamps if now - ts <= window]
+        if in_window:
+            rt.approvals_rate_limit_counters[key] = in_window
+        else:
+            rt.approvals_rate_limit_counters.pop(key, None)
+            continue
+        oldest = min(in_window)
+        buckets.append(
+            {
+                "key": key,
+                "count_in_window": len(in_window),
+                "oldest_age_seconds": round(now - oldest, 3),
+            }
+        )
+    buckets.sort(key=lambda b: str(b["key"]))
+    return {
+        "tracked_keys": len(buckets),
+        "buckets": buckets,
+    }
+
+
+@router.get("/approvals/audit_summary")
+async def approvals_audit_summary(
+    rt: GatewayRuntime = Depends(get_gateway_runtime),
+    x_approval_token: str | None = Header(default=None),
+):
+    if not rt.cfg.approvals_audit_summary_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    _require_approvals_auth(rt, x_approval_token, action="audit_summary")
+    snap = _approvals_rate_limit_snapshot(rt)
+    return {
+        "service": SERVICE_NAME,
+        "rate_limit": {
+            "enabled": rt.cfg.approvals_rate_limit_enabled,
+            "window_seconds": rt.cfg.approvals_rate_limit_window_seconds,
+            "max_requests": rt.cfg.approvals_rate_limit_max_requests,
+        },
+        "pending_approvals_count": len(rt.pending_approvals),
+        **snap,
+    }
+
+
 @router.get("/approvals")
 async def list_approvals(
     rt: GatewayRuntime = Depends(get_gateway_runtime),

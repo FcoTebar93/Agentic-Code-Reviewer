@@ -20,6 +20,7 @@ class GatewayConfig:
     approvals_rate_limit_enabled: bool
     approvals_rate_limit_window_seconds: int
     approvals_rate_limit_max_requests: int
+    approvals_audit_summary_enabled: bool
 
     @classmethod
     def from_env(cls) -> GatewayConfig:
@@ -58,4 +59,8 @@ class GatewayConfig:
             approvals_rate_limit_max_requests=max(
                 1, int(os.environ.get("GATEWAY_APPROVALS_RATE_LIMIT_MAX_REQUESTS", "20"))
             ),
+            approvals_audit_summary_enabled=os.environ.get(
+                "GATEWAY_APPROVALS_AUDIT_SUMMARY_ENABLED", "false"
+            ).lower()
+            in ("1", "true", "yes"),
         )
