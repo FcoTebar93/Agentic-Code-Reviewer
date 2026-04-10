@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Callable
 
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.cache import CachedLLMProvider
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 _OPENAI_COMPATIBLE = {"openai", "groq", "gemini", "openrouter", "local"}
 
-_PROVIDERS: dict[str, type] = {
+_PROVIDERS: dict[str, Callable[[], LLMProvider]] = {
     "mock": MockProvider,
 }
 

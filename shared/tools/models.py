@@ -16,7 +16,7 @@ class ToolInput(BaseModel):
     """
 
 
-ToolFunc = Callable[[ToolInput], Awaitable[Any]] | Callable[[ToolInput], Any]
+ToolFunc = Callable[[Any], Awaitable[Any]] | Callable[[Any], Any]
 
 
 @dataclass

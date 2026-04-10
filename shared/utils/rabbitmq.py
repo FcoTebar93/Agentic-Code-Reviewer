@@ -221,7 +221,16 @@ class EventBus:
             await dlx_exchange.publish(dlq_msg, routing_key=original.routing_key or "unknown")
 
         async def _on_message(message: AbstractIncomingMessage) -> None:
-            retry_count = int((message.headers or {}).get("x-retry-count", 0))
+            retry_raw = (message.headers or {}).get("x-retry-count", 0)
+            if isinstance(retry_raw, bool):
+                retry_count = int(retry_raw)
+            elif isinstance(retry_raw, (int, float, str, bytes, bytearray)):
+                try:
+                    retry_count = int(retry_raw)
+                except (TypeError, ValueError):
+                    retry_count = 0
+            else:
+                retry_count = 0
             try:
                 async with message.process(requeue=False, ignore_processed=True):
                     data = json.loads(message.body.decode())

@@ -404,7 +404,7 @@ def policy_for_path(policy: ProjectPolicy, file_path: str) -> PathPolicy:
         # Prefer the longest matching prefix
         if len(prefix) > len(best_prefix):
             best_prefix = prefix
-            best_policy = cfg  # type: ignore[assignment]
+            best_policy = cfg
     return best_policy
 
 

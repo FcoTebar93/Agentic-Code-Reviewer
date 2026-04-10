@@ -73,6 +73,14 @@ def _truncate_utf8(text: str, max_bytes: int) -> str:
     return encoded[:max_bytes].decode("utf-8", errors="ignore")
 
 
+def _as_text(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def _normalize_prog_name(argv0: str) -> str:
     base = os.path.basename(argv0).lower()
     if base.endswith(".exe"):
@@ -227,8 +235,8 @@ def run_sync_hardened(
             False,
         )
     except subprocess.TimeoutExpired as e:
-        out = (e.stdout or "") if e.stdout is not None else ""
-        err = (e.stderr or "") if e.stderr is not None else ""
+        out = _as_text(e.stdout)
+        err = _as_text(e.stderr)
         return SubprocessResult(
             -1,
             _truncate_utf8(out, mo),
