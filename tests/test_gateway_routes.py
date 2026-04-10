@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
+from fastapi import HTTPException
+
 from services.gateway_service.routes.approvals import (
     approve_pr,
     list_approvals,
@@ -46,6 +48,10 @@ def _build_runtime() -> Any:
         pending_approvals={payload.approval_id: payload},
         manager=_FakeManager(connection_count=3),
         event_bus=_FakeEventBus(),
+        cfg=SimpleNamespace(
+            approvals_auth_enabled=False,
+            approvals_auth_token="",
+        ),
     )
 
 
@@ -115,4 +121,18 @@ def test_proxy_json_handles_empty_and_invalid_payloads() -> None:
 
     invalid = _proxy_json(_Resp("{bad", 200, "raise"))
     assert "Invalid upstream response" in invalid["error"]
+
+
+def test_list_approvals_requires_token_when_auth_enabled() -> None:
+    async def _run() -> None:
+        rt = _build_runtime()
+        rt.cfg.approvals_auth_enabled = True
+        rt.cfg.approvals_auth_token = "secret-approval-token"
+        try:
+            await list_approvals(rt, x_approval_token="wrong-token")
+            raise AssertionError("Expected HTTPException 403")
+        except HTTPException as exc:
+            assert exc.status_code == 403
+
+    asyncio.run(_run())
 

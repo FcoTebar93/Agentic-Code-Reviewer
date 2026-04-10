@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import SERVICE_NAME
@@ -15,8 +15,28 @@ router = APIRouter(prefix="/api", tags=["approvals"])
 logger = logging.getLogger(SERVICE_NAME)
 
 
+def _require_approvals_auth(rt: GatewayRuntime, provided_token: str | None) -> None:
+    if not rt.cfg.approvals_auth_enabled:
+        return
+    expected = (rt.cfg.approvals_auth_token or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Approvals auth enabled but token is not configured",
+        )
+    if provided_token != expected:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden",
+        )
+
+
 @router.get("/approvals")
-async def list_approvals(rt: GatewayRuntime = Depends(get_gateway_runtime)):
+async def list_approvals(
+    rt: GatewayRuntime = Depends(get_gateway_runtime),
+    x_approval_token: str | None = Header(default=None),
+):
+    _require_approvals_auth(rt, x_approval_token)
     return {
         "pending": [a.model_dump() for a in rt.pending_approvals.values()],
         "count": len(rt.pending_approvals),
@@ -27,7 +47,9 @@ async def list_approvals(rt: GatewayRuntime = Depends(get_gateway_runtime)):
 async def approve_pr(
     approval_id: str,
     rt: GatewayRuntime = Depends(get_gateway_runtime),
+    x_approval_token: str | None = Header(default=None),
 ):
+    _require_approvals_auth(rt, x_approval_token)
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
         return JSONResponse(
@@ -60,7 +82,9 @@ async def approve_pr(
 async def reject_pr(
     approval_id: str,
     rt: GatewayRuntime = Depends(get_gateway_runtime),
+    x_approval_token: str | None = Header(default=None),
 ):
+    _require_approvals_auth(rt, x_approval_token)
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
         return JSONResponse(
