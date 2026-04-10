@@ -55,6 +55,63 @@ groups:
           summary: "Gateway HTTP p99 > 2s (ruta {{ $labels.path }})"
           description: "Latencia HTTP alta en gateway_service (umbral provisional, revisar con baseline real)."
 
+      - alert: AdmadcGatewayPlanEndpointP99High
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (
+              rate(http_request_latency_seconds_bucket{
+                service="gateway_service",
+                method="POST",
+                path="/api/plan"
+              }[10m])
+            )
+          ) > 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "POST /api/plan p99 > 1s"
+          description: "Endpoint crítico de entrada degradado de forma sostenida (gateway_service)."
+
+      - alert: AdmadcGatewayEventsEndpointP99High
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (
+              rate(http_request_latency_seconds_bucket{
+                service="gateway_service",
+                method="GET",
+                path="/api/events"
+              }[10m])
+            )
+          ) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GET /api/events p99 > 0.8s"
+          description: "Endpoint de eventos degradado de forma sostenida (gateway_service)."
+
+      - alert: AdmadcGatewayPlanDetailEndpointP99High
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (
+              rate(http_request_latency_seconds_bucket{
+                service="gateway_service",
+                method="GET",
+                path="/api/plan_detail/{plan_id}"
+              }[10m])
+            )
+          ) > 1.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GET /api/plan_detail/{plan_id} p99 > 1.2s"
+          description: "Endpoint de detalle de plan degradado de forma sostenida (gateway_service)."
+
       - alert: AdmadcTasksFailedRateHigh
         expr: |
           sum(rate(tasks_failed_total[15m])) > 0.02
