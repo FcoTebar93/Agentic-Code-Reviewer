@@ -17,6 +17,9 @@ class GatewayConfig:
     cors_allow_headers: list[str]
     approvals_auth_enabled: bool
     approvals_auth_token: str
+    approvals_rate_limit_enabled: bool
+    approvals_rate_limit_window_seconds: int
+    approvals_rate_limit_max_requests: int
 
     @classmethod
     def from_env(cls) -> GatewayConfig:
@@ -45,4 +48,14 @@ class GatewayConfig:
             ).lower()
             in ("1", "true", "yes"),
             approvals_auth_token=os.environ.get("GATEWAY_APPROVALS_AUTH_TOKEN", ""),
+            approvals_rate_limit_enabled=os.environ.get(
+                "GATEWAY_APPROVALS_RATE_LIMIT_ENABLED", "false"
+            ).lower()
+            in ("1", "true", "yes"),
+            approvals_rate_limit_window_seconds=max(
+                1, int(os.environ.get("GATEWAY_APPROVALS_RATE_LIMIT_WINDOW_SECONDS", "60"))
+            ),
+            approvals_rate_limit_max_requests=max(
+                1, int(os.environ.get("GATEWAY_APPROVALS_RATE_LIMIT_MAX_REQUESTS", "20"))
+            ),
         )

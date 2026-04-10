@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -31,6 +32,23 @@ def _require_approvals_auth(rt: GatewayRuntime, provided_token: str | None) -> N
         )
 
 
+def _enforce_approvals_rate_limit(rt: GatewayRuntime, key: str) -> None:
+    if not rt.cfg.approvals_rate_limit_enabled:
+        return
+    now = time.monotonic()
+    window = float(rt.cfg.approvals_rate_limit_window_seconds)
+    max_requests = rt.cfg.approvals_rate_limit_max_requests
+    bucket = rt.approvals_rate_limit_counters.get(key, [])
+    bucket = [ts for ts in bucket if now - ts <= window]
+    if len(bucket) >= max_requests:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many approval requests",
+        )
+    bucket.append(now)
+    rt.approvals_rate_limit_counters[key] = bucket
+
+
 @router.get("/approvals")
 async def list_approvals(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
@@ -50,6 +68,7 @@ async def approve_pr(
     x_approval_token: str | None = Header(default=None),
 ):
     _require_approvals_auth(rt, x_approval_token)
+    _enforce_approvals_rate_limit(rt, f"approve:{approval_id}")
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
         return JSONResponse(
@@ -85,6 +104,7 @@ async def reject_pr(
     x_approval_token: str | None = Header(default=None),
 ):
     _require_approvals_auth(rt, x_approval_token)
+    _enforce_approvals_rate_limit(rt, f"reject:{approval_id}")
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
         return JSONResponse(

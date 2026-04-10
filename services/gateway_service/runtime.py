@@ -20,3 +20,4 @@ class GatewayRuntime:
     manager: ConnectionManager
     pending_approvals: dict[str, PrApprovalPayload] = field(default_factory=dict)
     plan_idem_cache: dict[str, tuple[dict, float]] = field(default_factory=dict)
+    approvals_rate_limit_counters: dict[str, list[float]] = field(default_factory=dict)
