@@ -513,9 +513,22 @@ async def _update_task_state(
         }
         if qa_attempt is not None:
             body["qa_attempt"] = qa_attempt
-        await http_client.post("/tasks", json=body)
+        resp = await http_client.post("/tasks", json=body)
+        if resp.status_code >= 400:
+            logging.getLogger(__name__).warning(
+                "Failed to update task state in memory_service (task_id=%s, plan_id=%s, status=%s): HTTP %s",
+                task_id[:8],
+                plan_id[:8],
+                status,
+                resp.status_code,
+            )
     except Exception:
-        pass
+        logging.getLogger(__name__).exception(
+            "Unexpected error updating task state in memory_service (task_id=%s, plan_id=%s, status=%s)",
+            task_id[:8],
+            plan_id[:8],
+            status,
+        )
 
 
 async def _build_short_term_memory(

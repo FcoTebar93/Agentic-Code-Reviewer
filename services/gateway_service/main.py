@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -34,6 +35,14 @@ from shared.middleware.correlation import install_correlation_middleware
 from shared.utils import EventBus
 
 logger = logging.getLogger(SERVICE_NAME)
+
+
+def _parse_csv_env(name: str, default: str, *, upper: bool = False) -> list[str]:
+    raw = os.environ.get(name, default)
+    values = [item.strip() for item in raw.split(",") if item.strip()]
+    if upper:
+        return [v.upper() for v in values]
+    return values
 
 
 @asynccontextmanager
@@ -76,9 +85,19 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_parse_csv_env(
+        "GATEWAY_CORS_ALLOW_ORIGINS",
+        "http://localhost:3001",
+    ),
+    allow_methods=_parse_csv_env(
+        "GATEWAY_CORS_ALLOW_METHODS",
+        "GET,POST,PUT,DELETE,OPTIONS",
+        upper=True,
+    ),
+    allow_headers=_parse_csv_env(
+        "GATEWAY_CORS_ALLOW_HEADERS",
+        "Authorization,Content-Type,X-Requested-With",
+    ),
 )
 install_correlation_middleware(app)
 
