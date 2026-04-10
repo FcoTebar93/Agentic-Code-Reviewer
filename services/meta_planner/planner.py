@@ -62,6 +62,8 @@ Delivery quality and dependencies:
   protocols, or public API surfaces before callers and UI that consume them).
 - In REASONING, briefly state implementation or review order when it matters (what should land first and why), and how
   grouped tasks relate within the same group_id.
+- For non-trivial tasks, phrase each task description so outcomes are verifiable (what “done” means: behaviour, API
+  surface, or user-visible effect). Downstream spec and QA agents use this to derive acceptance criteria and tests.
 """
 
 

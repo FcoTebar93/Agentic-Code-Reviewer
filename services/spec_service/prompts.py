@@ -61,13 +61,18 @@ Instructions:
 10. State key domain invariants and how failures should surface (user-visible vs internal), not only the happy path.
 11. If the change affects a public contract (HTTP API, events, shared types, CLI flags), note whether it is breaking or backward-compatible and any minimal migration expectation.
 12. Where useful, phrase expected behaviour so CRITICAL tests map to a clear, testable surface (inputs/outputs, observable effects) without forcing a specific implementation.
+13. Start the SPEC section with a numbered ACCEPTANCE CRITERIA block (3–8 items unless the task is trivial): each line must be
+    objectively verifiable (what must be true when the change is correct). The developer agent will treat these as mandatory.
 
 RESPONSE LANGUAGE:
 {response_language_rules}
 
 Format your response EXACTLY as:
 SPEC:
-<1-2 paragraphs or bullet points: behaviour, inputs/outputs, edge cases, invariants/failure surfacing, and compatibility notes if contracts change>
+ACCEPTANCE CRITERIA:
+1. <verifiable criterion the implementation must satisfy>
+2. <next criterion>
+(continue numbering; add a short blank line, then optional design notes: behaviour, edge cases, invariants, compatibility)
 
 TESTS:
 - [CRITICAL] <test 1: what it checks and why it is important>
@@ -86,7 +91,10 @@ Use tools when you need real paths or file contents; avoid redundant calls.
 When finished, send a final message with NO tool calls, exactly in this shape:
 
 SPEC:
-<concise behaviour: inputs, outputs, edge cases, invariants/failures, compatibility if APIs or shared contracts change>
+ACCEPTANCE CRITERIA:
+1. <verifiable criterion>
+2. <criterion>
+(then optional short notes: inputs, outputs, edge cases, compatibility)
 
 TESTS:
 - [CRITICAL] <short test description>

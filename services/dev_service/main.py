@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -177,7 +178,12 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         short_term_memory = await _build_short_term_memory(plan_id)
         existing_file_preview = await _maybe_read_existing_file(task.file_path)
         files_in_dir = await _list_files_in_task_directory(task)
-        spec_block = await _fetch_task_spec(plan_id, task.task_id)
+        wait_spec = not bool((qa_feedback or "").strip())
+        spec_block = await _fetch_task_spec(
+            plan_id,
+            task.task_id,
+            wait_if_missing=wait_spec,
+        )
         failure_patterns_block = await _build_failure_patterns_for_dev(task.file_path)
         repo_style_hints = build_repo_style_hints(
             REPO_ROOT,
@@ -192,6 +198,8 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             spec_block=spec_block,
             failure_patterns_block=failure_patterns_block,
             repo_style_hints=repo_style_hints,
+            spec_max_chars=cfg.spec_context_max_chars,
+            max_chars=cfg.dev_context_max_chars,
         )
         if cfg.enable_tool_loop and tool_registry is not None:
             code_result, prompt_tokens, completion_tokens = (
@@ -704,62 +712,84 @@ async def _build_failure_patterns_for_dev(file_path: str, limit: int = 200) -> s
         )
         return ""
 
-async def _fetch_task_spec(plan_id: str, task_id: str, limit: int = 20) -> str:
+async def _fetch_task_spec(
+    plan_id: str,
+    task_id: str,
+    *,
+    wait_if_missing: bool = False,
+    limit: int = 40,
+) -> str:
     """
     Fetch spec/tests for a given task from memory_service (spec.generated events).
 
-    This keeps the dev prompt informed without requiring direct coupling to
-    spec_service internals.
+    Optionally waits (poll) so spec_service can finish before codegen — only on
+    first assignment (no qa_feedback); QA retries skip waiting.
     """
     if http_client is None:
         return ""
 
-    try:
-        resp = await http_client.get(
-            "/events",
-            params={
-                "plan_id": plan_id,
-                "event_type": EventType.SPEC_GENERATED.value,
-                "limit": limit,
-            },
-        )
-        if resp.status_code != 200:
-            logger.warning(
-                "Failed to fetch spec events for plan %s (status=%s)",
+    async def _once() -> str:
+        try:
+            resp = await http_client.get(
+                "/events",
+                params={
+                    "plan_id": plan_id,
+                    "event_type": EventType.SPEC_GENERATED.value,
+                    "limit": limit,
+                },
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Failed to fetch spec events for plan %s (status=%s)",
+                    plan_id[:8],
+                    resp.status_code,
+                )
+                return ""
+            events = resp.json()
+            if not isinstance(events, list):
+                return ""
+
+            for ev in events:
+                payload = ev.get("payload") or {}
+                try:
+                    spec_payload = SpecGeneratedPayload.model_validate(payload)
+                except Exception:
+                    continue
+                if spec_payload.task_id == task_id:
+                    parts: list[str] = []
+                    if spec_payload.spec_text.strip():
+                        parts.append(
+                            f"SPEC FOR TASK {task_id[:8]}:\n"
+                            + spec_payload.spec_text.strip()
+                        )
+                    if spec_payload.test_suggestions.strip():
+                        parts.append(
+                            "TEST SUGGESTIONS:\n"
+                            + spec_payload.test_suggestions.strip()
+                        )
+                    return "\n\n".join(parts)
+            return ""
+        except Exception:
+            logger.exception(
+                "Error while fetching spec for task %s (plan %s)",
+                task_id[:8],
                 plan_id[:8],
-                resp.status_code,
             )
             return ""
-        events = resp.json()
-        if not isinstance(events, list):
-            return ""
 
-        for ev in events:
-            payload = ev.get("payload") or {}
-            try:
-                spec_payload = SpecGeneratedPayload.model_validate(payload)
-            except Exception:
-                continue
-            if spec_payload.task_id == task_id:
-                parts: list[str] = []
-                if spec_payload.spec_text.strip():
-                    parts.append(
-                        f"SPEC FOR TASK {task_id[:8]}:\n{spec_payload.spec_text.strip()}"
-                    )
-                if spec_payload.test_suggestions.strip():
-                    parts.append(
-                        "TEST SUGGESTIONS:\n"
-                        + spec_payload.test_suggestions.strip()
-                    )
-                return "\n\n".join(parts)
-        return ""
-    except Exception:
-        logger.exception(
-            "Error while fetching spec for task %s (plan %s)",
-            task_id[:8],
-            plan_id[:8],
-        )
-        return ""
+    interval = cfg.spec_wait_interval_seconds if cfg else 0.2
+    max_wait = 0.0
+    if cfg and wait_if_missing and cfg.spec_wait_max_seconds > 0:
+        max_wait = float(cfg.spec_wait_max_seconds)
+    deadline = time.monotonic() + max_wait
+
+    while True:
+        out = await _once()
+        if out.strip():
+            return out
+        if max_wait <= 0 or time.monotonic() >= deadline:
+            return ""
+        await asyncio.sleep(interval)
 
 
 def _build_dev_context(
@@ -769,22 +799,23 @@ def _build_dev_context(
     spec_block: str = "",
     failure_patterns_block: str = "",
     repo_style_hints: str = "",
-    max_chars: int = 2600,
+    *,
+    spec_max_chars: int = 3000,
+    max_chars: int = 5600,
 ) -> str:
     """
     Construye un contexto compacto y estructurado para el LLM del dev_service.
 
-    - Da prioridad a los eventos recientes (short_term_memory).
-    - Añade un pequeño preview del archivo objetivo si existe.
-    - Añade un resumen de archivos del directorio de trabajo.
-    - Puede incluir recortes de config del repo (ruff, eslint, etc.).
-    - Recorta el resultado total para mantener bajo el uso de tokens.
+    - Prioriza spec + tests (spec_service) cuando existen.
+    - Añade eventos recientes, preview del archivo, listado de directorio, estilo repo.
+    - Recorta el total a max_chars.
     """
     blocks: list[str] = []
 
     spec = (spec_block or "").strip()
     if spec:
-        blocks.append("TASK SPEC & TESTS:\n" + spec[:700])
+        cap = max(400, spec_max_chars)
+        blocks.append("TASK SPEC & TESTS:\n" + spec[:cap])
 
     style = (repo_style_hints or "").strip()
     if style:

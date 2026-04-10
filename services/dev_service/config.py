@@ -28,6 +28,10 @@ class DevConfig:
     large_diff_warn_enabled: bool
     large_diff_soft_lines: int
     large_diff_similarity: float
+    spec_wait_max_seconds: float
+    spec_wait_interval_seconds: float
+    spec_context_max_chars: int
+    dev_context_max_chars: int
 
     @classmethod
     def from_env(cls) -> DevConfig:
@@ -65,5 +69,20 @@ class DevConfig:
             large_diff_soft_lines=int(os.environ.get("DEV_LARGE_DIFF_LINE_SOFT", "120")),
             large_diff_similarity=float(
                 os.environ.get("DEV_LARGE_DIFF_SIMILARITY", "0.52")
+            ),
+            spec_wait_max_seconds=float(
+                os.environ.get("DEV_SPEC_WAIT_MAX_SECONDS", "10") or 0
+            ),
+            spec_wait_interval_seconds=max(
+                0.05,
+                float(os.environ.get("DEV_SPEC_WAIT_INTERVAL_SECONDS", "0.2") or 0.2),
+            ),
+            spec_context_max_chars=max(
+                400,
+                int(os.environ.get("DEV_SPEC_CONTEXT_MAX_CHARS", "3000")),
+            ),
+            dev_context_max_chars=max(
+                2000,
+                int(os.environ.get("DEV_CONTEXT_MAX_CHARS", "5600")),
             ),
         )

@@ -37,8 +37,8 @@ SERVICE_NAME = "spec_service"
 _SPEC_TOOLS = ("read_file", "list_project_files", "search_in_repo")
 
 _SPEC_REPAIR = (
-    "The final answer must contain SPEC: and TESTS: sections with non-empty content "
-    "unless the task is trivial."
+    "The final answer must contain SPEC: (including ACCEPTANCE CRITERIA: as a numbered list) "
+    "and TESTS: sections with non-empty content unless the task is trivial."
 )
 
 

@@ -9,6 +9,7 @@ Senior delivery checklist (follow unless the task explicitly conflicts):
 - Operations: for long-running services or I/O, consider structured logging, timeouts and safe defaults when relevant.
 - Security: no hardcoded secrets; avoid dangerous primitives (e.g. eval, unsafe deserialisation, string-built SQL/shell); treat user-controlled paths and payloads as untrusted.
 - Testability: shape public behaviour so CRITICAL behaviours implied by the task or any spec in context can be verified without a redesign.
+- Spec alignment: when SHORT-TERM MEMORY includes TASK SPEC & TESTS with ACCEPTANCE CRITERIA, treat each numbered item as mandatory unless it clearly conflicts with the repo; mention how you satisfied them in REASONING.
 """
 
 
@@ -67,11 +68,13 @@ Instructions:
 2. Explain the implementation approach you chose and why, addressing any decisions the planner raised.
 3. Write complete, production-quality {language} code.
 4. Make sure the code would pass basic linters and security checks for this language (naming, unused variables, unreachable code, dangerous APIs, missing validation, etc.).
-5. If the SHORT-TERM MEMORY mentions previous QA or security failures, explicitly address each listed issue
+5. If SHORT-TERM MEMORY includes TASK SPEC & TESTS with ACCEPTANCE CRITERIA (or TEST SUGGESTIONS marked CRITICAL),
+   satisfy those before adding unrelated features; briefly map criteria to your implementation in REASONING.
+6. If the SHORT-TERM MEMORY mentions previous QA or security failures, explicitly address each listed issue
    and adjust your implementation so it complies with the QA and security rules referenced there.
-6. If a QA FEEDBACK block appears above, it outranks the generic task wording: satisfy every issue and
+7. If a QA FEEDBACK block appears above, it outranks the generic task wording: satisfy every issue and
    required change listed there before cosmetic refactors.
-7. If this task was created as a QA retry or patch, make the minimum necessary changes to fix
+8. If this task was created as a QA retry or patch, make the minimum necessary changes to fix
    the problems indicated, keeping the rest of the file intact whenever possible.
 
 Format your response EXACTLY as:
@@ -104,6 +107,7 @@ this file will fall has many previous failures, be especially strict with:
 - error handling and unexpected states,
 - avoid fragile implicit dependencies.
 If a QA FEEDBACK block appears above, treat it as mandatory: address every listed issue and required change.
+If SHORT-TERM MEMORY includes TASK SPEC & TESTS with ACCEPTANCE CRITERIA, satisfy every numbered criterion.
 RESPONSE LANGUAGE:
 {response_language_rules}
 
@@ -132,6 +136,8 @@ When you are done, send a final assistant message with NO tool calls, using exac
 REASONING: <2-4 sentences>
 CODE:
 <the complete code for the target file, no markdown fences>
+
+If the user message includes TASK SPEC & TESTS with ACCEPTANCE CRITERIA, your REASONING must show you addressed them.
 """
 )
 
