@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from fastapi import FastAPI
@@ -36,10 +36,10 @@ from shared.tools import ToolRegistry, execute_tool
 from shared.utils import EventBus, IdempotencyStore, store_event
 
 SERVICE_NAME = "replanner_service"
-event_bus: EventBus | None = None
-http_client: httpx.AsyncClient | None = None
-cfg: ReplannerConfig | None = None
-tool_registry: ToolRegistry | None = None
+event_bus: EventBus = cast(EventBus, None)
+http_client: httpx.AsyncClient = cast(httpx.AsyncClient, None)
+cfg: ReplannerConfig = cast(ReplannerConfig, None)
+tool_registry: ToolRegistry = cast(ToolRegistry, None)
 
 _replan_suggested_for_plan: dict[str, bool] = {}
 
@@ -120,11 +120,11 @@ async def _consume_outcomes() -> None:
 
     async def handler(event: BaseEvent) -> None:
         if event.event_type == EventType.QA_FAILED:
-            payload = QAResultPayload.model_validate(event.payload)
-            await _handle_qa_failed(payload)
+            qa_payload = QAResultPayload.model_validate(event.payload)
+            await _handle_qa_failed(qa_payload)
         elif event.event_type == EventType.SECURITY_BLOCKED:
-            payload = SecurityResultPayload.model_validate(event.payload)
-            await _handle_security_blocked(payload)
+            security_payload = SecurityResultPayload.model_validate(event.payload)
+            await _handle_security_blocked(security_payload)
 
     await event_bus.subscribe(
         queue_name="replanner_service.outcomes",
@@ -307,17 +307,16 @@ async def _fetch_memory_context(plan_id: str, limit: int = 5) -> str:
             "semantic_outcome_memory",
             {"plan_id": plan_id, "limit": limit},
         )
+        semantic_lines: list[str] = []
         if not semantic_result.success:
             logger.warning(
                 "Replanner semantic search tool failed for plan %s: %s",
                 plan_id[:8],
                 semantic_result.error,
             )
-            semantic_lines: list[str] = []
         else:
             payload = semantic_result.output or {}
             results = payload.get("results") or []
-            semantic_lines: list[str] = []
             if isinstance(results, list) and results:
                 for item in results[:limit]:
                     p = item.get("payload") or {}

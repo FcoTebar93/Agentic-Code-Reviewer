@@ -16,6 +16,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import cast
 
 import httpx
 from fastapi import FastAPI
@@ -49,9 +50,9 @@ from shared.prompt_locale import (
 from shared.utils import EventBus, IdempotencyStore, store_event
 
 SERVICE_NAME = "security_service"
-event_bus: EventBus | None = None
-http_client: httpx.AsyncClient | None = None
-cfg: SecurityConfig | None = None
+event_bus: EventBus = cast(EventBus, None)
+http_client: httpx.AsyncClient = cast(httpx.AsyncClient, None)
+cfg: SecurityConfig = cast(SecurityConfig, None)
 
 
 @asynccontextmanager
@@ -158,7 +159,10 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
 
         try:
             llm = get_llm_provider(
-                provider_name=cfg.llm_provider,
+                provider_name=os.environ.get(
+                    "SECURITY_LLM_PROVIDER",
+                    os.environ.get("LLM_PROVIDER", "mock"),
+                ),
                 redis_url=cfg.redis_url,
             )
             violations_block = (

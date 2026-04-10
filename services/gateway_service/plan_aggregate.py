@@ -139,12 +139,12 @@ async def build_plan_detail_json_response(
         if isinstance(metrics_resp, JSONResponse) and metrics_resp.status_code != 200:
             metrics_data: dict[str, Any] = {}
         else:
-            metrics_data = (
+            metrics_data_raw = (
                 metrics_resp
                 if isinstance(metrics_resp, dict)
                 else getattr(metrics_resp, "body", None)
             )
-            if not isinstance(metrics_data, dict):
+            if not isinstance(metrics_data_raw, dict):
                 try:
                     metrics_data = (
                         json_lib.loads(metrics_resp.body)
@@ -153,6 +153,8 @@ async def build_plan_detail_json_response(
                     )
                 except Exception:
                     metrics_data = {}
+            else:
+                metrics_data = metrics_data_raw
 
         try:
             tasks_http = await http_client.get(
@@ -437,7 +439,7 @@ def _build_plan_detail_json(
         mod["tasks_count"] += 1
 
     for qa in qa_outcomes:
-        task_id = qa.get("task_id")
+        task_id = str(qa.get("task_id") or "")
         severity = str(qa.get("severity_hint", "medium") or "medium")
         group_id = "root"
         for t in task_summaries:

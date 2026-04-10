@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from typing import cast
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, status
@@ -48,9 +49,9 @@ from shared.observability.metrics import (
 from shared.utils import EventBus, IdempotencyStore, store_event
 
 SERVICE_NAME = "github_service"
-event_bus: EventBus | None = None
-http_client: httpx.AsyncClient | None = None
-cfg: GitHubConfig | None = None
+event_bus: EventBus = cast(EventBus, None)
+http_client: httpx.AsyncClient = cast(httpx.AsyncClient, None)
+cfg: GitHubConfig = cast(GitHubConfig, None)
 
 
 @asynccontextmanager

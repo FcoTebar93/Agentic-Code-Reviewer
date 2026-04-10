@@ -34,7 +34,12 @@ from shared.observability.metrics import (
     tasks_completed,
     tasks_failed,
 )
-from shared.policies import effective_mode, load_project_policy, policy_for_path
+from shared.policies import (
+    ProjectPolicy,
+    effective_mode,
+    load_project_policy,
+    policy_for_path,
+)
 from shared.prompt_locale import (
     qa_hot_module_note,
     qa_hot_module_stm_block,
@@ -61,7 +66,7 @@ class QADeps:
     dev_reasoning_cache: dict[str, str]
     qa_reasoning_cache: dict[str, str]
     pr_requested_plan_ids: set[str]
-    project_policy: dict | None = None
+    project_policy: ProjectPolicy | None = None
 
 
 async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> None:
@@ -109,10 +114,9 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 deps.project_policy = load_project_policy(REPO_ROOT)
         except Exception:
             deps.project_policy = {"default_mode": "normal", "paths": {}}
-        path_policy = (
-            policy_for_path(deps.project_policy or {}, payload.file_path or "")
-            if deps.project_policy
-            else {}
+        path_policy = policy_for_path(
+            deps.project_policy or {"default_mode": "normal", "paths": {}},
+            payload.file_path or "",
         )
         default_mode = (deps.project_policy or {}).get("default_mode", "normal")
         mode = effective_mode(raw_mode, path_policy, default_mode)

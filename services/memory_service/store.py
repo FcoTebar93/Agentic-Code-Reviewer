@@ -15,7 +15,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from math import log1p
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import redis.asyncio as aioredis
 from qdrant_client import AsyncQdrantClient
@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 QDRANT_COLLECTION = "admadc_code_memory"
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "384"))
 
+if TYPE_CHECKING:
+    from openai import AsyncOpenAI
+
 
 class MemoryStore:
 
@@ -57,7 +60,7 @@ class MemoryStore:
             or os.environ.get("OPENAI_API_KEY")
             or ""
         )
-        self._embed_client = None
+        self._embed_client: AsyncOpenAI | None = None
 
     async def initialize(self) -> None:
         collections = await self._qdrant.get_collections()
@@ -502,7 +505,7 @@ class MemoryStore:
 
         if not conditions:
             return None
-        return Filter(must=conditions)
+        return Filter(must=list(conditions))
 
     def _compute_heuristic_score(
         self,

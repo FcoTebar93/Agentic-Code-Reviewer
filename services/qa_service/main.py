@@ -21,6 +21,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import cast
 
 import httpx
 from fastapi import FastAPI
@@ -37,10 +38,10 @@ from shared.tools import ToolRegistry
 from shared.utils import EventBus, IdempotencyStore
 
 SERVICE_NAME = "qa_service"
-event_bus: EventBus | None = None
-http_client: httpx.AsyncClient | None = None
-cfg: QAConfig | None = None
-tool_registry: ToolRegistry | None = None
+event_bus: EventBus = cast(EventBus, None)
+http_client: httpx.AsyncClient = cast(httpx.AsyncClient, None)
+cfg: QAConfig = cast(QAConfig, None)
+tool_registry: ToolRegistry = cast(ToolRegistry, None)
 
 _dev_reasoning_cache: dict[str, str] = {}
 _qa_reasoning_cache: dict[str, str] = {}

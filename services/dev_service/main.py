@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import cast
 
 import httpx
 from fastapi import FastAPI
@@ -39,7 +40,12 @@ from shared.observability.metrics import (
     metrics_response,
     tasks_completed,
 )
-from shared.policies import effective_mode, load_project_policy, policy_for_path
+from shared.policies import (
+    ProjectPolicy,
+    effective_mode,
+    load_project_policy,
+    policy_for_path,
+)
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
@@ -53,11 +59,11 @@ from shared.utils import (
 from shared.utils.code_change_guard import large_change_note
 
 SERVICE_NAME = "dev_service"
-event_bus: EventBus | None = None
-http_client: httpx.AsyncClient | None = None
-cfg: DevConfig | None = None
-tool_registry: ToolRegistry | None = None
-project_policy = None
+event_bus: EventBus = cast(EventBus, None)
+http_client: httpx.AsyncClient = cast(httpx.AsyncClient, None)
+cfg: DevConfig = cast(DevConfig, None)
+tool_registry: ToolRegistry = cast(ToolRegistry, None)
+project_policy: ProjectPolicy | None = None
 
 
 @asynccontextmanager

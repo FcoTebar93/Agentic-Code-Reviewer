@@ -21,7 +21,8 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI
@@ -63,10 +64,10 @@ from shared.tools import ToolRegistry, execute_tool
 from shared.utils import EventBus, IdempotencyStore, store_event
 
 SERVICE_NAME = "meta_planner"
-event_bus: EventBus | None = None
-http_client: httpx.AsyncClient | None = None
-cfg: PlannerConfig | None = None
-tool_registry: ToolRegistry | None = None
+event_bus: EventBus = cast(EventBus, None)
+http_client: httpx.AsyncClient = cast(httpx.AsyncClient, None)
+cfg: PlannerConfig = cast(PlannerConfig, None)
+tool_registry: ToolRegistry = cast(ToolRegistry, None)
 
 _IDEM_TTL_SECONDS = int(os.environ.get("PLAN_IDEM_TTL_SECONDS", "30"))
 _plan_idem_cache: dict[str, tuple[str, dict, float]] = {}
@@ -384,8 +385,7 @@ async def _execute_plan(
             )
 
         plan_payload = PlanCreatedPayload(
-            plan_id=forced_plan_id
-            or PlanCreatedPayload.model_fields["plan_id"].default_factory(),
+            plan_id=forced_plan_id or str(uuid4()),
             original_prompt=prompt,
             tasks=task_specs,
             reasoning=plan_result.reasoning,
