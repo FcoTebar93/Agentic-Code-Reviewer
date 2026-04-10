@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -65,6 +66,8 @@ class ReviewResult:
     issues: list[str] = field(default_factory=list)
     reasoning: str = ""
     structured_feedback: dict | None = None
+    required_changes: list[str] = field(default_factory=list)
+    optional_improvements: list[str] = field(default_factory=list)
 
 
 SERVICE_NAME = "qa_service"
@@ -500,8 +503,12 @@ def _parse_review_response(content: str) -> ReviewResult:
     lines = content.strip().splitlines()
     passed = True
     issues: list[str] = []
+    required_changes: list[str] = []
+    optional_improvements: list[str] = []
     reasoning = ""
     in_issues = False
+    in_required = False
+    in_optional = False
     current_section: Literal["functionality", "style", "security", "other"] = "other"
     structured: dict[str, list[dict]] = {
         "functionality": [],
@@ -509,22 +516,49 @@ def _parse_review_response(content: str) -> ReviewResult:
         "security": [],
     }
 
+    def _reset_sections() -> None:
+        nonlocal in_issues, in_required, in_optional
+        in_issues = in_required = in_optional = False
+
     for line in lines:
         stripped = line.strip()
         upper = stripped.upper()
 
         if upper.startswith("REASONING:"):
             reasoning = stripped[len("REASONING:"):].strip()
-            in_issues = False
+            _reset_sections()
         elif upper.startswith("VERDICT:"):
             verdict = upper.replace("VERDICT:", "").strip()
             passed = verdict == "PASS"
-            in_issues = False
+            _reset_sections()
         elif upper.startswith("ISSUES:"):
             in_issues = True
+            in_required = in_optional = False
             inline = stripped[len("ISSUES:"):].strip()
             if inline.lower() not in ("none", ""):
                 issues.append(inline)
+        elif upper.startswith("REQUIRED_CHANGES:"):
+            _reset_sections()
+            in_required = True
+            inline = stripped[len("REQUIRED_CHANGES:"):].strip()
+            if inline.lower() not in ("none", ""):
+                required_changes.append(inline)
+        elif upper.startswith("OPTIONAL_IMPROVEMENTS:"):
+            in_issues = in_required = False
+            in_optional = True
+            inline = stripped[len("OPTIONAL_IMPROVEMENTS:"):].strip()
+            if inline.lower() not in ("none", ""):
+                optional_improvements.append(inline)
+        elif in_required and stripped:
+            num = re.match(r"^(\d+)[.)]\s*(.+)$", stripped)
+            if num:
+                required_changes.append(num.group(2).strip())
+            elif stripped.startswith("- "):
+                required_changes.append(stripped[2:].strip())
+        elif in_optional and stripped.startswith("- "):
+            opt = stripped[2:].strip()
+            if opt.lower() not in ("none", ""):
+                optional_improvements.append(opt)
         elif in_issues and stripped.startswith("- "):
             issue = stripped.lstrip("- ").strip()
             if issue.lower() not in ("none", ""):
@@ -578,4 +612,6 @@ def _parse_review_response(content: str) -> ReviewResult:
         issues=issues,
         reasoning=reasoning,
         structured_feedback=structured,
+        required_changes=required_changes,
+        optional_improvements=optional_improvements,
     )

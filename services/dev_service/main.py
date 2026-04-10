@@ -206,6 +206,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     plan_id=plan_id,
                     redis_url=cfg.redis_url,
                     user_locale=getattr(payload, "user_locale", None) or "en",
+                    qa_feedback=qa_feedback or "",
                 )
             )
         else:
@@ -215,6 +216,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 plan_reasoning=payload.plan_reasoning,
                 short_term_memory=dev_context,
                 user_locale=getattr(payload, "user_locale", None) or "en",
+                qa_feedback=qa_feedback or "",
             )
 
         if prompt_tokens or completion_tokens:

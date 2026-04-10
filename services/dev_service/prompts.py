@@ -30,6 +30,7 @@ Your task is:
 
 Target file: {file_path}
 
+{qa_feedback_block}
 You also have access to a short memory window of recent events for this plan
 (planner decisions, previous code generations, QA/security results, etc.).
 Use this context to stay consistent with prior steps, but ignore anything that
@@ -68,7 +69,9 @@ Instructions:
 4. Make sure the code would pass basic linters and security checks for this language (naming, unused variables, unreachable code, dangerous APIs, missing validation, etc.).
 5. If the SHORT-TERM MEMORY mentions previous QA or security failures, explicitly address each listed issue
    and adjust your implementation so it complies with the QA and security rules referenced there.
-6. If this task was created as a QA retry or patch, make the minimum necessary changes to fix
+6. If a QA FEEDBACK block appears above, it outranks the generic task wording: satisfy every issue and
+   required change listed there before cosmetic refactors.
+7. If this task was created as a QA retry or patch, make the minimum necessary changes to fix
    the problems indicated, keeping the rest of the file intact whenever possible.
 
 Format your response EXACTLY as:
@@ -86,6 +89,7 @@ Write production-quality code for the following task:
 
 The code should be written for file: {file_path}
 
+{qa_feedback_block}
 Downstream in this pipeline there are QA and CI agents that will:
 - Run language-appropriate linters and security tools (ruff, ESLint, Bandit, Semgrep, javac, etc.).
 - Optionally run tests and auto-formatters (e.g. black/prettier).
@@ -99,6 +103,7 @@ this file will fall has many previous failures, be especially strict with:
 - data validation, limits and types,
 - error handling and unexpected states,
 - avoid fragile implicit dependencies.
+If a QA FEEDBACK block appears above, treat it as mandatory: address every listed issue and required change.
 RESPONSE LANGUAGE:
 {response_language_rules}
 

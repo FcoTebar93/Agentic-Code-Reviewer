@@ -70,23 +70,37 @@ def _tool_loop_tool_names(include_ci: bool) -> list[str]:
     return names
 
 
+def _qa_feedback_block(qa_feedback: str) -> str:
+    q = (qa_feedback or "").strip()
+    if not q:
+        return ""
+    return (
+        "---\nQA FEEDBACK (previous submission rejected — address everything below):\n"
+        f"{q}\n---\n\n"
+    )
+
+
 def _build_codegen_user_content(
     task: TaskSpec,
     plan_reasoning: str,
     short_term_memory: str,
     user_locale: str = "en",
+    *,
+    qa_feedback: str = "",
 ) -> str:
     framework_hint = infer_framework_hint(task.language, task.file_path)
     stm_block = short_term_memory.strip()
     if framework_hint:
         stm_block = f"FRAMEWORK HINT: {framework_hint}\n\n" + (stm_block or "")
     rules = natural_language_rules_for_locale(user_locale)
+    qa_block = _qa_feedback_block(qa_feedback)
     if plan_reasoning.strip():
         return CODE_GEN_PROMPT.format(
             language=task.language,
             plan_reasoning=plan_reasoning,
             description=task.description,
             file_path=task.file_path,
+            qa_feedback_block=qa_block,
             short_term_memory=stm_block or "None.",
             response_language_rules=rules,
         )
@@ -94,6 +108,7 @@ def _build_codegen_user_content(
         language=task.language,
         description=task.description,
         file_path=task.file_path,
+        qa_feedback_block=qa_block,
         response_language_rules=rules,
     )
 
@@ -114,10 +129,16 @@ async def generate_code(
     plan_reasoning: str = "",
     short_term_memory: str = "",
     user_locale: str = "en",
+    *,
+    qa_feedback: str = "",
 ) -> tuple[CodeResult, int, int]:
     """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
     prompt = _build_codegen_user_content(
-        task, plan_reasoning, short_term_memory, user_locale=user_locale
+        task,
+        plan_reasoning,
+        short_term_memory,
+        user_locale=user_locale,
+        qa_feedback=qa_feedback,
     )
 
     def _parse(raw: str) -> tuple[CodeResult | None, bool]:
@@ -152,6 +173,7 @@ async def generate_code_with_tool_loop(
     plan_id: str | None = None,
     redis_url: str | None = None,
     user_locale: str = "en",
+    qa_feedback: str = "",
 ) -> tuple[CodeResult, int, int]:
     """
     Multi-turn generation: model may call repo tools before emitting REASONING/CODE.
@@ -166,11 +188,20 @@ async def generate_code_with_tool_loop(
             service=SERVICE_NAME, outcome="fallback_single_shot"
         ).inc()
         return await generate_code(
-            llm, task, plan_reasoning, short_term_memory, user_locale=user_locale
+            llm,
+            task,
+            plan_reasoning,
+            short_term_memory,
+            user_locale=user_locale,
+            qa_feedback=qa_feedback,
         )
 
     user_content = _build_codegen_user_content(
-        task, plan_reasoning, short_term_memory, user_locale=user_locale
+        task,
+        plan_reasoning,
+        short_term_memory,
+        user_locale=user_locale,
+        qa_feedback=qa_feedback,
     )
     messages: list[dict[str, Any]] = [
         {

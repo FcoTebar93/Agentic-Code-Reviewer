@@ -291,7 +291,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             result.issues,
         )
         if payload.qa_attempt < deps.cfg.max_qa_retries:
-            await _retry_task(payload, result.issues, deps)
+            await _retry_task(payload, result, deps)
         else:
             deps.logger.error(
                 "QA exhausted retries for task %s -> marking qa.failed",
@@ -314,9 +314,48 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             )
 
 
+_QA_RETRY_DOC_MAX = 7200
+_QA_RETRY_REASONING_MAX = 2000
+
+
+def _qa_retry_feedback_document(result: ReviewResult, file_path: str) -> str:
+    """Texto estructurado para el Dev: reasoning, issues, required_changes, opcionales."""
+    parts: list[str] = [
+        "=== QA RETRY — previous submission failed review ===",
+        f"Target file: {file_path}",
+        "",
+    ]
+    reasoning = (result.reasoning or "").strip()
+    if reasoning:
+        parts.append("QA reasoning (what went wrong):")
+        if len(reasoning) > _QA_RETRY_REASONING_MAX:
+            reasoning = reasoning[: _QA_RETRY_REASONING_MAX - 1] + "…"
+        parts.append(reasoning)
+        parts.append("")
+    if result.issues:
+        parts.append("Issues (all must be resolved):")
+        for item in result.issues:
+            parts.append(f"- {item}")
+        parts.append("")
+    if result.required_changes:
+        parts.append("Required changes (explicit QA list — must satisfy):")
+        for n, line in enumerate(result.required_changes, start=1):
+            parts.append(f"{n}. {line}")
+        parts.append("")
+    if result.optional_improvements:
+        parts.append("Optional improvements (only if easy after required fixes):")
+        for item in result.optional_improvements:
+            parts.append(f"- {item}")
+        parts.append("")
+    body = "\n".join(parts).strip()
+    if len(body) > _QA_RETRY_DOC_MAX:
+        body = body[: _QA_RETRY_DOC_MAX - 1] + "…"
+    return body
+
+
 async def _retry_task(
     original: CodeGeneratedPayload,
-    issues: list[str],
+    result: ReviewResult,
     deps: QADeps,
 ) -> None:
     """Re-enqueue the task to dev_service with QA feedback embedded."""
@@ -329,10 +368,14 @@ async def _retry_task(
         qa_attempt=next_attempt,
     )
 
-    feedback = "Previous QA issues to fix:\n" + "\n".join(f"- {i}" for i in issues)
+    feedback = _qa_retry_feedback_document(result, original.file_path)
     retry_spec = TaskSpec(
         task_id=original.task_id,
-        description=f"Fix the following issues in {original.file_path}:\n{feedback}",
+        description=(
+            f"QA retry for `{original.file_path}` (attempt {next_attempt}). "
+            "Apply every item in the QA FEEDBACK block in this prompt; "
+            "prefer minimal edits beyond fixing those points."
+        ),
         file_path=original.file_path,
         language=original.language,
         edit_scope="file",
