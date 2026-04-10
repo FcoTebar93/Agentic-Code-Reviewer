@@ -76,6 +76,12 @@ agent_tool_loop_outcomes_total = Counter(
     ["service", "outcome"],
 )
 
+approvals_access_denied = Counter(
+    "approvals_access_denied_total",
+    "Denied approvals endpoint accesses by reason and action",
+    ["service", "reason", "action"],
+)
+
 
 def metrics_response() -> Response:
     return Response(

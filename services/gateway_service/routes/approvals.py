@@ -11,28 +11,54 @@ from services.gateway_service.constants import SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
 from services.gateway_service.runtime import GatewayRuntime
 from shared.contracts.events import pr_human_approved, pr_human_rejected
+from shared.observability.metrics import approvals_access_denied
 
 router = APIRouter(prefix="/api", tags=["approvals"])
 logger = logging.getLogger(SERVICE_NAME)
 
 
-def _require_approvals_auth(rt: GatewayRuntime, provided_token: str | None) -> None:
+def _require_approvals_auth(
+    rt: GatewayRuntime,
+    provided_token: str | None,
+    *,
+    action: str,
+) -> None:
     if not rt.cfg.approvals_auth_enabled:
         return
     expected = (rt.cfg.approvals_auth_token or "").strip()
     if not expected:
+        logger.warning(
+            "Approvals auth misconfigured (enabled without token) action=%s",
+            action,
+        )
+        approvals_access_denied.labels(
+            service=SERVICE_NAME,
+            reason="auth_misconfigured",
+            action=action,
+        ).inc()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Approvals auth enabled but token is not configured",
         )
     if provided_token != expected:
+        logger.warning("Forbidden approvals access action=%s", action)
+        approvals_access_denied.labels(
+            service=SERVICE_NAME,
+            reason="auth_forbidden",
+            action=action,
+        ).inc()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden",
         )
 
 
-def _enforce_approvals_rate_limit(rt: GatewayRuntime, key: str) -> None:
+def _enforce_approvals_rate_limit(
+    rt: GatewayRuntime,
+    key: str,
+    *,
+    action: str,
+) -> None:
     if not rt.cfg.approvals_rate_limit_enabled:
         return
     now = time.monotonic()
@@ -41,6 +67,18 @@ def _enforce_approvals_rate_limit(rt: GatewayRuntime, key: str) -> None:
     bucket = rt.approvals_rate_limit_counters.get(key, [])
     bucket = [ts for ts in bucket if now - ts <= window]
     if len(bucket) >= max_requests:
+        logger.warning(
+            "Approvals rate limit exceeded action=%s key=%s window_s=%d max=%d",
+            action,
+            key,
+            rt.cfg.approvals_rate_limit_window_seconds,
+            max_requests,
+        )
+        approvals_access_denied.labels(
+            service=SERVICE_NAME,
+            reason="rate_limited",
+            action=action,
+        ).inc()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many approval requests",
@@ -54,7 +92,7 @@ async def list_approvals(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
     x_approval_token: str | None = Header(default=None),
 ):
-    _require_approvals_auth(rt, x_approval_token)
+    _require_approvals_auth(rt, x_approval_token, action="list")
     return {
         "pending": [a.model_dump() for a in rt.pending_approvals.values()],
         "count": len(rt.pending_approvals),
@@ -67,8 +105,8 @@ async def approve_pr(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
     x_approval_token: str | None = Header(default=None),
 ):
-    _require_approvals_auth(rt, x_approval_token)
-    _enforce_approvals_rate_limit(rt, f"approve:{approval_id}")
+    _require_approvals_auth(rt, x_approval_token, action="approve")
+    _enforce_approvals_rate_limit(rt, f"approve:{approval_id}", action="approve")
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
         return JSONResponse(
@@ -103,8 +141,8 @@ async def reject_pr(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
     x_approval_token: str | None = Header(default=None),
 ):
-    _require_approvals_auth(rt, x_approval_token)
-    _enforce_approvals_rate_limit(rt, f"reject:{approval_id}")
+    _require_approvals_auth(rt, x_approval_token, action="reject")
+    _enforce_approvals_rate_limit(rt, f"reject:{approval_id}", action="reject")
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
         return JSONResponse(
