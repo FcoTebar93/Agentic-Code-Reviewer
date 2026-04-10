@@ -18,7 +18,7 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, status
 
 from services.github_service.config import GitHubConfig
 from services.github_service.git_ops import (
@@ -102,12 +102,24 @@ async def metrics():
 
 
 @app.get("/workspace")
-async def workspace_info():
+async def workspace_info(x_workspace_token: str | None = Header(default=None)):
     import os
+
+    if not cfg or not cfg.workspace_info_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
+        )
+    if cfg.workspace_info_token and x_workspace_token != cfg.workspace_info_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden",
+        )
+
     workspace = cfg.workspace_dir if cfg else "/app/workspace"
     contents = []
     if os.path.exists(workspace):
-        contents = os.listdir(workspace)
+        contents = sorted(os.listdir(workspace))[:200]
     return {"workspace": workspace, "contents": contents}
 
 
