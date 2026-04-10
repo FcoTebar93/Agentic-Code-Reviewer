@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 
 from services.gateway_service.constants import SERVICE_NAME
 from services.gateway_service.runtime import GatewayRuntime
@@ -14,7 +15,7 @@ from shared.contracts.events import (
     pipeline_conclusion,
     pr_pending_approval,
 )
-from shared.utils import store_event
+from shared.utils import IdempotencyStore, store_event
 
 
 async def consume_all_events(runtime: GatewayRuntime, logger: logging.Logger) -> None:
@@ -43,6 +44,7 @@ async def consume_security_approved(runtime: GatewayRuntime, logger: logging.Log
     """
     Intercept security.approved events to create pending human approvals.
     """
+    idem = IdempotencyStore()
 
     async def handler(event: BaseEvent) -> None:
         sec = SecurityResultPayload.model_validate(event.payload)
@@ -72,7 +74,11 @@ async def consume_security_approved(runtime: GatewayRuntime, logger: logging.Log
             error_message="Could not store pipeline.conclusion in memory_service (event %s)",
         )
 
+        approval_id = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"hitl-pending:{event.idempotency_key}")
+        )
         approval = PrApprovalPayload(
+            approval_id=approval_id,
             plan_id=sec.plan_id,
             branch_name=sec.branch_name,
             files_count=sec.files_scanned,
@@ -99,5 +105,6 @@ async def consume_security_approved(runtime: GatewayRuntime, logger: logging.Log
         queue_name="gateway_service.hitl_approvals",
         routing_keys=[EventType.SECURITY_APPROVED.value],
         handler=handler,
-        max_retries=1,
+        idempotency_store=idem,
+        max_retries=3,
     )

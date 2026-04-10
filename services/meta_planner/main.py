@@ -489,6 +489,7 @@ async def _consume_plan_revisions() -> None:
     - plan.revision_suggested: suggestion only (no automatic replanning).
     - plan.revision_confirmed: always replan (human confirmed in the UI).
     """
+    idem_store = IdempotencyStore()
 
     async def handler(event: BaseEvent) -> None:
         payload = PlanRevisionPayload.model_validate(event.payload)
@@ -510,6 +511,8 @@ async def _consume_plan_revisions() -> None:
             EventType.PLAN_REVISION_CONFIRMED.value,
         ],
         handler=handler,
+        idempotency_store=idem_store,
+        max_retries=3,
     )
 
 

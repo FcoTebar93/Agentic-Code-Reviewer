@@ -75,6 +75,16 @@ class IdempotencyStore:
             self._memory.add(key)
 
 
+def consumer_idempotency_key(event: BaseEvent, retry_count: int) -> str:
+    """
+    Clave de deduplicación por entrega. Reintentos publicados manualmente
+    usan sufijo :retry:N para no confundirse con la primera entrega at-least-once.
+    """
+    if retry_count <= 0:
+        return event.idempotency_key
+    return f"{event.idempotency_key}:retry:{retry_count}"
+
+
 class EventBus:
     """
     Thin abstraction over aio-pika for publishing and consuming BaseEvents.
@@ -82,11 +92,14 @@ class EventBus:
     Design principles (Phase 2):
     - DLX declared alongside the main exchange on connect()
     - Each subscribed queue gets a paired DLQ (dlq.<queue_name>) on admadc.dlx
-    - Failed messages are NACK'd (requeue=False) and manually re-published
-      on the main exchange with an incremented x-retry-count header
+    - Failed messages are NACK'd (requeue=False) and manually re-published on
+      the main exchange with an incremented x-retry-count header
     - After max_retries exhausted, message is routed to the DLQ for manual review
-    - Re-publishing manually (vs RabbitMQ native DLX requeue) gives us explicit
+    - Re-publishing manually (vs RabbitMQ native DLX requeue) gives explicit
       backoff control and avoids infinite requeue loops
+    - Idempotency keys are marked only after handler success; if the worker dies
+      mid-handler, redelivery can re-run (at-least-once). Prefetch=1 limits
+      parallel duplicate deliveries per consumer.
     """
 
     def __init__(self, rabbitmq_url: str) -> None:
@@ -235,11 +248,7 @@ class EventBus:
                 async with message.process(requeue=False, ignore_processed=True):
                     data = json.loads(message.body.decode())
                     event = BaseEvent.model_validate(data)
-                    effective_key = (
-                        event.idempotency_key
-                        if retry_count == 0
-                        else f"{event.idempotency_key}:retry:{retry_count}"
-                    )
+                    effective_key = consumer_idempotency_key(event, retry_count)
                     if await idempotency_store.is_seen(effective_key):
                         logger.info(
                             "Skipping duplicate event %s [idem=%s]",
@@ -248,7 +257,6 @@ class EventBus:
                         )
                         return
 
-                    await idempotency_store.mark_seen(effective_key)
                     corr_tokens = bind_correlation_from_amqp_and_event(
                         message.headers, event.payload
                     )
@@ -256,6 +264,7 @@ class EventBus:
                         await handler(event)
                     finally:
                         reset_correlation_tokens(corr_tokens)
+                    await idempotency_store.mark_seen(effective_key)
 
             except Exception:
                 logger.exception(
