@@ -112,6 +112,81 @@ groups:
           summary: "GET /api/plan_detail/{plan_id} p99 > 1.2s"
           description: "Endpoint de detalle de plan degradado de forma sostenida (gateway_service)."
 
+      - alert: AdmadcGatewayPlanEndpoint5xxRatioHigh
+        expr: |
+          (
+            sum(rate(http_request_latency_seconds_count{
+              service="gateway_service",
+              method="POST",
+              path="/api/plan",
+              status_code=~"5.."
+            }[10m]))
+            /
+            (
+              sum(rate(http_request_latency_seconds_count{
+                service="gateway_service",
+                method="POST",
+                path="/api/plan"
+              }[10m])) + 1e-9
+            )
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "POST /api/plan ratio 5xx > 5%"
+          description: "Error rate 5xx sostenido en endpoint crítico de entrada."
+
+      - alert: AdmadcGatewayEventsEndpoint5xxRatioHigh
+        expr: |
+          (
+            sum(rate(http_request_latency_seconds_count{
+              service="gateway_service",
+              method="GET",
+              path="/api/events",
+              status_code=~"5.."
+            }[10m]))
+            /
+            (
+              sum(rate(http_request_latency_seconds_count{
+                service="gateway_service",
+                method="GET",
+                path="/api/events"
+              }[10m])) + 1e-9
+            )
+          ) > 0.03
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GET /api/events ratio 5xx > 3%"
+          description: "Error rate 5xx sostenido en endpoint de eventos."
+
+      - alert: AdmadcGatewayPlanDetailEndpoint5xxRatioHigh
+        expr: |
+          (
+            sum(rate(http_request_latency_seconds_count{
+              service="gateway_service",
+              method="GET",
+              path="/api/plan_detail/{plan_id}",
+              status_code=~"5.."
+            }[10m]))
+            /
+            (
+              sum(rate(http_request_latency_seconds_count{
+                service="gateway_service",
+                method="GET",
+                path="/api/plan_detail/{plan_id}"
+              }[10m])) + 1e-9
+            )
+          ) > 0.03
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GET /api/plan_detail/{plan_id} ratio 5xx > 3%"
+          description: "Error rate 5xx sostenido en endpoint de detalle de plan."
+
       - alert: AdmadcTasksFailedRateHigh
         expr: |
           sum(rate(tasks_failed_total[15m])) > 0.02

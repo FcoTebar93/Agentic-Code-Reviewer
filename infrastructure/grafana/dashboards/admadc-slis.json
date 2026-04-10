@@ -324,6 +324,50 @@
       ],
       "title": "SLI UX dashboard · Endpoints GET /api/events y /api/plan_detail/{plan_id}",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" },
+          "max": 1,
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 70 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(http_request_latency_seconds_count{service=\"gateway_service\",method=\"POST\",path=\"/api/plan\",status_code=~\"5..\"}[5m])) / (sum(rate(http_request_latency_seconds_count{service=\"gateway_service\",method=\"POST\",path=\"/api/plan\"}[5m])) + 1e-9)",
+          "legendFormat": "POST /api/plan 5xx ratio",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(http_request_latency_seconds_count{service=\"gateway_service\",method=\"GET\",path=\"/api/events\",status_code=~\"5..\"}[5m])) / (sum(rate(http_request_latency_seconds_count{service=\"gateway_service\",method=\"GET\",path=\"/api/events\"}[5m])) + 1e-9)",
+          "legendFormat": "GET /api/events 5xx ratio",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(http_request_latency_seconds_count{service=\"gateway_service\",method=\"GET\",path=\"/api/plan_detail/{plan_id}\",status_code=~\"5..\"}[5m])) / (sum(rate(http_request_latency_seconds_count{service=\"gateway_service\",method=\"GET\",path=\"/api/plan_detail/{plan_id}\"}[5m])) + 1e-9)",
+          "legendFormat": "GET /api/plan_detail/{plan_id} 5xx ratio",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "SLI crítico · Ratio 5xx por endpoint (gateway)",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -335,6 +379,6 @@
   "timezone": "browser",
   "title": "ADMADC · SLIs",
   "uid": "admadc-slis",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
