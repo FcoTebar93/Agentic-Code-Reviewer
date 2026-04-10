@@ -48,9 +48,13 @@ def _build_runtime() -> Any:
         pending_approvals={payload.approval_id: payload},
         manager=_FakeManager(connection_count=3),
         event_bus=_FakeEventBus(),
+        approvals_rate_limit_counters={},
         cfg=SimpleNamespace(
             approvals_auth_enabled=False,
             approvals_auth_token="",
+            approvals_rate_limit_enabled=False,
+            approvals_rate_limit_window_seconds=60,
+            approvals_rate_limit_max_requests=20,
         ),
     )
 
@@ -133,6 +137,25 @@ def test_list_approvals_requires_token_when_auth_enabled() -> None:
             raise AssertionError("Expected HTTPException 403")
         except HTTPException as exc:
             assert exc.status_code == 403
+
+    asyncio.run(_run())
+
+
+def test_approve_pr_rate_limited_when_enabled() -> None:
+    async def _run() -> None:
+        rt = _build_runtime()
+        rt.cfg.approvals_rate_limit_enabled = True
+        rt.cfg.approvals_rate_limit_window_seconds = 60
+        rt.cfg.approvals_rate_limit_max_requests = 1
+
+        first = await approve_pr("approval-1", rt)
+        assert first["status"] == "approved"
+
+        try:
+            await approve_pr("approval-1", rt)
+            raise AssertionError("Expected HTTPException 429")
+        except HTTPException as exc:
+            assert exc.status_code == 429
 
     asyncio.run(_run())
 
