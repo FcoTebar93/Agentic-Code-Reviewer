@@ -12,11 +12,24 @@ tasks_completed = Counter(
     ["service"],
 )
 
+tasks_failed = Counter(
+    "tasks_failed_total",
+    "Total tasks failed by service and reason",
+    ["service", "reason"],
+)
+
 agent_execution_time = Histogram(
     "agent_execution_time_seconds",
     "Time spent executing agent tasks",
     ["service", "operation"],
     buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
+)
+
+http_request_latency = Histogram(
+    "http_request_latency_seconds",
+    "HTTP request latency by service, method, path and status code",
+    ["service", "method", "path", "status_code"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
 )
 
 llm_tokens = Counter(

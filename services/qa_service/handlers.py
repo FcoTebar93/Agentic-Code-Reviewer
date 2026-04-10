@@ -29,7 +29,11 @@ from shared.contracts.events import (
     task_assigned,
 )
 from shared.llm_adapter import get_llm_provider
-from shared.observability.metrics import agent_execution_time, tasks_completed
+from shared.observability.metrics import (
+    agent_execution_time,
+    tasks_completed,
+    tasks_failed,
+)
 from shared.policies import effective_mode, load_project_policy, policy_for_path
 from shared.prompt_locale import (
     qa_hot_module_note,
@@ -289,6 +293,7 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                 "QA exhausted retries for task %s -> marking qa.failed",
                 task_id[:8],
             )
+            tasks_failed.labels(service="qa_service", reason="qa_exhausted_retries").inc()
             fail_event = qa_failed("qa_service", qa_payload)
             await deps.event_bus.publish(fail_event)
             await store_event(
