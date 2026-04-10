@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 import httpx
 
+from services.meta_planner.config import PlannerConfig
 from shared.tools import ToolRegistry
 from shared.utils import EventBus
-from services.meta_planner.config import PlannerConfig
 
 
 @dataclass(frozen=True)

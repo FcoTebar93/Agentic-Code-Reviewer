@@ -21,11 +21,11 @@ import redis.asyncio as aioredis
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
-    VectorParams,
-    PointStruct,
-    Filter,
     FieldCondition,
+    Filter,
     MatchValue,
+    PointStruct,
+    VectorParams,
 )
 from sqlalchemy import select
 

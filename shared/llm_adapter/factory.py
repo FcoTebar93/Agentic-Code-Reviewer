@@ -26,8 +26,8 @@ Model can be overridden globally with the LLM_MODEL env var.
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.cache import CachedLLMProvider

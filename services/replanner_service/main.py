@@ -8,26 +8,32 @@ from typing import Any
 import httpx
 from fastapi import FastAPI
 
-from shared.http.client import create_async_http_client
-from shared.logging.logger import setup_logging
-from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import metrics_response, agent_execution_time, llm_tokens
+from services.replanner_service.config import ReplannerConfig
+from services.replanner_service.critic import (
+    analyse_outcome,
+    analyse_outcome_with_tool_loop,
+)
+from services.replanner_service.tools import build_replanner_tool_registry
 from shared.contracts.events import (
     BaseEvent,
     EventType,
+    PlanRevisionPayload,
     QAResultPayload,
     SecurityResultPayload,
-    PlanRevisionPayload,
     TokensUsedPayload,
-    plan_revision_suggested,
     metrics_tokens_used,
+    plan_revision_suggested,
 )
+from shared.http.client import create_async_http_client
 from shared.llm_adapter import get_llm_provider
-from shared.utils import EventBus, IdempotencyStore, store_event
+from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
+from shared.observability.metrics import (
+    agent_execution_time,
+    metrics_response,
+)
 from shared.tools import ToolRegistry, execute_tool
-from services.replanner_service.config import ReplannerConfig
-from services.replanner_service.critic import analyse_outcome, analyse_outcome_with_tool_loop
-from services.replanner_service.tools import build_replanner_tool_registry
+from shared.utils import EventBus, IdempotencyStore, store_event
 
 SERVICE_NAME = "replanner_service"
 event_bus: EventBus | None = None

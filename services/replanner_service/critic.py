@@ -22,9 +22,9 @@ from shared.observability.metrics import (
     agent_tool_loop_outcomes_total,
     llm_tokens,
 )
+from shared.prompt_locale import natural_language_rules_for_locale
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
-from shared.prompt_locale import natural_language_rules_for_locale
 
 logger = logging.getLogger(__name__)
 

@@ -20,28 +20,32 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from shared.http.client import create_async_http_client
-from shared.logging.logger import setup_logging
-from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import metrics_response, pr_creation_latency, tasks_completed
+from services.github_service.config import GitHubConfig
+from services.github_service.git_ops import (
+    build_pr_body,
+    clone_repo,
+    commit_and_push,
+    create_branch,
+    open_pull_request,
+    write_files,
+)
 from shared.contracts.events import (
     BaseEvent,
     EventType,
-    PRRequestedPayload,
-    PRCreatedPayload,
     PrApprovalPayload,
+    PRCreatedPayload,
+    PRRequestedPayload,
     pr_created,
 )
-from shared.utils import EventBus, IdempotencyStore, store_event
-from services.github_service.config import GitHubConfig
-from services.github_service.git_ops import (
-    clone_repo,
-    create_branch,
-    write_files,
-    commit_and_push,
-    open_pull_request,
-    build_pr_body,
+from shared.http.client import create_async_http_client
+from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
+from shared.observability.metrics import (
+    metrics_response,
+    pr_creation_latency,
+    tasks_completed,
 )
+from shared.utils import EventBus, IdempotencyStore, store_event
 
 SERVICE_NAME = "github_service"
 event_bus: EventBus | None = None

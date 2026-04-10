@@ -429,7 +429,7 @@ async def _watch_plan_async(
             "Install with: pip install websockets",
             file=sys.stderr,
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     ws_url = _build_ws_url(base)
     filt_types = [t.strip() for t in (event_types or []) if t.strip()]

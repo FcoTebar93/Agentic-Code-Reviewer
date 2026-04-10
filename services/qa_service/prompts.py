@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 QA_REVIEW_PROMPT = """You are a strict senior code and security reviewer performing a quality assurance check.
 
 Your review is authoritative and the developer agent must follow your REQUIRED_CHANGES exactly to reach PASS.

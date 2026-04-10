@@ -21,39 +21,46 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from typing import Any
 
 import httpx
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-
-from shared.http.client import create_async_http_client
 from pydantic import BaseModel, Field
-from typing import Any
 
-from shared.logging.logger import setup_logging
-from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import metrics_response, agent_execution_time, tasks_completed, llm_tokens
+from services.meta_planner.ask_agent import run_ask_agent
+from services.meta_planner.config import PlannerConfig
+from services.meta_planner.deps import MetaPlannerDeps
+from services.meta_planner.planner import (
+    decompose_tasks,
+    decompose_tasks_with_tool_loop,
+)
+from services.meta_planner.tools import build_planner_tool_registry
 from shared.contracts.events import (
     BaseEvent,
     EventType,
     PlanCreatedPayload,
     PlanRequestedPayload,
-    TaskAssignedPayload,
     PlanRevisionPayload,
+    TaskAssignedPayload,
     TokensUsedPayload,
+    metrics_tokens_used,
     plan_created,
     task_assigned,
-    metrics_tokens_used,
+)
+from shared.http.client import create_async_http_client
+from shared.llm_adapter import get_llm_provider
+from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
+from shared.observability.metrics import (
+    agent_execution_time,
+    llm_tokens,
+    metrics_response,
+    tasks_completed,
 )
 from shared.plan_idempotency import plan_idempotency_key_meta_planner
-from shared.llm_adapter import get_llm_provider
-from shared.utils import EventBus, IdempotencyStore, store_event
 from shared.tools import ToolRegistry, execute_tool
-from services.meta_planner.config import PlannerConfig
-from services.meta_planner.deps import MetaPlannerDeps
-from services.meta_planner.ask_agent import run_ask_agent
-from services.meta_planner.planner import decompose_tasks, decompose_tasks_with_tool_loop
-from services.meta_planner.tools import build_planner_tool_registry
+from shared.utils import EventBus, IdempotencyStore, store_event
 
 SERVICE_NAME = "meta_planner"
 event_bus: EventBus | None = None

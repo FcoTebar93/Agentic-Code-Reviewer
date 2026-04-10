@@ -14,12 +14,12 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from services.memory_service.config import MemoryConfig
+from services.memory_service.database import close_db, init_db
+from services.memory_service.store import MemoryStore
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import metrics_response
-from services.memory_service.config import MemoryConfig
-from services.memory_service.database import init_db, close_db
-from services.memory_service.store import MemoryStore
 
 SERVICE_NAME = "memory_service"
 store: MemoryStore | None = None

@@ -21,21 +21,20 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any
 
 import httpx
 from fastapi import FastAPI
 
+from services.qa_service.config import QAConfig
+from services.qa_service.handlers import QADeps, handle_code_review
+from services.qa_service.tools import build_qa_tool_registry
+from shared.contracts.events import BaseEvent, CodeGeneratedPayload, EventType
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import metrics_response
-from shared.contracts.events import BaseEvent, EventType, CodeGeneratedPayload
-from shared.utils import EventBus, IdempotencyStore
 from shared.tools import ToolRegistry
-from services.qa_service.config import QAConfig
-from services.qa_service.tools import build_qa_tool_registry
-from services.qa_service.handlers import QADeps, handle_code_review
+from shared.utils import EventBus, IdempotencyStore
 
 SERVICE_NAME = "qa_service"
 event_bus: EventBus | None = None

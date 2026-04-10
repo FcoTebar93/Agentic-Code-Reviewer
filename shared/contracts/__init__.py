@@ -1,7 +1,7 @@
 from shared.contracts.events import (
     BaseEvent,
-    EventType,
     CodeGeneratedPayload,
+    EventType,
     PlanCreatedPayload,
     PlanRequestedPayload,
     PRCreatedPayload,

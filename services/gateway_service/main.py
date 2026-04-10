@@ -10,26 +10,28 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from shared.http.client import create_async_http_client
-from shared.logging.logger import setup_logging
-from shared.middleware.correlation import install_correlation_middleware
-from shared.utils import EventBus
 from services.gateway_service.config import GatewayConfig
 from services.gateway_service.constants import SERVICE_NAME
-from services.gateway_service.consumers import consume_all_events, consume_security_approved
-from services.gateway_service.runtime import GatewayRuntime
+from services.gateway_service.consumers import (
+    consume_all_events,
+    consume_security_approved,
+)
 from services.gateway_service.routes import (
     approvals_router,
     health_router,
     proxy_router,
 )
+from services.gateway_service.runtime import GatewayRuntime
 from services.gateway_service.ws_manager import ConnectionManager
+from shared.http.client import create_async_http_client
+from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
+from shared.utils import EventBus
 
 logger = logging.getLogger(SERVICE_NAME)
 

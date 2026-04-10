@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 SENIOR_DELIVERY_CHECKLIST = """
 Senior delivery checklist (follow unless the task explicitly conflicts):
 - Repository contract: mirror naming, layering and patterns visible in memory or tool-read context; do not invent APIs, modules or imports that are not grounded in the repo—if you must assume something, state it briefly in REASONING.

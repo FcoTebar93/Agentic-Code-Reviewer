@@ -16,6 +16,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from services.qa_service.config import DANGEROUS_PATTERNS
+from services.qa_service.prompts import (
+    QA_REVIEW_PROMPT,
+    QA_REVIEW_PROMPT_NO_PRIOR,
+    QA_TOOL_LOOP_SYSTEM,
+)
 from shared.llm_adapter import LLMProvider
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
@@ -32,24 +38,18 @@ from shared.observability.metrics import (
     agent_tool_loop_outcomes_total,
     llm_tokens,
 )
-from shared.policies import rules_for_language, Rule
+from shared.policies import Rule, rules_for_language
 from shared.prompt_locale import (
     natural_language_rules_for_locale,
     qa_heuristic_fs_warning,
     qa_heuristic_network_warning,
     qa_heuristic_secrets_warning,
     qa_parse_repair_no_tools_suffix,
-    qa_synthetic_budget_fail,
     qa_static_pattern_security_title,
+    qa_synthetic_budget_fail,
 )
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
-from services.qa_service.config import DANGEROUS_PATTERNS
-from services.qa_service.prompts import (
-    QA_REVIEW_PROMPT,
-    QA_REVIEW_PROMPT_NO_PRIOR,
-    QA_TOOL_LOOP_SYSTEM,
-)
 
 logger = logging.getLogger(__name__)
 

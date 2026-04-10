@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 import httpx
 
+from services.spec_service.config import SpecConfig
 from shared.tools import ToolRegistry
 from shared.utils import EventBus
-from services.spec_service.config import SpecConfig
 
 
 @dataclass(frozen=True)

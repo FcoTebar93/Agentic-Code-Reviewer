@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from shared.observability.metrics import metrics_response
 from services.gateway_service.constants import SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
 from services.gateway_service.runtime import GatewayRuntime
+from shared.observability.metrics import metrics_response
 
 router = APIRouter(tags=["health"])
 

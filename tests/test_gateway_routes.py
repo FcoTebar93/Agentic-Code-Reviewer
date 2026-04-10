@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
-from shared.contracts.events import PrApprovalPayload
 from services.gateway_service.routes.approvals import (
     approve_pr,
     list_approvals,
@@ -14,6 +13,7 @@ from services.gateway_service.routes.approvals import (
 )
 from services.gateway_service.routes.health import get_status, health
 from services.gateway_service.routes.proxy import _proxy_json
+from shared.contracts.events import PrApprovalPayload
 
 
 @dataclass

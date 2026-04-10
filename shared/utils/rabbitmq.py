@@ -13,13 +13,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 
 import aio_pika
 from aio_pika import ExchangeType, Message
 from aio_pika.abc import (
-    AbstractConnection,
     AbstractChannel,
+    AbstractConnection,
     AbstractExchange,
     AbstractIncomingMessage,
 )

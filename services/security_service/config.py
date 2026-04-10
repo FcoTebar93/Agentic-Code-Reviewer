@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
 
 SECURITY_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("hardcoded_api_key", re.compile(r'(?i)(api_key|apikey)\s*=\s*["\'][A-Za-z0-9_\-]{16,}["\']')),

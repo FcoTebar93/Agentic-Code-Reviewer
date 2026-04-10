@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, DateTime, Integer, text
+from sqlalchemy import DateTime, Integer, String, Text, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,

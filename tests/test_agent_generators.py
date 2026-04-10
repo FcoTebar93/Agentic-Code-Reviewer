@@ -50,9 +50,9 @@ class TestPlannerReplannerToolLoops(unittest.TestCase):
             os.environ.setdefault(
                 "MEMORY_SERVICE_URL", "http://127.0.0.1:65432"
             )
-            from shared.llm_adapter.mock_provider import MockProvider
             from services.meta_planner.planner import decompose_tasks_with_tool_loop
             from services.meta_planner.tools import build_planner_tool_registry
+            from shared.llm_adapter.mock_provider import MockProvider
 
             llm = MockProvider()
             reg = build_planner_tool_registry(
@@ -75,10 +75,10 @@ class TestPlannerReplannerToolLoops(unittest.TestCase):
             os.environ.setdefault(
                 "MEMORY_SERVICE_URL", "http://127.0.0.1:65432"
             )
-            from shared.contracts.events import QAResultPayload
-            from shared.llm_adapter.mock_provider import MockProvider
             from services.replanner_service.critic import analyse_outcome_with_tool_loop
             from services.replanner_service.tools import build_replanner_tool_registry
+            from shared.contracts.events import QAResultPayload
+            from shared.llm_adapter.mock_provider import MockProvider
 
             plan_uuid = "22222222-2222-2222-2222-222222222222"
             llm = MockProvider()
@@ -113,9 +113,11 @@ class TestPlannerReplannerToolLoops(unittest.TestCase):
 class TestMockToolLoops(unittest.TestCase):
     def test_spec_tool_loop_mock(self) -> None:
         async def _run() -> None:
-            from shared.llm_adapter.mock_provider import MockProvider
-            from services.spec_service.spec_generator import generate_spec_with_tool_loop
+            from services.spec_service.spec_generator import (
+                generate_spec_with_tool_loop,
+            )
             from services.spec_service.tools import build_spec_tool_registry
+            from shared.llm_adapter.mock_provider import MockProvider
 
             llm = MockProvider()
             reg = build_spec_tool_registry()
@@ -138,10 +140,10 @@ class TestMockToolLoops(unittest.TestCase):
 
     def test_dev_tool_loop_mock(self) -> None:
         async def _run() -> None:
-            from shared.contracts.events import TaskSpec
-            from shared.llm_adapter.mock_provider import MockProvider
             from services.dev_service.generator import generate_code_with_tool_loop
             from services.dev_service.tools import build_dev_tool_registry
+            from shared.contracts.events import TaskSpec
+            from shared.llm_adapter.mock_provider import MockProvider
 
             llm = MockProvider()
             reg = build_dev_tool_registry()
@@ -163,9 +165,9 @@ class TestMockToolLoops(unittest.TestCase):
 
     def test_qa_tool_loop_mock(self) -> None:
         async def _run() -> None:
-            from shared.llm_adapter.mock_provider import MockProvider
             from services.qa_service.reviewer import review_code_with_tool_loop
             from services.qa_service.tools import build_qa_tool_registry
+            from shared.llm_adapter.mock_provider import MockProvider
 
             llm = MockProvider()
             reg = build_qa_tool_registry()

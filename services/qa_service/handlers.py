@@ -1,52 +1,50 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 import httpx
 
-from shared.contracts.events import (
-    BaseEvent,
-    EventType,
-    CodeGeneratedPayload,
-    PRRequestedPayload,
-    TaskAssignedPayload,
-    QAResultPayload,
-    TaskSpec,
-    TokensUsedPayload,
-    code_generated,
-    pr_requested,
-    task_assigned,
-    qa_passed,
-    qa_failed,
-    metrics_tokens_used,
-)
-from shared.llm_adapter import get_llm_provider
-from shared.observability.metrics import agent_execution_time, tasks_completed
-from shared.tools import ToolRegistry, execute_tool
-from shared.utils import (
-    EventBus,
-    build_repo_style_hints,
-    build_short_term_memory_window,
-    short_term_memory_event_limit,
-    store_event,
-)
-from shared.prompt_locale import (
-    qa_hot_module_note,
-    qa_hot_module_stm_block,
-    qa_memory_section_headers,
-)
-from shared.policies import load_project_policy, policy_for_path, effective_mode
 from services.qa_service.config import QAConfig
-from services.qa_service.tools import REPO_ROOT
 from services.qa_service.reviewer import (
     ReviewResult,
     review_code,
     review_code_with_tool_loop,
 )
-from shared.utils import infer_framework_hint
+from services.qa_service.tools import REPO_ROOT
+from shared.contracts.events import (
+    CodeGeneratedPayload,
+    EventType,
+    PRRequestedPayload,
+    QAResultPayload,
+    TaskAssignedPayload,
+    TaskSpec,
+    TokensUsedPayload,
+    metrics_tokens_used,
+    pr_requested,
+    qa_failed,
+    qa_passed,
+    task_assigned,
+)
+from shared.llm_adapter import get_llm_provider
+from shared.observability.metrics import agent_execution_time, tasks_completed
+from shared.policies import effective_mode, load_project_policy, policy_for_path
+from shared.prompt_locale import (
+    qa_hot_module_note,
+    qa_hot_module_stm_block,
+    qa_memory_section_headers,
+)
+from shared.tools import ToolRegistry, execute_tool
+from shared.utils import (
+    EventBus,
+    build_repo_style_hints,
+    build_short_term_memory_window,
+    infer_framework_hint,
+    short_term_memory_event_limit,
+    store_event,
+)
 
 
 @dataclass

@@ -16,8 +16,13 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from services.dev_service.prompts import (
+    CODE_GEN_PROMPT,
+    CODE_GEN_PROMPT_NO_PRIOR,
+    TOOL_LOOP_SYSTEM,
+)
 from shared.contracts.events import TaskSpec
-from shared.llm_adapter import LLMProvider, LLMResponse
+from shared.llm_adapter import LLMProvider
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
 from shared.llm_adapter.parse_retry import generate_text_with_parse_retry
@@ -33,15 +38,10 @@ from shared.observability.metrics import (
     agent_tool_loop_outcomes_total,
     llm_tokens,
 )
+from shared.prompt_locale import natural_language_rules_for_locale
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
-from shared.prompt_locale import natural_language_rules_for_locale
 from shared.utils import infer_framework_hint
-from services.dev_service.prompts import (
-    CODE_GEN_PROMPT,
-    CODE_GEN_PROMPT_NO_PRIOR,
-    TOOL_LOOP_SYSTEM,
-)
 
 logger = logging.getLogger(__name__)
 

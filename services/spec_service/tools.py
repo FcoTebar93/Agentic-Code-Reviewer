@@ -8,11 +8,10 @@ from typing import Any
 from pydantic import Field
 
 from shared.tools import (
-    ToolInput,
     ToolDefinition,
+    ToolInput,
     ToolRegistry,
 )
-
 
 REPO_ROOT = Path(os.environ.get("REPO_ROOT", "/workspace")).resolve()
 

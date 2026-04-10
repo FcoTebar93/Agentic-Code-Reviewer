@@ -7,28 +7,6 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from shared.http.client import create_async_http_client
-from shared.logging.logger import setup_logging
-from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import metrics_response, agent_execution_time
-from shared.contracts.events import (
-    BaseEvent,
-    EventType,
-    TaskAssignedPayload,
-    SpecGeneratedPayload,
-    TokensUsedPayload,
-    spec_generated,
-    metrics_tokens_used,
-)
-from shared.llm_adapter import get_llm_provider
-from shared.tools import ToolRegistry, execute_tool
-from shared.utils import (
-    EventBus,
-    IdempotencyStore,
-    build_repo_style_hints,
-    store_event,
-    guarded_http_get,
-)
 from services.spec_service.config import SpecConfig
 from services.spec_service.deps import SpecPipelineDeps
 from services.spec_service.spec_generator import (
@@ -36,7 +14,28 @@ from services.spec_service.spec_generator import (
     generate_spec_with_tool_loop,
 )
 from services.spec_service.tools import REPO_ROOT, build_spec_tool_registry
-
+from shared.contracts.events import (
+    BaseEvent,
+    EventType,
+    SpecGeneratedPayload,
+    TaskAssignedPayload,
+    TokensUsedPayload,
+    metrics_tokens_used,
+    spec_generated,
+)
+from shared.http.client import create_async_http_client
+from shared.llm_adapter import get_llm_provider
+from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
+from shared.observability.metrics import agent_execution_time, metrics_response
+from shared.tools import ToolRegistry, execute_tool
+from shared.utils import (
+    EventBus,
+    IdempotencyStore,
+    build_repo_style_hints,
+    guarded_http_get,
+    store_event,
+)
 
 SERVICE_NAME = "spec_service"
 event_bus: EventBus | None = None

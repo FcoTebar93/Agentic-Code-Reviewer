@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 
+from services.gateway_service.constants import SERVICE_NAME
+from services.gateway_service.runtime import GatewayRuntime
 from shared.contracts.events import (
     BaseEvent,
     EventType,
@@ -13,8 +15,6 @@ from shared.contracts.events import (
     pr_pending_approval,
 )
 from shared.utils import store_event
-from services.gateway_service.constants import SERVICE_NAME
-from services.gateway_service.runtime import GatewayRuntime
 
 
 async def consume_all_events(runtime: GatewayRuntime, logger: logging.Logger) -> None:

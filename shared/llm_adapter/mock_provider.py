@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any
 
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
@@ -80,7 +79,9 @@ def _extract_qa_context(prompt: str) -> tuple[str, str, int]:
 
     code_block = re.search(r"```\w*\n(.*?)```", prompt, re.S)
     if code_block:
-        code_lines = len([l for l in code_block.group(1).split("\n") if l.strip()])
+        code_lines = len(
+            [line for line in code_block.group(1).split("\n") if line.strip()]
+        )
 
     return file_path, language, code_lines
 

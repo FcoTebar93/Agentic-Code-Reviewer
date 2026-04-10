@@ -37,7 +37,6 @@ def large_change_note(
         return None
 
     old_lines = prev.splitlines()
-    old_n = len(old_lines)
     ratio = difflib.SequenceMatcher(a=old_lines, b=new_lines).ratio()
 
     if new_n > soft * 2:

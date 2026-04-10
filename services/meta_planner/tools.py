@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 from pydantic import Field
 
-from shared.tools import ToolInput, ToolDefinition, ToolRegistry
+from shared.tools import ToolDefinition, ToolInput, ToolRegistry
 
 
 class SemanticMemoryInput(ToolInput):

@@ -13,11 +13,10 @@ from pydantic import Field
 
 from shared.agent_subprocess import run_sync_hardened
 from shared.tools import (
-    ToolInput,
     ToolDefinition,
+    ToolInput,
     ToolRegistry,
 )
-
 
 REPO_ROOT = Path(os.environ.get("REPO_ROOT", "/workspace")).resolve()
 MEMORY_SERVICE_URL = os.environ.get("MEMORY_SERVICE_URL", "http://memory_service:8000")

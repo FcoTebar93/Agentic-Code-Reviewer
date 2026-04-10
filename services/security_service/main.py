@@ -20,35 +20,33 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from shared.http.client import create_async_http_client
-from shared.logging.logger import setup_logging
-from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import (
-    metrics_response,
-    agent_execution_time,
-    tasks_completed,
-    llm_tokens,
-)
+from services.qa_service.tools import REPO_ROOT
+from services.security_service.config import SecurityConfig
+from services.security_service.prompts import SECURITY_REVIEW_PROMPT
+from services.security_service.scanner import scan_files
 from shared.contracts.events import (
     BaseEvent,
     EventType,
     PRRequestedPayload,
     SecurityResultPayload,
-    CodeGeneratedPayload,
     security_approved,
     security_blocked,
 )
-from shared.utils import EventBus, IdempotencyStore, store_event
+from shared.http.client import create_async_http_client
+from shared.llm_adapter import LLMResponse, get_llm_provider
+from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
+from shared.observability.metrics import (
+    agent_execution_time,
+    llm_tokens,
+    metrics_response,
+    tasks_completed,
+)
+from shared.policies import effective_mode, load_project_policy, policy_for_path
 from shared.prompt_locale import (
-    natural_language_rules_for_locale,
     security_memory_context_prefix,
 )
-from services.security_service.config import SecurityConfig
-from services.security_service.scanner import scan_files
-from services.security_service.prompts import SECURITY_REVIEW_PROMPT
-from shared.llm_adapter import get_llm_provider, LLMResponse
-from shared.policies import load_project_policy, policy_for_path, effective_mode
-from services.qa_service.tools import REPO_ROOT
+from shared.utils import EventBus, IdempotencyStore, store_event
 
 SERVICE_NAME = "security_service"
 event_bus: EventBus | None = None

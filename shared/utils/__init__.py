@@ -2,11 +2,11 @@ import logging
 import time
 from typing import Any
 
-from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from shared.utils.memory_window import (
     build_short_term_memory_window,
     short_term_memory_event_limit,
 )
+from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from shared.utils.repo_style_hints import build_repo_style_hints
 
 __all__ = [

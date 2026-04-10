@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from pydantic import ValidationError
 
-from shared.tools.models import ToolDefinition, ToolExecutionResult, ToolInput
+from shared.tools.models import ToolExecutionResult, ToolInput
 from shared.tools.registry import ToolRegistry
 
 # Segundos a esperar entre reintentos (backoff simple para fallos transitorios)

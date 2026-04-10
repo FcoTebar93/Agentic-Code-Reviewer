@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 SPEC_PROMPT = """You are a senior {language} engineer inside a multi-agent dev pipeline.
 
 Your goal:

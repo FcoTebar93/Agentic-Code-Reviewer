@@ -16,42 +16,41 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from shared.http.client import create_async_http_client
-from shared.logging.logger import setup_logging
-from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import (
-    metrics_response,
-    agent_execution_time,
-    tasks_completed,
-    llm_tokens,
-)
+from services.dev_service.config import DevConfig
+from services.dev_service.deps import DevPipelineDeps
+from services.dev_service.generator import generate_code, generate_code_with_tool_loop
+from services.dev_service.tools import REPO_ROOT, build_dev_tool_registry
 from shared.contracts.events import (
     BaseEvent,
-    EventType,
-    TaskAssignedPayload,
     CodeGeneratedPayload,
+    EventType,
+    SpecGeneratedPayload,
+    TaskAssignedPayload,
     TokensUsedPayload,
     code_generated,
     metrics_tokens_used,
 )
+from shared.http.client import create_async_http_client
 from shared.llm_adapter import get_llm_provider
+from shared.logging.logger import setup_logging
+from shared.middleware.correlation import install_correlation_middleware
+from shared.observability.metrics import (
+    agent_execution_time,
+    metrics_response,
+    tasks_completed,
+)
+from shared.policies import effective_mode, load_project_policy, policy_for_path
+from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
     IdempotencyStore,
     build_repo_style_hints,
     build_short_term_memory_window,
+    guarded_http_get,
     short_term_memory_event_limit,
     store_event,
-    guarded_http_get,
 )
 from shared.utils.code_change_guard import large_change_note
-from services.dev_service.config import DevConfig
-from services.dev_service.deps import DevPipelineDeps
-from services.dev_service.generator import generate_code, generate_code_with_tool_loop
-from services.dev_service.tools import build_dev_tool_registry, ReadFileInput, REPO_ROOT
-from shared.tools import execute_tool, ToolRegistry
-from shared.contracts.events import EventType, SpecGeneratedPayload
-from shared.policies import load_project_policy, policy_for_path, effective_mode
 
 SERVICE_NAME = "dev_service"
 event_bus: EventBus | None = None
@@ -150,7 +149,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         "Processing task %s for plan %s%s",
         task.task_id[:8],
         plan_id[:8],
-        f" (QA feedback present)" if qa_feedback else "",
+        " (QA feedback present)" if qa_feedback else "",
     )
 
     raw_mode = getattr(payload, "mode", "normal") or "normal"
@@ -402,7 +401,6 @@ async def _maybe_run_auto_tests(task, mode: str) -> str:
     are disabled or fail in a non-critical way.
     """
     try:
-        normalized_mode = (mode or "normal").strip().lower()
         test_cmd = ""
         lang = (task.language or "").lower()
         if cfg and cfg.enable_auto_tests and tool_registry is not None:

@@ -8,6 +8,7 @@ import json
 import logging
 from typing import Any
 
+from services.spec_service.prompts import SPEC_PROMPT, SPEC_TOOL_LOOP_SYSTEM
 from shared.llm_adapter import LLMProvider
 from shared.llm_adapter.models import LLMRequest
 from shared.llm_adapter.openai_tool_schemas import tools_openai_from_registry
@@ -24,11 +25,10 @@ from shared.observability.metrics import (
     agent_tool_loop_outcomes_total,
     llm_tokens,
 )
+from shared.prompt_locale import natural_language_rules_for_locale
 from shared.tools import ToolRegistry, execute_tool
 from shared.tools.models import ToolExecutionResult
-from shared.prompt_locale import natural_language_rules_for_locale
 from shared.utils import infer_framework_hint
-from services.spec_service.prompts import SPEC_PROMPT, SPEC_TOOL_LOOP_SYSTEM
 
 logger = logging.getLogger(__name__)
 

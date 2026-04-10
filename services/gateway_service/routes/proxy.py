@@ -8,11 +8,6 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from shared.plan_idempotency import plan_idempotency_key_gateway
-from shared.contracts.events import (
-    PlanRevisionPayload,
-    plan_revision_confirmed,
-)
 from services.gateway_service.constants import PLAN_IDEM_TTL_SECONDS, SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
 from services.gateway_service.plan_aggregate import (
@@ -20,6 +15,11 @@ from services.gateway_service.plan_aggregate import (
     build_plan_detail_json_response,
 )
 from services.gateway_service.runtime import GatewayRuntime
+from shared.contracts.events import (
+    PlanRevisionPayload,
+    plan_revision_confirmed,
+)
+from shared.plan_idempotency import plan_idempotency_key_gateway
 
 router = APIRouter(prefix="/api", tags=["proxy"])
 logger = logging.getLogger(SERVICE_NAME)

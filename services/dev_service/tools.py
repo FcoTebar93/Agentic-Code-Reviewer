@@ -14,12 +14,10 @@ from shared.agent_subprocess import (
     run_sync_hardened,
 )
 from shared.tools import (
-    ToolInput,
     ToolDefinition,
+    ToolInput,
     ToolRegistry,
-    ToolExecutionResult,
 )
-
 
 REPO_ROOT = Path(os.environ.get("REPO_ROOT", "/workspace")).resolve()
 

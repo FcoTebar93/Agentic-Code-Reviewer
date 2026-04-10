@@ -18,9 +18,10 @@ import os
 from typing import Any, Optional
 
 import httpx
+
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
-from shared.observability.metrics import llm_requests, llm_latency
+from shared.observability.metrics import llm_latency, llm_requests
 
 _BASE_URLS: dict[str, str] = {
     "openai":     "https://api.openai.com/v1",

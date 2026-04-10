@@ -6,10 +6,10 @@ import logging
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from shared.contracts.events import pr_human_approved, pr_human_rejected
 from services.gateway_service.constants import SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
 from services.gateway_service.runtime import GatewayRuntime
+from shared.contracts.events import pr_human_approved, pr_human_rejected
 
 router = APIRouter(prefix="/api", tags=["approvals"])
 logger = logging.getLogger(SERVICE_NAME)

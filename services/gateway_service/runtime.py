@@ -4,10 +4,10 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from shared.contracts.events import PrApprovalPayload
-from shared.utils import EventBus
 from services.gateway_service.config import GatewayConfig
 from services.gateway_service.ws_manager import ConnectionManager
+from shared.contracts.events import PrApprovalPayload
+from shared.utils import EventBus
 
 
 @dataclass

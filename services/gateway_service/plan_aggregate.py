@@ -9,9 +9,9 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 
-from shared.contracts.events import EventType
 from services.gateway_service.constants import SERVICE_NAME
 from services.gateway_service.runtime import GatewayRuntime
+from shared.contracts.events import EventType
 
 logger = logging.getLogger(SERVICE_NAME)
 
