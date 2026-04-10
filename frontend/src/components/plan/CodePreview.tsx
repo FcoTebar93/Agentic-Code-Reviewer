@@ -7,6 +7,8 @@ export function CodePreview({
 }: {
   task: PlanDetail["tasks"][number] | null;
 }) {
+  const [view, setView] = useState<"actual" | "original" | "diff">("actual");
+
   if (!task) return null;
 
   const hasCode = typeof task.code === "string" && task.code.trim().length > 0;
@@ -23,8 +25,6 @@ export function CodePreview({
     (hasHistoryDiff ? history[history.length - 1]?.code : "") ||
     task.code ||
     "";
-
-  const [view, setView] = useState<"actual" | "original" | "diff">("actual");
 
   if (!hasCode) {
     return (

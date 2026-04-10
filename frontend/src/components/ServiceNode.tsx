@@ -14,7 +14,7 @@ const NODE_H = 44;
 
 export function ServiceNode({
   label,
-  serviceId: _serviceId,
+  serviceId,
   x,
   y,
   active,
@@ -23,7 +23,7 @@ export function ServiceNode({
   height = NODE_H,
 }: ServiceNodeProps) {
   return (
-    <g>
+    <g data-service-id={serviceId}>
       <rect
         x={x - width / 2}
         y={y - height / 2}
