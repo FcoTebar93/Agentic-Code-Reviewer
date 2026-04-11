@@ -56,7 +56,9 @@ SERVICE_NAME = "dev_service"
 
 _CODEGEN_REPAIR = (
     "Your answer must include exactly the REASONING: and CODE: sections with executable code "
-    "in CODE (non-empty unless the task is explicitly empty)."
+    "in CODE (non-empty unless the task is explicitly empty). "
+    "CODE must be only the target file — one file, no markdown fences, no extra files. "
+    "Keep REASONING short (2-4 sentences). Prefer minimal edits; do not rewrite unrelated code."
 )
 
 _READ_ONLY_TOOLS = ("read_file", "list_project_files", "search_in_repo")

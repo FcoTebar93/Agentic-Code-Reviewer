@@ -12,6 +12,15 @@ Senior delivery checklist (follow unless the task explicitly conflicts):
 - Spec alignment: when SHORT-TERM MEMORY includes TASK SPEC & TESTS with ACCEPTANCE CRITERIA, treat each numbered item as mandatory unless it clearly conflicts with the repo; mention how you satisfied them in REASONING.
 """
 
+OUTPUT_DISCIPLINE = """
+Patch and response shape (strict):
+- CODE must contain exactly one compilation unit: the full contents for the single target file path given above — not multiple files, not concatenated modules, no markdown code fences inside CODE.
+- Prefer minimal, surgical edits: preserve existing structure, imports, and code you are not asked to change; do not rewrite large unrelated regions for style unless the task explicitly asks for a full-file replacement.
+- Do not pad REASONING with long quotes of the task or spec; stay within the sentence budget stated below.
+- When SHORT-TERM MEMORY includes REPO STYLE & LINTER CONFIG, align naming, quoting, and layout with those hints.
+- Follow RESPONSE LANGUAGE for REASONING prose; keep identifiers and public API names consistent with the surrounding repo (often English) even if REASONING is in another language.
+"""
+
 
 CODE_GEN_PROMPT = (
     """You are an expert {language} developer working inside a multi-agent pipeline.
@@ -62,6 +71,7 @@ If the target file clearly belongs to a known framework, adapt your implementati
   use hooks appropriately and avoid heavy logic inside JSX; prefer small, focused components.
 """
     + SENIOR_DELIVERY_CHECKLIST
+    + OUTPUT_DISCIPLINE
     + """
 Instructions:
 1. Start your response by explicitly referencing and responding to the planner's reasoning above.
@@ -78,9 +88,9 @@ Instructions:
    the problems indicated, keeping the rest of the file intact whenever possible.
 
 Format your response EXACTLY as:
-REASONING: <2-4 sentences that (a) acknowledge the planner's analysis, (b) explain your implementation decisions>
+REASONING: <2-4 sentences only: (a) acknowledge the planner or task, (b) your implementation decisions — no bullet essays>
 CODE:
-<the complete code, no markdown fences>
+<the complete code for the target file only, no markdown fences>
 """
 )
 
@@ -111,15 +121,15 @@ If SHORT-TERM MEMORY includes TASK SPEC & TESTS with ACCEPTANCE CRITERIA, satisf
 RESPONSE LANGUAGE:
 {response_language_rules}
 
-First explain your reasoning: what approach you chose, why, and any trade-offs considered.
-Then provide the complete code.
+First explain your reasoning briefly, then provide the complete code for the target file only.
 
 Format your response EXACTLY as:
-REASONING: <your design reasoning in 2-3 sentences>
+REASONING: <your design reasoning in 2-3 sentences only — concise>
 CODE:
-<the complete code, no markdown fences>
+<the complete code for the target file only, no markdown fences>
 """
     + SENIOR_DELIVERY_CHECKLIST
+    + OUTPUT_DISCIPLINE
 )
 
 TOOL_LOOP_SYSTEM = (
@@ -129,13 +139,14 @@ You may call the provided tools to inspect the repository (read files, list path
 Use tools when you need ground truth from disk; avoid redundant calls.
 """
     + SENIOR_DELIVERY_CHECKLIST
+    + OUTPUT_DISCIPLINE
     + """
 {response_language_rules}
 
 When you are done, send a final assistant message with NO tool calls, using exactly:
-REASONING: <2-4 sentences>
+REASONING: <2-4 sentences only>
 CODE:
-<the complete code for the target file, no markdown fences>
+<the complete code for the single target file in the user message — no other files, no markdown fences>
 
 If the user message includes TASK SPEC & TESTS with ACCEPTANCE CRITERIA, your REASONING must show you addressed them.
 """
