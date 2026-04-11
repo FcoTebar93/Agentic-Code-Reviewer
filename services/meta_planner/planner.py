@@ -44,7 +44,9 @@ ADMADC_TOOL_LOOP_MARKER = "[ADMADC_TOOL_LOOP]"
 
 _PLANNER_PARSE_REPAIR = (
     "The TASKS section must be a valid JSON array of objects with keys description, file_path, language "
-    "(and optionally edit_scope, group_id). Repeat the full answer with corrected REASONING: and TASKS:."
+    "(and optionally edit_scope, group_id). Each task should have one primary intent; split mixed refactor+feature+tests "
+    "into separate objects. Put dependency-safe order (contracts before implementation). "
+    "Repeat the full answer with corrected REASONING: and TASKS:."
 )
 
 _PLANNER_TOOL_NAMES = (
@@ -55,6 +57,12 @@ _PLANNER_TOOL_NAMES = (
 
 PLANNER_SENIOR_GUIDELINES = """
 Delivery quality and dependencies:
+- Atomic tasks: each TASK must have a single primary intent. Do not pack unrelated work into one task — split
+  “large refactor + new feature + new tests + docs/cleanup” into separate TASKS (each with its own description and
+  file_path). Mixing scopes in one task produces huge diffs and repeated QA failures.
+- Lead with stable surfaces: when both contracts and implementation are needed, order TASKS so types, protocols,
+  schemas, public function signatures, or thin API/module skeletons land before heavy logic, integrations, or UI that
+  calls them. The first task in a dependency chain should be reviewable on its own (clear boundary, minimal behaviour).
 - For non-trivial work, add focused tasks when they materially reduce risk: for example shared validation or error
   contracts, typing/schema boundaries, small refactors that unblock correct implementation, or hardening after HOT SPOTS—
   not every plan needs these; avoid busywork on trivial requests.
@@ -74,6 +82,9 @@ Given the following user request, decompose it into a list of concrete developme
 - SMALL and FOCUSED (each task should have a single clear goal).
 - SCOPED to a TINY set of files (ideally 1 file, exceptionally up to 3 closely-related files inside the same module/directory).
 - HOMOGENEOUS in shape so that downstream agents can process, test and review them independently.
+- ONE main kind of change per task (e.g. do not combine “refactor this module”, “add feature X”, and “add tests” in a
+  single TASK — use three tasks). Tests or hardening that deserve their own review cycle should be separate TASKS when
+  the change is non-trivial.
 
 You also have access to selected memories from past plans and pipeline runs.
 These may include previous user prompts, planner reasoning, pipeline conclusions,
@@ -121,6 +132,8 @@ Conventions:
 - Use edit_scope=\"file\" when possible, or \"module\" when a change spans a small, coherent package.
 - Use group_id to group related tasks by module/directory (for example: \"services/dev_service\", \"frontend/src/components\").
 - List TASKS in dependency-safe order when one change must exist before another can be implemented correctly.
+- Prefer the first task in a sequence to establish or adjust the public contract (types, routes, interfaces) before tasks
+  that fill in behaviour or wiring, unless the request is trivial.
 
 User request:
 {prompt}
@@ -132,7 +145,8 @@ PLANNER_TOOL_LOOP_SYSTEM = (
     """You are a senior software architect (PLANNER) in a multi-agent CI pipeline.
 
 Call memory tools when you need past events, semantic recall, or failure-by-module patterns.
-Keep tasks small (ideally one file), avoid huge cross-cutting changes, and respect QA/security hotspots from tool data.
+Keep tasks small (ideally one file), one primary intent per task, avoid huge cross-cutting changes, put contracts before
+heavy implementation when both are needed, and respect QA/security hotspots from tool data.
 
 """
     + PLANNER_SENIOR_GUIDELINES
