@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from services.meta_planner.planner import (
+    _PLANNER_PARSE_REPAIR,
     PLANNER_SENIOR_GUIDELINES,
     PLANNING_PROMPT_TEMPLATE,
-    _PLANNER_PARSE_REPAIR,
 )
 
 
