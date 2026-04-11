@@ -21,6 +21,7 @@ from services.dev_service.prompts import (
     CODE_GEN_PROMPT_NO_PRIOR,
     TOOL_LOOP_SYSTEM,
 )
+from services.dev_service.security_gate_brief import security_gate_brief
 from shared.contracts.events import TaskSpec
 from shared.llm_adapter import LLMProvider
 from shared.llm_adapter.models import LLMRequest
@@ -82,6 +83,13 @@ def _qa_feedback_block(qa_feedback: str) -> str:
     )
 
 
+def _security_brief_block() -> str:
+    body = security_gate_brief().strip()
+    if not body:
+        return ""
+    return f"---\n{body}\n---\n\n"
+
+
 def _build_codegen_user_content(
     task: TaskSpec,
     plan_reasoning: str,
@@ -96,6 +104,7 @@ def _build_codegen_user_content(
         stm_block = f"FRAMEWORK HINT: {framework_hint}\n\n" + (stm_block or "")
     rules = natural_language_rules_for_locale(user_locale)
     qa_block = _qa_feedback_block(qa_feedback)
+    sec_block = _security_brief_block()
     if plan_reasoning.strip():
         return CODE_GEN_PROMPT.format(
             language=task.language,
@@ -103,6 +112,7 @@ def _build_codegen_user_content(
             description=task.description,
             file_path=task.file_path,
             qa_feedback_block=qa_block,
+            security_brief_block=sec_block,
             short_term_memory=stm_block or "None.",
             response_language_rules=rules,
         )
@@ -111,6 +121,7 @@ def _build_codegen_user_content(
         description=task.description,
         file_path=task.file_path,
         qa_feedback_block=qa_block,
+        security_brief_block=sec_block,
         response_language_rules=rules,
     )
 

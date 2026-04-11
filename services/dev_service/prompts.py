@@ -41,6 +41,7 @@ Your task is:
 Target file: {file_path}
 
 {qa_feedback_block}
+{security_brief_block}
 You also have access to a short memory window of recent events for this plan
 (planner decisions, previous code generations, QA/security results, etc.).
 Use this context to stay consistent with prior steps, but ignore anything that
@@ -103,6 +104,7 @@ Write production-quality code for the following task:
 The code should be written for file: {file_path}
 
 {qa_feedback_block}
+{security_brief_block}
 Downstream in this pipeline there are QA and CI agents that will:
 - Run language-appropriate linters and security tools (ruff, ESLint, Bandit, Semgrep, javac, etc.).
 - Optionally run tests and auto-formatters (e.g. black/prettier).

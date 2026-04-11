@@ -4,6 +4,7 @@ import os
 import re
 from dataclasses import dataclass
 
+# Rule ids are listed for developers in services/dev_service/security_gate_brief.py; prefer additive renames.
 SECURITY_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("hardcoded_api_key", re.compile(r'(?i)(api_key|apikey)\s*=\s*["\'][A-Za-z0-9_\-]{16,}["\']')),
     ("hardcoded_password", re.compile(r'(?i)(password|passwd|pwd)\s*=\s*["\'][^"\']{4,}["\']')),
