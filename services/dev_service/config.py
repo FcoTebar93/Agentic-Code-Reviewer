@@ -32,6 +32,13 @@ class DevConfig:
     spec_wait_interval_seconds: float
     spec_context_max_chars: int
     dev_context_max_chars: int
+    auto_gates_scoped: bool
+    lint_python_scoped_template: str
+    lint_python_wide_template: str
+    test_python_template: str
+    enable_auto_typecheck: bool
+    typecheck_python_template: str
+    auto_gates_timeout_seconds: float
 
     @classmethod
     def from_env(cls) -> DevConfig:
@@ -84,5 +91,25 @@ class DevConfig:
             dev_context_max_chars=max(
                 2000,
                 int(os.environ.get("DEV_CONTEXT_MAX_CHARS", "5600")),
+            ),
+            auto_gates_scoped=os.environ.get("DEV_AUTO_GATES_SCOPED", "true").lower()
+            in ("1", "true", "yes"),
+            lint_python_scoped_template=os.environ.get(
+                "DEV_LINT_PYTHON_SCOPED", "ruff check {file}"
+            ),
+            lint_python_wide_template=os.environ.get(
+                "DEV_LINT_PYTHON_WIDE", "ruff check ."
+            ),
+            test_python_template=os.environ.get("DEV_TEST_COMMAND_PYTHON", "pytest -q"),
+            enable_auto_typecheck=os.environ.get(
+                "DEV_ENABLE_AUTO_TYPECHECK", "false"
+            ).lower()
+            in ("1", "true", "yes"),
+            typecheck_python_template=os.environ.get(
+                "DEV_TYPECHECK_COMMAND_PYTHON", ""
+            ),
+            auto_gates_timeout_seconds=max(
+                15.0,
+                float(os.environ.get("DEV_AUTO_GATES_TIMEOUT_SECONDS", "180") or 180),
             ),
         )
