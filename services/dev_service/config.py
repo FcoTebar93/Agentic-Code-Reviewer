@@ -18,7 +18,6 @@ class DevConfig:
     strategy: str
     enable_auto_tests: bool
     enable_auto_lints: bool
-    test_command_python: str
     test_command_javascript: str
     test_command_typescript: str
     test_command_java: str
@@ -60,7 +59,6 @@ class DevConfig:
             in ("1", "true", "yes"),
             enable_auto_lints=os.environ.get("DEV_ENABLE_AUTO_LINTS", "false").lower()
             in ("1", "true", "yes"),
-            test_command_python=os.environ.get("DEV_TEST_COMMAND_PYTHON", "pytest"),
             test_command_javascript=os.environ.get("DEV_TEST_COMMAND_JAVASCRIPT", ""),
             test_command_typescript=os.environ.get("DEV_TEST_COMMAND_TYPESCRIPT", ""),
             test_command_java=os.environ.get("DEV_TEST_COMMAND_JAVA", ""),

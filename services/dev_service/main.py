@@ -20,6 +20,7 @@ from fastapi import FastAPI
 
 from services.dev_service.config import DevConfig
 from services.dev_service.deps import DevPipelineDeps
+from services.dev_service.deterministic_gates import format_gate_command
 from services.dev_service.generator import generate_code, generate_code_with_tool_loop
 from services.dev_service.tools import REPO_ROOT, build_dev_tool_registry
 from shared.contracts.events import (
@@ -259,17 +260,32 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         run_tests = path_policy.get("enable_auto_tests", True)
         run_lints = path_policy.get("enable_auto_lints", True)
 
-        tests_summary = await _maybe_run_auto_tests(task, mode) if run_tests else ""
+        gate_timeout = cfg.auto_gates_timeout_seconds if cfg else 180.0
         lints_summary = (
-            await _maybe_run_auto_lints(task, qa_feedback, mode) if run_lints else ""
+            await _maybe_run_auto_lints(task, qa_feedback, mode, gate_timeout)
+            if run_lints
+            else ""
+        )
+        typecheck_summary = (
+            await _maybe_run_auto_typecheck(task, qa_feedback, mode, gate_timeout)
+            if cfg and cfg.enable_auto_typecheck
+            else ""
+        )
+        tests_summary = (
+            await _maybe_run_auto_tests(task, mode, gate_timeout)
+            if run_tests
+            else ""
         )
 
         combined_reasoning = code_result.reasoning
-        if tests_summary:
-            suffix = f"\n[Dev Service] Automated tests summary: {tests_summary}"
-            combined_reasoning = (combined_reasoning + suffix).strip()
         if lints_summary:
             suffix = f"\n[Dev Service] Automated lints summary: {lints_summary}"
+            combined_reasoning = (combined_reasoning + suffix).strip()
+        if typecheck_summary:
+            suffix = f"\n[Dev Service] Automated typecheck summary: {typecheck_summary}"
+            combined_reasoning = (combined_reasoning + suffix).strip()
+        if tests_summary:
+            suffix = f"\n[Dev Service] Automated tests summary: {tests_summary}"
             combined_reasoning = (combined_reasoning + suffix).strip()
 
         formatted_code = code_result.code
@@ -409,7 +425,9 @@ async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str
     return False
 
 
-async def _maybe_run_auto_tests(task, mode: str) -> str:
+async def _maybe_run_auto_tests(
+    task, mode: str, timeout_s: float
+) -> str:
     """
     Optionally run configured automated tests for the task's language.
 
@@ -421,7 +439,10 @@ async def _maybe_run_auto_tests(task, mode: str) -> str:
         lang = (task.language or "").lower()
         if cfg and cfg.enable_auto_tests and tool_registry is not None:
             if lang == "python":
-                test_cmd = cfg.test_command_python
+                test_cmd = format_gate_command(
+                    cfg.test_python_template,
+                    getattr(task, "file_path", "") or "",
+                )
             elif lang in ("javascript", "js"):
                 test_cmd = cfg.test_command_javascript
             elif lang in ("typescript", "ts"):
@@ -435,7 +456,7 @@ async def _maybe_run_auto_tests(task, mode: str) -> str:
         tests_result = await execute_tool(
             tool_registry,
             "run_tests",
-            {"command": test_cmd, "timeout_s": 300.0},
+            {"command": test_cmd, "timeout_s": timeout_s},
         )
         if tests_result.success and isinstance(tests_result.output, dict):
             tr = tests_result.output
@@ -455,14 +476,11 @@ async def _maybe_run_auto_tests(task, mode: str) -> str:
     return ""
 
 
-async def _maybe_run_auto_lints(task, qa_feedback: str, mode: str) -> str:
+async def _maybe_run_auto_lints(
+    task, qa_feedback: str, mode: str, timeout_s: float
+) -> str:
     """
-    Optionally run configured automated linters for the task's language.
-
-    Estrategia:
-    - Solo corre si DEV_ENABLE_AUTO_LINTS está activo.
-    - Se da más prioridad cuando hay qa_feedback (reintento tras QA).
-    - Usa el tool run_lints con un comando apropiado por lenguaje.
+    Linters automáticos. En Python con puertas acotadas: ruff check {file} barato en cada tarea.
     """
     try:
         if not cfg or not getattr(cfg, "enable_auto_lints", False):
@@ -473,10 +491,27 @@ async def _maybe_run_auto_lints(task, qa_feedback: str, mode: str) -> str:
         lang = (getattr(task, "language", "") or "").lower()
         edit_scope = str(getattr(task, "edit_scope", "file") or "").lower()
         normalized_mode = (mode or "normal").strip().lower()
+        has_feedback = bool((qa_feedback or "").strip())
+        use_scoped_python = bool(
+            cfg.auto_gates_scoped and lang in ("python", "py")
+        )
+        if not use_scoped_python:
+            if (
+                normalized_mode != "strict"
+                and not has_feedback
+                and edit_scope == "file"
+            ):
+                return ""
 
+        fp = getattr(task, "file_path", "") or ""
         lint_cmd = ""
         if lang in ("python", "py"):
-            lint_cmd = os.environ.get("DEV_LINT_COMMAND_PYTHON", "ruff .")
+            tmpl = (
+                cfg.lint_python_scoped_template
+                if cfg.auto_gates_scoped
+                else cfg.lint_python_wide_template
+            )
+            lint_cmd = format_gate_command(tmpl, fp)
         elif lang in ("javascript", "js"):
             lint_cmd = os.environ.get("DEV_LINT_COMMAND_JAVASCRIPT", "npm run lint")
         elif lang in ("typescript", "ts"):
@@ -487,14 +522,10 @@ async def _maybe_run_auto_lints(task, qa_feedback: str, mode: str) -> str:
         if not lint_cmd:
             return ""
 
-        has_feedback = bool((qa_feedback or "").strip())
-        if normalized_mode != "strict" and not has_feedback and edit_scope == "file":
-            return ""
-
         lints_result = await execute_tool(
             tool_registry,
             "run_lints",
-            {"command": lint_cmd, "timeout_s": 300.0},
+            {"command": lint_cmd, "timeout_s": timeout_s},
         )
         if lints_result.success and isinstance(lints_result.output, dict):
             lr = lints_result.output
@@ -512,6 +543,61 @@ async def _maybe_run_auto_lints(task, qa_feedback: str, mode: str) -> str:
     except Exception:
         return ""
     return ""
+
+
+async def _maybe_run_auto_typecheck(
+    task, qa_feedback: str, mode: str, timeout_s: float
+) -> str:
+    """Typecheck opcional (p. ej. mypy sobre {file}) antes del LLM de QA."""
+    try:
+        if not cfg or not tool_registry:
+            return ""
+        lang = (getattr(task, "language", "") or "").lower()
+        tmpl = (cfg.typecheck_python_template or "").strip()
+        if lang not in ("python", "py") or not tmpl:
+            return ""
+
+        edit_scope = str(getattr(task, "edit_scope", "file") or "").lower()
+        normalized_mode = (mode or "normal").strip().lower()
+        has_feedback = bool((qa_feedback or "").strip())
+        use_scoped_python = bool(
+            cfg.auto_gates_scoped and lang in ("python", "py")
+        )
+        if not use_scoped_python:
+            if (
+                normalized_mode != "strict"
+                and not has_feedback
+                and edit_scope == "file"
+            ):
+                return ""
+
+        fp = getattr(task, "file_path", "") or ""
+        cmd = format_gate_command(tmpl, fp)
+        if not cmd:
+            return ""
+
+        tc_result = await execute_tool(
+            tool_registry,
+            "run_lints",
+            {"command": cmd, "timeout_s": timeout_s},
+        )
+        if tc_result.success and isinstance(tc_result.output, dict):
+            lr = tc_result.output
+            status = (
+                "PASSED"
+                if lr.get("exit_code") == 0 and not lr.get("timed_out")
+                else "FAILED"
+            )
+            return (
+                f"Typecheck ({lr.get('command')}): {status}. "
+                f"exit_code={lr.get('exit_code')}, timed_out={lr.get('timed_out')}."
+            )
+        if not tc_result.success:
+            return f"Typecheck failed to run: {tc_result.error}"
+    except Exception:
+        return ""
+    return ""
+
 
 def _glob_pattern_for_language(language: str) -> str:
     """Patr?n glob por lenguaje para list_project_files."""
