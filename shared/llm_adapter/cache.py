@@ -1,14 +1,4 @@
-"""
-LLM response caching layer.
-
-Wraps any LLMProvider with a prompt-hash-based cache. Identical prompts
-return cached responses without calling the underlying provider, guaranteeing
-determinism and saving tokens.
-
-Two backends:
-- In-memory dict (default, for dev/testing)
-- Redis (for production across service restarts)
-"""
+"""LLM response caching layer."""
 
 from __future__ import annotations
 

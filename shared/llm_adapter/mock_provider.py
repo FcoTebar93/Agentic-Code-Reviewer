@@ -1,15 +1,4 @@
-"""
-Deterministic mock LLM provider for testing and development.
-
-Simulates real LLM behaviour by parsing the actual prompt content and
-generating contextual reasoning based on what was asked. The output is
-always deterministic (same prompt → same response) but reflects the
-real content of each request, not hardcoded placeholders.
-
-To switch to a real model, set in .env:
-    LLM_PROVIDER=openai
-    OPENAI_API_KEY=sk-...
-"""
+"""Deterministic mock LLM provider for testing and development."""
 
 from __future__ import annotations
 
@@ -243,9 +232,7 @@ def _replanner_tool_final_response() -> str:
 
 
 def _mock_tool_loop_response(request: LLMRequest, prompt_hash: str) -> LLMResponse:
-    """
-    Simulate one tool round then a final message for dev/spec/planner/replanner loops.
-    """
+    """Simulate one tool round then a final message for dev/spec/planner/replanner loops."""
     effective = _effective_prompt_text(request)
     msgs = request.messages or []
     saw_tool = any(m.get("role") == "tool" for m in msgs)
@@ -320,11 +307,7 @@ def _mock_tool_loop_response(request: LLMRequest, prompt_hash: str) -> LLMRespon
 
 
 class MockProvider(LLMProvider):
-    """
-    Deterministic mock that generates contextual reasoning from real prompt content.
-    Same prompt always produces the same output (SHA-256 seeded), but the reasoning
-    reflects the actual task rather than a fixed template.
-    """
+    """Deterministic mock that generates contextual reasoning from real prompt content."""
 
     def __init__(self) -> None:
         self._call_count = 0

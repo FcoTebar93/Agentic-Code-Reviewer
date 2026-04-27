@@ -1,14 +1,4 @@
-"""
-LLM provider.
-
-Works with any API that speaks the OpenAI Chat Completions protocol:
-  - OpenAI      (base_url=https://api.openai.com/v1)
-  - Groq        (base_url=https://api.groq.com/openai/v1)         -- free tier
-  - Google      (base_url=https://generativelanguage.googleapis.com/v1beta/openai)  -- free tier
-  - OpenRouter  (base_url=https://openrouter.ai/api/v1)           -- free models
-
-Temperature is forced to 0 at the adapter level for system-wide determinism.
-"""
+"""LLM provider."""
 
 from __future__ import annotations
 
@@ -84,14 +74,7 @@ def _normalize_tool_calls_from_sdk(raw: Any) -> list[dict[str, Any]] | None:
 
 
 class OpenAIProvider(LLMProvider):
-    """
-    OpenAI Chat Completions adapter.
-
-    Reads from env:
-      LLM_PROVIDER  -- selects base_url and default model
-      LLM_API_KEY   -- API key (also checked as OPENAI_API_KEY for compatibility)
-      LLM_MODEL     -- override the default model for the provider
-    """
+    """OpenAI Chat Completions adapter."""
 
     def __init__(
         self,
@@ -151,14 +134,7 @@ class OpenAIProvider(LLMProvider):
             )
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
-        """
-        Generate a completion with basic retry/backoff and outcome metrics.
-
-        Outcomes:
-        - ok:      request succeeded
-        - timeout: HTTP/transport timeout
-        - error:   non-timeout error (4xx/5xx or client error)
-        """
+        """Generate a completion with basic retry/backoff and outcome metrics."""
         messages = _chat_messages(request)
         key_material = request.prompt.encode()
         if request.messages is not None:
