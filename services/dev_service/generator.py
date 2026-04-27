@@ -136,7 +136,7 @@ async def generate_code(
     *,
     qa_feedback: str = "",
 ) -> tuple[CodeResult, int, int]:
-        """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
+    """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
     prompt = _build_codegen_user_content(
         task,
         plan_reasoning,
@@ -179,7 +179,7 @@ async def generate_code_with_tool_loop(
     user_locale: str = "en",
     qa_feedback: str = "",
 ) -> tuple[CodeResult, int, int]:
-        """Multi-turn generation: model may call repo tools before emitting REASONING/CODE."""
+    """Multi-turn generation: model may call repo tools before emitting REASONING/CODE."""
     tools = tools_openai_from_registry(registry, _tool_loop_tool_names(include_ci_tools))
     if not tools:
         logger.warning("Tool loop: no tools matched registry; using single-shot codegen")

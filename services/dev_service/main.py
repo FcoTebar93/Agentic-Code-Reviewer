@@ -430,7 +430,7 @@ async def _maybe_run_auto_tests(task, timeout_s: float) -> str:
 async def _maybe_run_auto_lints(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-        """Run automatic lint gates when policy allows it."""
+    """Run automatic lint gates when policy allows it."""
     try:
         if not cfg or not getattr(cfg, "enable_auto_lints", False):
             return ""
@@ -474,7 +474,7 @@ async def _maybe_run_auto_lints(
 async def _maybe_run_auto_typecheck(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-        """Run optional typecheck gate before QA."""
+    """Run optional typecheck gate before QA."""
     try:
         if not cfg or not tool_registry:
             return ""
@@ -748,7 +748,7 @@ async def _fetch_task_spec(
     wait_if_missing: bool = False,
     limit: int = 40,
 ) -> str:
-        """Fetch spec/tests from memory_service, optionally waiting for availability."""
+    """Fetch spec/tests from memory_service, optionally waiting for availability."""
     if http_client is None:
         return ""
 
@@ -827,7 +827,7 @@ def _build_dev_context(
     spec_max_chars: int = 3000,
     max_chars: int = 5600,
 ) -> str:
-        """Build compact structured context for the dev_service LLM."""
+    """Build compact structured context for the dev_service LLM."""
     blocks: list[str] = []
 
     spec = (spec_block or "").strip()
