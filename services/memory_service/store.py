@@ -1,12 +1,4 @@
-"""
-Unified memory store -- facade over PostgreSQL, Qdrant, and Redis.
-
-Provides a clean API for the rest of the system:
-- store_event / get_events  -> PostgreSQL (structured)
-- store_embedding / search  -> Qdrant (semantic)
-- cache_set / cache_get     -> Redis (operational)
-- update_task / get_tasks   -> PostgreSQL (task state)
-"""
+"""Unified memory store facade over PostgreSQL, Qdrant, and Redis."""
 
 from __future__ import annotations
 
@@ -137,12 +129,7 @@ class MemoryStore:
         self,
         limit_per_kind: int = 200,
     ) -> list[dict[str, Any]]:
-        """
-        Aggregate historical QA/seguridad fallos por módulo.
-
-        Esta vista ligera se usa para dar al planner/QA \"patrones de fallo\"
-        sin tener que recorrer todos los eventos desde los agentes.
-        """
+        """Aggregate historical QA/security failures by module."""
         async with get_session() as session:
             stmt = (
                 select(EventLog)
@@ -304,13 +291,7 @@ class MemoryStore:
         event_types: list[str] | None = None,
         limit: int = 5,
     ) -> list[dict[str, Any]]:
-        """
-        High-level semantic search entry point.
-
-        - Encodes the query into a vector.
-        - Runs a Qdrant similarity search with optional filters.
-        - Applies heuristic scoring (importance, recency, frequency, impact).
-        """
+        """Run semantic search with optional filters and heuristic ranking."""
         vector = await self._embed_text(query)
         qdrant_filter = self._build_qdrant_filter(plan_id=plan_id, event_types=event_types or [])
         results = await self._qdrant.query_points(
@@ -343,12 +324,7 @@ class MemoryStore:
         return scored
 
     async def _embed_text(self, text: str) -> list[float]:
-        """
-        Encode text into an embedding vector compatible with Qdrant.
-
-        Prefers an OpenAI-compatible embeddings API when configured, and falls
-        back to a deterministic hash-based pseudo-embedding otherwise.
-        """
+        """Encode text into a Qdrant-compatible embedding vector."""
         if not text.strip():
             return [0.0] * EMBEDDING_DIM
 
@@ -380,12 +356,7 @@ class MemoryStore:
             return self._hash_to_vector(text, EMBEDDING_DIM)
 
     async def _index_event_for_search(self, event: BaseEvent) -> None:
-        """
-        Automatically index selected events into the semantic vector store.
-
-        This focuses on architecturally important events such as plan.created
-        and pipeline.conclusion, assigning higher heuristic importance.
-        """
+        """Index selected events into the semantic vector store."""
         text, importance, impact, extra_payload = self._event_to_index_text(event)
         if not text.strip():
             return
@@ -425,10 +396,7 @@ class MemoryStore:
         self,
         event: BaseEvent,
     ) -> tuple[str, float, float, dict[str, Any]]:
-        """
-        Map an event into (text, importance, impact, extra_payload) for indexing.
-        Only a subset of events are indexed to keep the vector DB focused.
-        """
+        """Map an event into text and heuristic metadata for indexing."""
         etype = event.event_type
         payload = event.payload or {}
 
@@ -513,13 +481,7 @@ class MemoryStore:
         payload: dict[str, Any],
         now: datetime,
     ) -> float:
-        """
-        Combine vector similarity with simple heuristics:
-        - importance: manual weighting of how semantically important a memory is
-        - impact: how much it influenced decisions (e.g. conclusions, blocks)
-        - recency: newer memories get a small boost
-        - frequency: frequently retrieved memories get a small boost
-        """
+        """Combine vector similarity with importance/impact/recency/frequency heuristics."""
         importance = float(payload.get("importance", 0.5))
         impact = float(payload.get("impact", 0.0))
         access_count = int(payload.get("access_count", 0))
@@ -548,12 +510,7 @@ class MemoryStore:
 
     @staticmethod
     def _hash_to_vector(text: str, dim: int) -> list[float]:
-        """
-        Deterministic pseudo-embedding based on hashing.
-
-        This is only used as a fallback when a real embedding model is not
-        available; it still enables approximate clustering and experimentation.
-        """
+        """Build deterministic pseudo-embedding fallback from hashing."""
         import hashlib
 
         h = hashlib.sha256(text.encode("utf-8")).digest()
@@ -562,9 +519,7 @@ class MemoryStore:
 
     @staticmethod
     def _resize_vector(vec: list[float], dim: int) -> list[float]:
-        """
-        Resize a vector to the desired dimensionality in a deterministic way.
-        """
+        """Resize vector deterministically to target dimensionality."""
         if not vec:
             return [0.0] * dim
         if len(vec) == dim:

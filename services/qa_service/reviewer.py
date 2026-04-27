@@ -431,7 +431,7 @@ def _build_qa_rules_block(language: str) -> str:
 
 
 def _parse_review_response(content: str) -> ReviewResult:
-    """Parse the structured LLM response into a ReviewResult with reasoning and sections."""
+    """Parse structured LLM output into `ReviewResult`."""
     lines = content.strip().splitlines()
     passed = True
     issues: list[str] = []

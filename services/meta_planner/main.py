@@ -29,8 +29,6 @@ from shared.contracts.events import (
     PlanRequestedPayload,
     PlanRevisionPayload,
     TaskAssignedPayload,
-    TokensUsedPayload,
-    metrics_tokens_used,
     plan_created,
     task_assigned,
 )
@@ -44,6 +42,7 @@ from shared.observability.metrics import (
     metrics_response,
     tasks_completed,
 )
+from shared.observability.tokens import emit_token_usage_event
 from shared.plan_idempotency import plan_idempotency_key_meta_planner
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
@@ -52,6 +51,7 @@ from shared.utils import (
     store_event,
     subscribe_typed_event,
 )
+from shared.utils.path_grouping import infer_group_id
 
 SERVICE_NAME = "meta_planner"
 event_bus: EventBus = cast(EventBus, None)
@@ -65,19 +65,6 @@ _MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN = int(
     os.environ.get("MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN", "1")
 )
 _replans_per_original_plan: dict[str, int] = {}
-
-
-def _infer_group_id(file_path: str) -> str:
-    """Infer approximate module/group id from file path."""
-    norm = (file_path or "").replace("\\", "/").strip()
-    if not norm:
-        return "root"
-    parts = norm.split("/")
-    if len(parts) >= 3:
-        return "/".join(parts[:3])
-    if len(parts) >= 2:
-        return "/".join(parts[:2])
-    return norm
 
 
 def _summarise_planner_memory(
@@ -351,7 +338,7 @@ async def _execute_plan(
             gid = (getattr(spec, "group_id", "") or "").strip()
             if not gid:
                 try:
-                    spec.group_id = _infer_group_id(spec.file_path)
+                    spec.group_id = infer_group_id(spec.file_path)
                 except Exception:
                     spec.group_id = "root"
             task_specs.append(spec)
@@ -373,22 +360,14 @@ async def _execute_plan(
         plan_event = plan_created(SERVICE_NAME, plan_payload)
         plan_id = plan_payload.plan_id
 
-        if prompt_tokens or completion_tokens:
-            tok_event = metrics_tokens_used(
-                SERVICE_NAME,
-                TokensUsedPayload(
-                    plan_id=plan_id,
-                    service=SERVICE_NAME,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                ),
-            )
-            await store_event(
-                http_client,
-                tok_event,
-                logger=logger,
-                error_message="Failed to store event %s in memory_service",
-            )
+        await emit_token_usage_event(
+            service_name=SERVICE_NAME,
+            plan_id=plan_id,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            http_client=http_client,
+            logger=logger,
+        )
 
         await event_bus.publish(plan_event)
         await store_event(

@@ -21,8 +21,6 @@ from shared.contracts.events import (
     QAResultPayload,
     TaskAssignedPayload,
     TaskSpec,
-    TokensUsedPayload,
-    metrics_tokens_used,
     pr_requested,
     qa_failed,
     qa_passed,
@@ -34,6 +32,7 @@ from shared.observability.metrics import (
     tasks_completed,
     tasks_failed,
 )
+from shared.observability.tokens import emit_token_usage_event
 from shared.policies import (
     ProjectPolicy,
     effective_mode,
@@ -211,22 +210,14 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
                     static_analysis_report=static_report,
                 )
 
-    if prompt_tokens or completion_tokens:
-        tok_event = metrics_tokens_used(
-            "qa_service",
-            TokensUsedPayload(
-                plan_id=plan_id,
-                service="qa_service",
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            ),
-        )
-        await store_event(
-            deps.http_client,
-            tok_event,
-            logger=deps.logger,
-            error_message="Failed to store event %s",
-        )
+    await emit_token_usage_event(
+        service_name="qa_service",
+        plan_id=plan_id,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        http_client=deps.http_client,
+        logger=deps.logger,
+    )
 
     reasoning = result.reasoning or ""
     if is_hot_module:

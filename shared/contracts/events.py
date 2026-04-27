@@ -187,7 +187,7 @@ class PrApprovalPayload(BaseModel):
 
 
 class PipelineConclusionPayload(BaseModel):
-    """Dedicated event emitted by the gateway when the agent pipeline reaches."""
+    """Pipeline conclusion emitted by the gateway."""
 
     plan_id: str
     branch_name: str = ""
@@ -204,7 +204,7 @@ class PipelineConclusionPayload(BaseModel):
 
 
 class PlanRevisionPayload(BaseModel):
-    """Suggested revision to an existing plan, typically produced by the."""
+    """Suggested revision to an existing plan."""
 
     original_plan_id: str
     new_plan_id: str = Field(default_factory=lambda: str(uuid.uuid4()))

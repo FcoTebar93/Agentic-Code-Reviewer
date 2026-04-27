@@ -19,8 +19,6 @@ from shared.contracts.events import (
     PlanRevisionPayload,
     QAResultPayload,
     SecurityResultPayload,
-    TokensUsedPayload,
-    metrics_tokens_used,
     plan_revision_suggested,
 )
 from shared.http.client import create_async_http_client
@@ -31,8 +29,10 @@ from shared.observability.metrics import (
     agent_execution_time,
     metrics_response,
 )
+from shared.observability.tokens import emit_token_usage_event
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import EventBus, store_event, subscribe_typed_event
+from shared.utils.path_grouping import infer_group_id
 
 SERVICE_NAME = "replanner_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -41,23 +41,6 @@ cfg: ReplannerConfig = cast(ReplannerConfig, None)
 tool_registry: ToolRegistry = cast(ToolRegistry, None)
 
 _replan_suggested_for_plan: dict[str, bool] = {}
-
-def _infer_group_id(file_path: str) -> str:
-    """
-    Deriva un identificador de grupo/módulo a partir del file_path.
-
-    Mantiene la misma heurística que el meta_planner para poder alinear
-    las decisiones de replanning con los grupos de tareas originales.
-    """
-    norm = (file_path or "").replace("\\", "/").strip()
-    if not norm:
-        return "root"
-    parts = norm.split("/")
-    if len(parts) >= 3:
-        return "/".join(parts[:3])
-    if len(parts) >= 2:
-        return "/".join(parts[:2])
-    return norm
 
 
 @asynccontextmanager
@@ -168,7 +151,7 @@ async def _analyse_and_emit_revision(
     if isinstance(outcome, QAResultPayload):
         fp = (outcome.file_path or "").strip()
         if fp:
-            target_group_ids.append(_infer_group_id(fp))
+            target_group_ids.append(infer_group_id(fp))
     elif isinstance(outcome, SecurityResultPayload):
         ctx = getattr(outcome, "pr_context", {}) or {}
         files = ctx.get("files") or []
@@ -180,7 +163,7 @@ async def _analyse_and_emit_revision(
                 fp = (f.get("file_path") or "").strip()
                 if not fp:
                     continue
-                modules.add(_infer_group_id(fp))
+                modules.add(infer_group_id(fp))
         if modules:
             target_group_ids.extend(list(modules)[:5])
 
@@ -217,22 +200,14 @@ async def _analyse_and_emit_revision(
                     user_locale=user_locale,
                 )
 
-            if prompt_tokens or completion_tokens:
-                tok_event = metrics_tokens_used(
-                    SERVICE_NAME,
-                    TokensUsedPayload(
-                        plan_id=plan_id,
-                        service=SERVICE_NAME,
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                    ),
-                )
-                await store_event(
-                    http_client,
-                    tok_event,
-                    logger=logger,
-                    error_message="Failed to store replanner event %s",
-                )
+            await emit_token_usage_event(
+                service_name=SERVICE_NAME,
+                plan_id=plan_id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                http_client=http_client,
+                logger=logger,
+            )
     except Exception:
         logger.exception(
             "Replanner failed while analysing outcome for plan %s (type=%s). "

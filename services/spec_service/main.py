@@ -19,8 +19,6 @@ from shared.contracts.events import (
     EventType,
     SpecGeneratedPayload,
     TaskAssignedPayload,
-    TokensUsedPayload,
-    metrics_tokens_used,
     spec_generated,
 )
 from shared.http.client import create_async_http_client
@@ -28,6 +26,7 @@ from shared.llm_adapter import get_llm_provider
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import agent_execution_time, metrics_response
+from shared.observability.tokens import emit_token_usage_event
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
@@ -195,22 +194,14 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                     user_locale=user_locale,
                 )
 
-            if prompt_tokens or completion_tokens:
-                tok_event = metrics_tokens_used(
-                    SERVICE_NAME,
-                    TokensUsedPayload(
-                        plan_id=plan_id,
-                        service=SERVICE_NAME,
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                    ),
-                )
-                await store_event(
-                    http_client,
-                    tok_event,
-                    logger=logger,
-                    error_message="Failed to store spec_service metrics event %s",
-                )
+            await emit_token_usage_event(
+                service_name=SERVICE_NAME,
+                plan_id=plan_id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                http_client=http_client,
+                logger=logger,
+            )
     except Exception:
         logger.exception(
             "Spec Service failed while generating spec for task %s (plan %s). "
