@@ -80,7 +80,6 @@ def _summarise_planner_memory(
     events: list[dict] | None,
     max_lines: int = 8,
 ) -> str:
-    """Build compact planner memory summary from semantic results and events."""
     semantic_results = semantic_results or []
     events = events or []
 
@@ -249,7 +248,6 @@ async def create_plan(req: PlanRequest):
 
 @app.post("/ask", response_model=AskResponse)
 async def agent_ask(req: AskRequest):
-    """Answer questions using semantic memory and optional plan-scoped events."""
     global http_client, cfg
     if http_client is None or cfg is None:
         return _error_response(503, "Service not ready")
@@ -394,7 +392,6 @@ async def _execute_plan(
     }
 
 async def _consume_plan_requests() -> None:
-    """Consume `plan.requested` and execute plans with delay support."""
     async def on_payload(payload: PlanRequestedPayload) -> None:
         await maybe_agent_delay(logger)
         await _execute_plan(
@@ -416,7 +413,6 @@ async def _consume_plan_requests() -> None:
 
 
 async def _consume_plan_revisions() -> None:
-    """Consume replanning events and trigger confirmed plan revisions."""
     async def on_suggested(payload: PlanRevisionPayload) -> None:
         logger.info(
             "Received plan.revision_suggested for %s (severity=%s) - waiting for human confirmation.",
@@ -446,7 +442,6 @@ async def _consume_plan_revisions() -> None:
 
 
 async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
-    """Replan automatically from a confirmed `PlanRevisionPayload`."""
     original_plan_id = payload.original_plan_id
     new_plan_id = payload.new_plan_id
 
@@ -522,7 +517,6 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
 async def _fetch_original_plan_prompt(
     plan_id: str,
 ) -> tuple[str, str, str]:
-    """Get original prompt, planner reasoning, and user_locale for a plan."""
     if http_client is None:
         return "", "", "en"
 
@@ -563,7 +557,6 @@ async def _fetch_original_plan_prompt(
 
 
 async def _infer_repo_url_for_plan(plan_id: str) -> str:
-    """Infer repo URL from stored task state for a plan."""
     if http_client is None:
         return ""
 
@@ -589,7 +582,6 @@ async def _infer_repo_url_for_plan(plan_id: str) -> str:
         return ""
 
 async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
-    """Build compact planner memory context from semantic and pattern tools."""
     global tool_registry
     if tool_registry is None:
         return ""

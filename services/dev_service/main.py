@@ -338,7 +338,6 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
 
 async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str) -> bool:
-    """Apply defensive idempotency rules before processing a task."""
     has_feedback = bool((qa_feedback or "").strip())
     resp_tasks = await guarded_http_get(
         http_client,
@@ -396,7 +395,6 @@ async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str
 
 
 async def _maybe_run_auto_tests(task, timeout_s: float) -> str:
-    """Run configured automated tests for the task language."""
     try:
         lang = (task.language or "").lower()
         if not (cfg and cfg.enable_auto_tests and tool_registry is not None):
@@ -416,7 +414,6 @@ async def _maybe_run_auto_tests(task, timeout_s: float) -> str:
 async def _maybe_run_auto_lints(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-    """Run automatic lint gates when policy allows it."""
     try:
         if not cfg or not getattr(cfg, "enable_auto_lints", False):
             return ""
@@ -460,7 +457,6 @@ async def _maybe_run_auto_lints(
 async def _maybe_run_auto_typecheck(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-    """Run optional typecheck gate before QA."""
     try:
         if not cfg or not tool_registry:
             return ""
@@ -546,7 +542,6 @@ def _resolve_test_command(task, lang: str) -> str:
 
 
 def _glob_pattern_for_language(language: str) -> str:
-    """Patr?n glob por lenguaje para list_project_files."""
     lang = (language or "python").lower()
     return {
         "python": "*.py",
@@ -560,7 +555,6 @@ def _glob_pattern_for_language(language: str) -> str:
 
 
 async def _list_files_in_task_directory(task) -> str:
-    """List nearby files to provide local repository context."""
     global tool_registry
     if not tool_registry:
         return ""
@@ -589,7 +583,6 @@ async def _list_files_in_task_directory(task) -> str:
 
 
 async def _maybe_read_existing_file(file_path: str) -> str:
-    """Best-effort preview of target file content from repository."""
     global tool_registry
     if not tool_registry:
         return ""
@@ -614,7 +607,6 @@ async def _maybe_read_existing_file(file_path: str) -> str:
         return ""
 
 def _read_existing_repo_full_text(file_path: str, max_bytes: int = 400_000) -> str:
-    """Best-effort full text of target path under REPO_ROOT (for diff heuristics)."""
     if not file_path.strip():
         return ""
     root = REPO_ROOT.resolve()
@@ -631,7 +623,6 @@ def _read_existing_repo_full_text(file_path: str, max_bytes: int = 400_000) -> s
 
 
 async def _build_short_term_memory(plan_id: str, limit: int | None = None) -> str:
-    """Build a compact short-term memory window for the given plan."""
     if http_client is None:
         return ""
 
@@ -670,7 +661,6 @@ async def _build_short_term_memory(plan_id: str, limit: int | None = None) -> st
 
 
 async def _build_failure_patterns_for_dev(file_path: str, limit: int = 200) -> str:
-    """Fetch aggregated historical QA/security failures for nearby modules."""
     if http_client is None or not file_path.strip():
         return ""
     try:
@@ -734,7 +724,6 @@ async def _fetch_task_spec(
     wait_if_missing: bool = False,
     limit: int = 40,
 ) -> str:
-    """Fetch spec/tests from memory_service, optionally waiting for availability."""
     if http_client is None:
         return ""
 
@@ -813,7 +802,6 @@ def _build_dev_context(
     spec_max_chars: int = 3000,
     max_chars: int = 5600,
 ) -> str:
-    """Build compact structured context for the dev_service LLM."""
     blocks: list[str] = []
 
     spec = (spec_block or "").strip()

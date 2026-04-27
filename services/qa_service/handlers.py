@@ -308,7 +308,6 @@ _QA_RETRY_REASONING_MAX = 2000
 
 
 def _qa_retry_feedback_document(result: ReviewResult, file_path: str) -> str:
-    """Build structured QA retry feedback for dev_service."""
     parts: list[str] = [
         "=== QA RETRY — previous submission failed review ===",
         f"Target file: {file_path}",
@@ -347,7 +346,6 @@ async def _retry_task(
     result: ReviewResult,
     deps: QADeps,
 ) -> None:
-    """Re-enqueue task to dev_service with QA feedback."""
     next_attempt = original.qa_attempt + 1
     await _update_task_state(
         deps.http_client,
@@ -393,7 +391,6 @@ async def _retry_task(
 
 
 async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
-    """Publish `pr.requested` once all tasks in the plan are QA-passed."""
     try:
         if plan_id in deps.pr_requested_plan_ids:
             return
@@ -464,7 +461,6 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
 
 
 async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
-    """Best-effort retrieval of original plan mode from memory_service."""
     try:
         resp = await deps.http_client.get(
             "/events",
@@ -489,7 +485,6 @@ async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
 
 
 async def _infer_plan_user_locale(plan_id: str, deps: QADeps) -> str:
-    """Best-effort `user_locale` from `plan.created` (defaults to `en`)."""
     try:
         resp = await deps.http_client.get(
             "/events",
@@ -518,7 +513,6 @@ def _build_chain_reasoning(
     dev_reasoning_cache: dict[str, str],
     qa_reasoning_cache: dict[str, str],
 ) -> str:
-    """Build combined dev + QA reasoning string for one task."""
     dev = dev_reasoning_cache.get(task_id, "")
     qa = qa_reasoning_cache.get(task_id, "")
     parts: list[str] = []
@@ -569,7 +563,6 @@ async def _build_short_term_memory(
     deps: QADeps,
     limit: int | None = None,
 ) -> str:
-    """Build compact short-term memory for QA using `query_events`."""
     if not deps.tool_registry:
         return ""
 
@@ -615,7 +608,6 @@ def _build_qa_context(
     *,
     user_locale: str = "en",
 ) -> str:
-    """Build compact context for the QA LLM (memory first, then repo snippets)."""
     mem_title, repo_title = qa_memory_section_headers(user_locale)
     blocks: list[str] = []
 
@@ -638,7 +630,6 @@ async def _build_repo_context(
     code: str,
     deps: QADeps,
 ) -> str:
-    """Build local repo context from `search_in_repo` matches."""
     if not deps.tool_registry or not (file_path or "").strip():
         return ""
     base = file_path.replace("\\", "/").rsplit("/", 1)[-1]
@@ -676,7 +667,6 @@ async def _build_failure_patterns_context(
     file_path: str,
     deps: QADeps,
 ) -> str:
-    """Fetch historical failure patterns near the target file/module."""
     if not deps.tool_registry or not (file_path or "").strip():
         return ""
     directory = (
@@ -796,7 +786,6 @@ async def _run_static_lint(
     language: str,
     deps: QADeps,
 ) -> list[str]:
-    """Run language-specific static tools and return formatted issues."""
     if not deps.tool_registry:
         return []
 
@@ -882,7 +871,6 @@ async def _run_static_lint(
 
 
 def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
-    """Summarize static-tool issues for the QA prompt with grouped counts."""
     if not issues:
         return (
             "No static analysis issues or warnings were reported by linters or "
@@ -911,7 +899,6 @@ def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
 
 
 def _has_severe_static_issues(issues: list[str]) -> bool:
-    """Detect severe issues via high-severity keywords in issue text."""
     if not issues:
         return False
     severe_keywords = ("HIGH", "CRITICAL", "BLOCKER", "ERROR")
@@ -923,7 +910,6 @@ def _has_severe_static_issues(issues: list[str]) -> bool:
 
 
 def _infer_module_from_path(file_path: str) -> str:
-    """Infer module/group identifier from file path."""
     norm = (file_path or "").replace("\\", "/").strip()
     if not norm:
         return "root"
@@ -936,7 +922,6 @@ def _infer_module_from_path(file_path: str) -> str:
 
 
 def _infer_severity_hint(issues: list[str]) -> str:
-    """Infer heuristic QA severity from static-issue text."""
     if not issues:
         return "low"
     text = " ".join(issues).upper()
@@ -950,7 +935,6 @@ def _infer_severity_hint(issues: list[str]) -> str:
 
 
 async def _is_hot_module(module: str, deps: QADeps) -> bool:
-    """Determine if a module is "hot" from aggregated QA/security failures."""
     if not deps.tool_registry:
         return False
     normalized = (module or "").replace("\\", "/").strip()
