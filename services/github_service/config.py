@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from shared.utils.env import env_bool, env_str
+
 
 @dataclass(frozen=True)
 class GitHubConfig:
@@ -17,14 +19,13 @@ class GitHubConfig:
 
     @classmethod
     def from_env(cls) -> GitHubConfig:
-        workspace_info_enabled = os.environ.get("GITHUB_WORKSPACE_INFO_ENABLED", "false")
         return cls(
             rabbitmq_url=os.environ["RABBITMQ_URL"],
-            github_token=os.environ.get("GITHUB_TOKEN", ""),
-            workspace_dir=os.environ.get("GITHUB_WORKSPACE", "/app/workspace"),
-            log_level=os.environ.get("LOG_LEVEL", "INFO"),
-            git_author_name=os.environ.get("GIT_AUTHOR_NAME", "ADMADC Bot"),
-            git_author_email=os.environ.get("GIT_AUTHOR_EMAIL", "admadc@localhost"),
-            workspace_info_enabled=workspace_info_enabled.lower() in ("1", "true", "yes"),
-            workspace_info_token=os.environ.get("GITHUB_WORKSPACE_INFO_TOKEN", ""),
+            github_token=env_str("GITHUB_TOKEN", ""),
+            workspace_dir=env_str("GITHUB_WORKSPACE", "/app/workspace"),
+            log_level=env_str("LOG_LEVEL", "INFO"),
+            git_author_name=env_str("GIT_AUTHOR_NAME", "ADMADC Bot"),
+            git_author_email=env_str("GIT_AUTHOR_EMAIL", "admadc@localhost"),
+            workspace_info_enabled=env_bool("GITHUB_WORKSPACE_INFO_ENABLED"),
+            workspace_info_token=env_str("GITHUB_WORKSPACE_INFO_TOKEN", ""),
         )

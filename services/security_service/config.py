@@ -4,6 +4,8 @@ import os
 import re
 from dataclasses import dataclass
 
+from shared.utils.env import env_bool, env_str
+
 # Rule ids are listed for developers in services/dev_service/security_gate_brief.py; prefer additive renames.
 SECURITY_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("hardcoded_api_key", re.compile(r'(?i)(api_key|apikey)\s*=\s*["\'][A-Za-z0-9_\-]{16,}["\']')),
@@ -54,16 +56,14 @@ class SecurityConfig:
         return cls(
             rabbitmq_url=os.environ["RABBITMQ_URL"],
             memory_service_url=os.environ["MEMORY_SERVICE_URL"],
-            log_level=os.environ.get("LOG_LEVEL", "INFO"),
-            redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
-            agent_name=os.environ.get("AGENT_NAME", "security_agent"),
-            agent_goal=os.environ.get(
+            log_level=env_str("LOG_LEVEL", "INFO"),
+            redis_url=env_str("REDIS_URL", "redis://redis:6379/0"),
+            agent_name=env_str("AGENT_NAME", "security_agent"),
+            agent_goal=env_str(
                 "AGENT_GOAL",
                 "Bloquear cambios con patrones de seguridad peligrosos antes de que lleguen a GitHub.",
             ),
-            strategy=os.environ.get("AGENT_STRATEGY", "deterministic_static_scan"),
-            enable_bandit=os.environ.get("SECURITY_ENABLE_BANDIT", "true").lower()
-            in ("1", "true", "yes"),
-            enable_semgrep=os.environ.get("SECURITY_ENABLE_SEMGREP", "true").lower()
-            in ("1", "true", "yes"),
+            strategy=env_str("AGENT_STRATEGY", "deterministic_static_scan"),
+            enable_bandit=env_bool("SECURITY_ENABLE_BANDIT", True),
+            enable_semgrep=env_bool("SECURITY_ENABLE_SEMGREP", True),
         )

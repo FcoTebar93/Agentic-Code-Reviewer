@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from shared.utils.env import env_str
+
 
 @dataclass(frozen=True)
 class MemoryConfig:
@@ -19,5 +21,5 @@ class MemoryConfig:
             qdrant_url=os.environ["QDRANT_URL"],
             redis_url=os.environ["REDIS_URL"],
             rabbitmq_url=os.environ["RABBITMQ_URL"],
-            log_level=os.environ.get("LOG_LEVEL", "INFO"),
+            log_level=env_str("LOG_LEVEL", "INFO"),
         )
