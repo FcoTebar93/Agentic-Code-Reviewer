@@ -16,28 +16,44 @@ from shared.contracts.events import EventType
 logger = logging.getLogger(SERVICE_NAME)
 
 
+async def _fetch_events(
+    runtime: GatewayRuntime,
+    *,
+    plan_id: str | None = None,
+    event_type: str | None = None,
+    limit: int = 500,
+) -> tuple[list[dict[str, Any]], bool]:
+    params: dict[str, Any] = {"limit": limit}
+    if plan_id:
+        params["plan_id"] = plan_id
+    if event_type:
+        params["event_type"] = event_type
+    resp = await runtime.http_client.get(
+        f"{runtime.cfg.memory_service_url}/events",
+        params=params,
+    )
+    if resp.status_code != 200:
+        return [], False
+    data = resp.json()
+    return (data if isinstance(data, list) else []), True
+
+
 async def aggregate_plan_metrics(
     runtime: GatewayRuntime, plan_id: str,
 ) -> dict[str, Any] | JSONResponse:
-    http_client = runtime.http_client
     cfg = runtime.cfg
     try:
-        resp = await http_client.get(
-            f"{cfg.memory_service_url}/events",
-            params={
-                "plan_id": plan_id,
-                "event_type": EventType.METRICS_TOKENS_USED.value,
-                "limit": 500,
-            },
+        token_events, token_ok = await _fetch_events(
+            runtime,
+            plan_id=plan_id,
+            event_type=EventType.METRICS_TOKENS_USED.value,
+            limit=500,
         )
-        if resp.status_code != 200:
+        if not token_ok:
             return JSONResponse(
-                content={"error": "Failed to fetch events", "status": resp.status_code},
+                content={"error": "Failed to fetch events", "status": 502},
                 status_code=502,
             )
-        token_events = resp.json()
-        if not isinstance(token_events, list):
-            token_events = []
 
         prompt_price = cfg.llm_prompt_price_per_1k if cfg else 0.0
         completion_price = cfg.llm_completion_price_per_1k if cfg else 0.0
@@ -50,14 +66,7 @@ async def aggregate_plan_metrics(
 
         health_events: list[dict[str, Any]] = []
         try:
-            resp_all = await http_client.get(
-                f"{cfg.memory_service_url}/events",
-                params={"plan_id": plan_id, "limit": 500},
-            )
-            if resp_all.status_code == 200:
-                data_all = resp_all.json()
-                if isinstance(data_all, list):
-                    health_events = data_all
+            health_events, _ = await _fetch_events(runtime, plan_id=plan_id, limit=500)
         except Exception:
             logger.warning("Failed to fetch health events for plan %s", plan_id[:8])
 
@@ -66,38 +75,24 @@ async def aggregate_plan_metrics(
         replan_suggestions_count = 0
         replan_confirmed_count = 0
         try:
-            resp_suggested = await http_client.get(
-                f"{cfg.memory_service_url}/events",
-                params={
-                    "event_type": EventType.PLAN_REVISION_SUGGESTED.value,
-                    "limit": 200,
-                },
+            events_sugg, _ = await _fetch_events(
+                runtime,
+                event_type=EventType.PLAN_REVISION_SUGGESTED.value,
+                limit=200,
             )
-            if resp_suggested.status_code == 200:
-                events_sugg = resp_suggested.json()
-                if isinstance(events_sugg, list):
-                    replan_suggestions_count = _count_replans_for_plan(
-                        events_sugg, plan_id
-                    )
+            replan_suggestions_count = _count_replans_for_plan(events_sugg, plan_id)
         except Exception:
             logger.warning(
                 "Failed to fetch plan.revision_suggested events for health metrics"
             )
 
         try:
-            resp_confirmed = await http_client.get(
-                f"{cfg.memory_service_url}/events",
-                params={
-                    "event_type": EventType.PLAN_REVISION_CONFIRMED.value,
-                    "limit": 200,
-                },
+            events_conf, _ = await _fetch_events(
+                runtime,
+                event_type=EventType.PLAN_REVISION_CONFIRMED.value,
+                limit=200,
             )
-            if resp_confirmed.status_code == 200:
-                events_conf = resp_confirmed.json()
-                if isinstance(events_conf, list):
-                    replan_confirmed_count = _count_replans_for_plan(
-                        events_conf, plan_id
-                    )
+            replan_confirmed_count = _count_replans_for_plan(events_conf, plan_id)
         except Exception:
             logger.warning(
                 "Failed to fetch plan.revision_confirmed events for health metrics"
@@ -132,8 +127,6 @@ async def aggregate_plan_metrics(
 async def build_plan_detail_json_response(
     runtime: GatewayRuntime, plan_id: str,
 ) -> JSONResponse:
-    http_client = runtime.http_client
-    cfg = runtime.cfg
     try:
         metrics_resp = await aggregate_plan_metrics(runtime, plan_id)
         if isinstance(metrics_resp, JSONResponse) and metrics_resp.status_code != 200:
@@ -157,19 +150,15 @@ async def build_plan_detail_json_response(
                 metrics_data = metrics_data_raw
 
         try:
-            tasks_http = await http_client.get(
-                f"{cfg.memory_service_url}/tasks/{plan_id}"
+            tasks_http = await runtime.http_client.get(
+                f"{runtime.cfg.memory_service_url}/tasks/{plan_id}"
             )
             tasks_data = tasks_http.json() if tasks_http.status_code == 200 else []
         except Exception:
             tasks_data = []
 
         try:
-            events_http = await http_client.get(
-                f"{cfg.memory_service_url}/events",
-                params={"plan_id": plan_id, "limit": 500},
-            )
-            events_data = events_http.json() if events_http.status_code == 200 else []
+            events_data, _ = await _fetch_events(runtime, plan_id=plan_id, limit=500)
         except Exception:
             events_data = []
 

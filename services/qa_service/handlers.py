@@ -750,6 +750,75 @@ async def _build_failure_patterns_context(
         return ""
 
 
+def _format_ruff_issue(issue: dict[str, Any]) -> str:
+    line = issue.get("line")
+    col = issue.get("column")
+    code_str = issue.get("code", "")
+    msg = issue.get("message", "")
+    return f"[ruff {code_str}] L{line}:C{col} {msg}"
+
+
+def _format_bandit_issue(issue: dict[str, Any]) -> str:
+    line = issue.get("line")
+    sev = (issue.get("severity") or "").upper()
+    code_str = issue.get("code", "")
+    msg = issue.get("message", "")
+    return f"[bandit {sev} {code_str}] L{line}: {msg}"
+
+
+def _format_eslint_issue(issue: dict[str, Any]) -> str:
+    line = issue.get("line")
+    col = issue.get("column")
+    rule_id = issue.get("rule_id", "")
+    msg = issue.get("message", "")
+    return f"[eslint {rule_id}] L{line}:C{col} {msg}"
+
+
+def _format_javac_issue(issue: dict[str, Any]) -> str:
+    line = issue.get("line")
+    msg = issue.get("message", "")
+    return f"[javac] L{line}: {msg}"
+
+
+def _format_semgrep_issue(issue: dict[str, Any]) -> str:
+    line = issue.get("line")
+    sev = (issue.get("severity") or "").upper()
+    code_str = issue.get("code", "")
+    msg = issue.get("message", "")
+    return f"[semgrep {sev} {code_str}] L{line}: {msg}"
+
+
+async def _run_lint_tool(
+    deps: QADeps,
+    *,
+    tool_name: str,
+    tool_input: dict[str, Any],
+    issue_formatter,
+) -> list[str]:
+    try:
+        result = await execute_tool(
+            deps.tool_registry,
+            tool_name,
+            tool_input,
+        )
+        if not result.success:
+            deps.logger.warning("%s tool failed: %s", tool_name, result.error)
+            return []
+        payload = result.output or {}
+        if not payload.get("supported", True):
+            return []
+        issues = payload.get("issues") or []
+        out: list[str] = []
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            out.append(issue_formatter(issue))
+        return out
+    except Exception:
+        deps.logger.exception("Error while running %s tool", tool_name)
+        return []
+
+
 async def _run_static_lint(
     code: str,
     file_path: str,
@@ -767,113 +836,58 @@ async def _run_static_lint(
     formatted: list[str] = []
 
     if lang == "python":
-        try:
-            result = await execute_tool(
-                deps.tool_registry,
-                "python_lint",
-                {
+        formatted.extend(
+            await _run_lint_tool(
+                deps,
+                tool_name="python_lint",
+                tool_input={
                     "language": "python",
                     "code": code,
                     "file_path": file_path or "tmp.py",
                 },
+                issue_formatter=_format_ruff_issue,
             )
-            if not result.success:
-                deps.logger.warning("python_lint tool failed: %s", result.error)
-            else:
-                payload = result.output or {}
-                if payload.get("supported", True):
-                    issues = payload.get("issues") or []
-                    for issue in issues:
-                        if not isinstance(issue, dict):
-                            continue
-                        line = issue.get("line")
-                        col = issue.get("column")
-                        code_str = issue.get("code", "")
-                        msg = issue.get("message", "")
-                        formatted.append(f"[ruff {code_str}] L{line}:C{col} {msg}")
-        except Exception:
-            deps.logger.exception("Error while running python_lint tool")
-
-        try:
-            result = await execute_tool(
-                deps.tool_registry,
-                "python_security_scan",
-                {
+        )
+        formatted.extend(
+            await _run_lint_tool(
+                deps,
+                tool_name="python_security_scan",
+                tool_input={
                     "language": "python",
                     "code": code,
                     "file_path": file_path or "tmp.py",
                 },
+                issue_formatter=_format_bandit_issue,
             )
-            if not result.success:
-                deps.logger.warning("python_security_scan tool failed: %s", result.error)
-            else:
-                payload = result.output or {}
-                if payload.get("supported", True):
-                    issues = payload.get("issues") or []
-                    for issue in issues:
-                        if not isinstance(issue, dict):
-                            continue
-                        line = issue.get("line")
-                        sev = (issue.get("severity") or "").upper()
-                        code_str = issue.get("code", "")
-                        msg = issue.get("message", "")
-                        formatted.append(f"[bandit {sev} {code_str}] L{line}: {msg}")
-        except Exception:
-            deps.logger.exception("Error while running python_security_scan tool")
+        )
 
     if lang in {"javascript", "js", "typescript", "ts"} and deps.cfg.enable_js_lint:
-        try:
-            result = await execute_tool(
-                deps.tool_registry,
-                "js_ts_lint",
-                {
+        formatted.extend(
+            await _run_lint_tool(
+                deps,
+                tool_name="js_ts_lint",
+                tool_input={
                     "language": language,
                     "code": code,
                     "file_path": file_path or "tmp",
                 },
+                issue_formatter=_format_eslint_issue,
             )
-            if not result.success:
-                deps.logger.warning("js_ts_lint tool failed: %s", result.error)
-            else:
-                payload = result.output or {}
-                if payload.get("supported", True):
-                    issues = payload.get("issues") or []
-                    for issue in issues:
-                        if not isinstance(issue, dict):
-                            continue
-                        line = issue.get("line")
-                        col = issue.get("column")
-                        rule_id = issue.get("rule_id", "")
-                        msg = issue.get("message", "")
-                        formatted.append(f"[eslint {rule_id}] L{line}:C{col} {msg}")
-        except Exception:
-            deps.logger.exception("Error while running js_ts_lint tool")
+        )
 
     if lang == "java" and deps.cfg.enable_java_lint:
-        try:
-            result = await execute_tool(
-                deps.tool_registry,
-                "java_lint",
-                {
+        formatted.extend(
+            await _run_lint_tool(
+                deps,
+                tool_name="java_lint",
+                tool_input={
                     "language": "java",
                     "code": code,
                     "file_path": file_path or "Tmp.java",
                 },
+                issue_formatter=_format_javac_issue,
             )
-            if not result.success:
-                deps.logger.warning("java_lint tool failed: %s", result.error)
-            else:
-                payload = result.output or {}
-                if payload.get("supported", True):
-                    issues = payload.get("issues") or []
-                    for issue in issues:
-                        if not isinstance(issue, dict):
-                            continue
-                        line = issue.get("line")
-                        msg = issue.get("message", "")
-                        formatted.append(f"[javac] L{line}: {msg}")
-        except Exception:
-            deps.logger.exception("Error while running java_lint tool")
+        )
 
     if deps.cfg.enable_semgrep and lang in {
         "python",
@@ -883,32 +897,18 @@ async def _run_static_lint(
         "ts",
         "java",
     }:
-        try:
-            result = await execute_tool(
-                deps.tool_registry,
-                "semgrep_scan",
-                {
+        formatted.extend(
+            await _run_lint_tool(
+                deps,
+                tool_name="semgrep_scan",
+                tool_input={
                     "language": language,
                     "code": code,
                     "file_path": file_path or "tmp",
                 },
+                issue_formatter=_format_semgrep_issue,
             )
-            if not result.success:
-                deps.logger.warning("semgrep_scan tool failed: %s", result.error)
-            else:
-                payload = result.output or {}
-                if payload.get("supported", True):
-                    issues = payload.get("issues") or []
-                    for issue in issues:
-                        if not isinstance(issue, dict):
-                            continue
-                        line = issue.get("line")
-                        sev = (issue.get("severity") or "").upper()
-                        code_str = issue.get("code", "")
-                        msg = issue.get("message", "")
-                        formatted.append(f"[semgrep {sev} {code_str}] L{line}: {msg}")
-        except Exception:
-            deps.logger.exception("Error while running semgrep_scan tool")
+        )
 
     return formatted
 

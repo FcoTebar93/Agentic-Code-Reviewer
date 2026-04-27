@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import PLAN_IDEM_TTL_SECONDS, SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
+from services.gateway_service.http_helpers import parse_json_response, proxy_json_request
 from services.gateway_service.plan_aggregate import (
     aggregate_plan_metrics,
     build_plan_detail_json_response,
@@ -23,16 +24,6 @@ from shared.plan_idempotency import plan_idempotency_key_gateway
 
 router = APIRouter(prefix="/api", tags=["proxy"])
 logger = logging.getLogger(SERVICE_NAME)
-
-
-def _proxy_json(resp: Any) -> dict[str, Any]:
-    text = (resp.text or "").strip()
-    if not text:
-        return {"error": "Upstream returned empty response", "status": resp.status_code}
-    try:
-        return resp.json()
-    except Exception as e:
-        return {"error": f"Invalid upstream response: {e}", "body_preview": text[:200]}
 
 
 @router.post("/plan")
@@ -57,7 +48,7 @@ async def create_plan(
             f"{rt.cfg.meta_planner_url}/plan",
             json=request_body,
         )
-        content = _proxy_json(resp)
+        content = parse_json_response(resp)
         if resp.status_code == 200 and isinstance(content, dict) and "plan_id" in content:
             rt.plan_idem_cache[key] = (content, now)
         return JSONResponse(content=content, status_code=resp.status_code)
@@ -75,16 +66,14 @@ async def agent_ask(
     Q&A over pipeline semantic memory (and optional plan events).
     Body: { "question": str, "plan_id"?: str, "user_locale"?: str }
     """
-    try:
-        resp = await rt.http_client.post(
+    return await proxy_json_request(
+        logger=logger,
+        log_context="/api/agent_ask",
+        request_call=lambda: rt.http_client.post(
             f"{rt.cfg.meta_planner_url}/ask",
             json=request_body,
-        )
-        content = _proxy_json(resp)
-        return JSONResponse(content=content, status_code=resp.status_code)
-    except Exception as exc:
-        logger.exception("Failed to proxy /api/agent_ask")
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        ),
+    )
 
 
 @router.post("/replan")
@@ -120,20 +109,19 @@ async def get_events(
     plan_id: str | None = None,
     rt: GatewayRuntime = Depends(get_gateway_runtime),
 ):
-    try:
-        params: dict[str, str | int] = {"limit": limit}
-        if event_type:
-            params["event_type"] = event_type
-        if plan_id:
-            params["plan_id"] = plan_id
-        resp = await rt.http_client.get(
+    params: dict[str, str | int] = {"limit": limit}
+    if event_type:
+        params["event_type"] = event_type
+    if plan_id:
+        params["plan_id"] = plan_id
+    return await proxy_json_request(
+        logger=logger,
+        log_context="/api/events",
+        request_call=lambda: rt.http_client.get(
             f"{rt.cfg.memory_service_url}/events",
             params=params,
-        )
-        return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.exception("Failed to proxy /api/events")
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        ),
+    )
 
 
 @router.get("/tasks/{plan_id}")
@@ -141,14 +129,13 @@ async def get_tasks(
     plan_id: str,
     rt: GatewayRuntime = Depends(get_gateway_runtime),
 ):
-    try:
-        resp = await rt.http_client.get(
+    return await proxy_json_request(
+        logger=logger,
+        log_context=f"/api/tasks/{plan_id}",
+        request_call=lambda: rt.http_client.get(
             f"{rt.cfg.memory_service_url}/tasks/{plan_id}"
-        )
-        return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    except Exception as exc:
-        logger.exception("Failed to proxy /api/tasks/%s", plan_id)
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        ),
+    )
 
 
 @router.get("/plan_metrics/{plan_id}")

@@ -443,31 +443,15 @@ async def _maybe_run_auto_tests(
                 test_cmd = cfg.test_command_typescript
             elif lang == "java":
                 test_cmd = cfg.test_command_java
-
-        if not test_cmd:
-            return ""
-
-        tests_result = await execute_tool(
-            tool_registry,
-            "run_tests",
-            {"command": test_cmd, "timeout_s": timeout_s},
+        return await _run_gate_command(
+            tool_name="run_tests",
+            command=test_cmd,
+            timeout_s=timeout_s,
+            ok_label="Automated tests",
+            fail_label="Automated tests",
         )
-        if tests_result.success and isinstance(tests_result.output, dict):
-            tr = tests_result.output
-            status = (
-                "PASSED"
-                if tr.get("exit_code") == 0 and not tr.get("timed_out")
-                else "FAILED"
-            )
-            return (
-                f"Automated tests ({tr.get('command')}): {status}. "
-                f"exit_code={tr.get('exit_code')}, timed_out={tr.get('timed_out')}."
-            )
-        if not tests_result.success:
-            return f"Automated tests failed to run: {tests_result.error}"
     except Exception:
         return ""
-    return ""
 
 
 async def _maybe_run_auto_lints(
@@ -516,24 +500,13 @@ async def _maybe_run_auto_lints(
         if not lint_cmd:
             return ""
 
-        lints_result = await execute_tool(
-            tool_registry,
-            "run_lints",
-            {"command": lint_cmd, "timeout_s": timeout_s},
+        return await _run_gate_command(
+            tool_name="run_lints",
+            command=lint_cmd,
+            timeout_s=timeout_s,
+            ok_label="Lints",
+            fail_label="Lints",
         )
-        if lints_result.success and isinstance(lints_result.output, dict):
-            lr = lints_result.output
-            status = (
-                "PASSED"
-                if lr.get("exit_code") == 0 and not lr.get("timed_out")
-                else "FAILED"
-            )
-            return (
-                f"Lints ({lr.get('command')}): {status}. "
-                f"exit_code={lr.get('exit_code')}, timed_out={lr.get('timed_out')}."
-            )
-        if not lints_result.success:
-            return f"Lints failed to run: {lints_result.error}"
     except Exception:
         return ""
     return ""
@@ -570,27 +543,47 @@ async def _maybe_run_auto_typecheck(
         if not cmd:
             return ""
 
-        tc_result = await execute_tool(
-            tool_registry,
-            "run_lints",
-            {"command": cmd, "timeout_s": timeout_s},
+        return await _run_gate_command(
+            tool_name="run_lints",
+            command=cmd,
+            timeout_s=timeout_s,
+            ok_label="Typecheck",
+            fail_label="Typecheck",
         )
-        if tc_result.success and isinstance(tc_result.output, dict):
-            lr = tc_result.output
-            status = (
-                "PASSED"
-                if lr.get("exit_code") == 0 and not lr.get("timed_out")
-                else "FAILED"
-            )
-            return (
-                f"Typecheck ({lr.get('command')}): {status}. "
-                f"exit_code={lr.get('exit_code')}, timed_out={lr.get('timed_out')}."
-            )
-        if not tc_result.success:
-            return f"Typecheck failed to run: {tc_result.error}"
     except Exception:
         return ""
     return ""
+
+
+async def _run_gate_command(
+    *,
+    tool_name: str,
+    command: str,
+    timeout_s: float,
+    ok_label: str,
+    fail_label: str,
+) -> str:
+    if not command or not tool_registry:
+        return ""
+    result = await execute_tool(
+        tool_registry,
+        tool_name,
+        {"command": command, "timeout_s": timeout_s},
+    )
+    if not result.success:
+        return f"{fail_label} failed to run: {result.error}"
+    if not isinstance(result.output, dict):
+        return ""
+    out = result.output
+    status = (
+        "PASSED"
+        if out.get("exit_code") == 0 and not out.get("timed_out")
+        else "FAILED"
+    )
+    return (
+        f"{ok_label} ({out.get('command')}): {status}. "
+        f"exit_code={out.get('exit_code')}, timed_out={out.get('timed_out')}."
+    )
 
 
 def _glob_pattern_for_language(language: str) -> str:
