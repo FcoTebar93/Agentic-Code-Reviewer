@@ -36,6 +36,7 @@ from shared.utils import (
     subscribe_typed_event,
     store_event,
 )
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 
 SERVICE_NAME = "spec_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -57,8 +58,7 @@ async def lifespan(application: FastAPI):
 
     tool_registry = build_spec_tool_registry()
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     application.state.spec_pipeline_deps = SpecPipelineDeps(
         http_client=http_client,
@@ -71,11 +71,7 @@ async def lifespan(application: FastAPI):
     logger.info("Spec Service ready (strategy=%s)", cfg.strategy)
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(

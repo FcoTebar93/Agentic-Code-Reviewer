@@ -52,6 +52,7 @@ from shared.utils import (
     store_event,
 )
 from shared.utils.code_change_guard import large_change_note
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 
 SERVICE_NAME = "dev_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -78,8 +79,7 @@ async def lifespan(application: FastAPI):
     except Exception:
         project_policy = {"default_mode": "normal", "paths": {}}
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     application.state.dev_pipeline_deps = DevPipelineDeps(
         http_client=http_client,
@@ -92,11 +92,7 @@ async def lifespan(application: FastAPI):
     logger.info("Dev Service ready")
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(

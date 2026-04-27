@@ -52,6 +52,7 @@ from shared.utils import (
     store_event,
     subscribe_typed_event,
 )
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 
 SERVICE_NAME = "meta_planner"
 event_bus: EventBus = cast(EventBus, None)
@@ -134,8 +135,7 @@ async def lifespan(application: FastAPI):
 
     tool_registry = build_planner_tool_registry(memory_service_url=cfg.memory_service_url)
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     application.state.meta_planner_deps = MetaPlannerDeps(
         http_client=http_client,
@@ -149,11 +149,7 @@ async def lifespan(application: FastAPI):
     logger.info("Meta Planner ready (with replanning support)")
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(
