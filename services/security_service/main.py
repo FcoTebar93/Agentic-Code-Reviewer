@@ -26,7 +26,6 @@ from services.security_service.config import SecurityConfig
 from services.security_service.prompts import SECURITY_REVIEW_PROMPT
 from services.security_service.scanner import scan_files
 from shared.contracts.events import (
-    BaseEvent,
     EventType,
     PRRequestedPayload,
     SecurityResultPayload,
@@ -294,10 +293,3 @@ async def _fetch_security_memory_context(plan_id: str, limit: int = 5) -> str:
         )
         return ""
 
-async def _store_event(event: BaseEvent) -> None:
-    await store_event(
-        http_client,
-        event,
-        logger=logger,
-        error_message="Failed to store event %s",
-    )

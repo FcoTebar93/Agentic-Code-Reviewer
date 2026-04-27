@@ -15,7 +15,6 @@ from services.replanner_service.critic import (
 )
 from services.replanner_service.tools import build_replanner_tool_registry
 from shared.contracts.events import (
-    BaseEvent,
     EventType,
     PlanRevisionPayload,
     QAResultPayload,
@@ -33,7 +32,7 @@ from shared.observability.metrics import (
     metrics_response,
 )
 from shared.tools import ToolRegistry, execute_tool
-from shared.utils import EventBus, IdempotencyStore, store_event
+from shared.utils import EventBus, store_event, subscribe_typed_event
 
 SERVICE_NAME = "replanner_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -116,41 +115,35 @@ async def _consume_outcomes() -> None:
     events with structured suggestions, but does not modify the pipeline behaviour
     directly. Other agents (or humans) can choose how to react.
     """
-    idem_store = IdempotencyStore()
+    async def on_qa_failed(payload: QAResultPayload) -> None:
+        await _analyse_and_emit_revision(
+            plan_id=payload.plan_id,
+            outcome=payload,
+            outcome_type="qa_failed",
+        )
 
-    async def handler(event: BaseEvent) -> None:
-        if event.event_type == EventType.QA_FAILED:
-            qa_payload = QAResultPayload.model_validate(event.payload)
-            await _handle_qa_failed(qa_payload)
-        elif event.event_type == EventType.SECURITY_BLOCKED:
-            security_payload = SecurityResultPayload.model_validate(event.payload)
-            await _handle_security_blocked(security_payload)
+    async def on_security_blocked(payload: SecurityResultPayload) -> None:
+        await _analyse_and_emit_revision(
+            plan_id=payload.plan_id,
+            outcome=payload,
+            outcome_type="security_blocked",
+        )
 
-    await event_bus.subscribe(
-        queue_name="replanner_service.outcomes",
-        routing_keys=[
-            EventType.QA_FAILED.value,
-            EventType.SECURITY_BLOCKED.value,
-        ],
-        handler=handler,
-        idempotency_store=idem_store,
+    await subscribe_typed_event(
+        event_bus=event_bus,
+        queue_name="replanner_service.outcomes.qa_failed",
+        routing_keys=[EventType.QA_FAILED.value],
+        payload_model=QAResultPayload,
+        on_payload=on_qa_failed,
         max_retries=3,
     )
-
-
-async def _handle_qa_failed(payload: QAResultPayload) -> None:
-    await _analyse_and_emit_revision(
-        plan_id=payload.plan_id,
-        outcome=payload,
-        outcome_type="qa_failed",
-    )
-
-
-async def _handle_security_blocked(payload: SecurityResultPayload) -> None:
-    await _analyse_and_emit_revision(
-        plan_id=payload.plan_id,
-        outcome=payload,
-        outcome_type="security_blocked",
+    await subscribe_typed_event(
+        event_bus=event_bus,
+        queue_name="replanner_service.outcomes.security_blocked",
+        routing_keys=[EventType.SECURITY_BLOCKED.value],
+        payload_model=SecurityResultPayload,
+        on_payload=on_security_blocked,
+        max_retries=3,
     )
 
 

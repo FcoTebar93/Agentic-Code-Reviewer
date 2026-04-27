@@ -38,7 +38,6 @@ from services.meta_planner.planner import (
 )
 from services.meta_planner.tools import build_planner_tool_registry
 from shared.contracts.events import (
-    BaseEvent,
     EventType,
     PlanCreatedPayload,
     PlanRequestedPayload,
@@ -63,7 +62,6 @@ from shared.plan_idempotency import plan_idempotency_key_meta_planner
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
-    IdempotencyStore,
     maybe_agent_delay,
     store_event,
     subscribe_typed_event,
@@ -490,29 +488,30 @@ async def _consume_plan_revisions() -> None:
     - plan.revision_suggested: suggestion only (no automatic replanning).
     - plan.revision_confirmed: always replan (human confirmed in the UI).
     """
-    idem_store = IdempotencyStore()
+    async def on_suggested(payload: PlanRevisionPayload) -> None:
+        logger.info(
+            "Received plan.revision_suggested for %s (severity=%s) - waiting for human confirmation.",
+            payload.original_plan_id[:8],
+            (payload.severity or "medium"),
+        )
 
-    async def handler(event: BaseEvent) -> None:
-        payload = PlanRevisionPayload.model_validate(event.payload)
-        if event.event_type == EventType.PLAN_REVISION_SUGGESTED:
-            logger.info(
-                "Received plan.revision_suggested for %s (severity=%s) - waiting for human confirmation.",
-                payload.original_plan_id[:8],
-                (payload.severity or "medium"),
-            )
-            return
+    async def on_confirmed(payload: PlanRevisionPayload) -> None:
+        await _handle_plan_revision(payload)
 
-        if event.event_type == EventType.PLAN_REVISION_CONFIRMED:
-            await _handle_plan_revision(payload)
-
-    await event_bus.subscribe(
-        queue_name="meta_planner.plan_revisions",
-        routing_keys=[
-            EventType.PLAN_REVISION_SUGGESTED.value,
-            EventType.PLAN_REVISION_CONFIRMED.value,
-        ],
-        handler=handler,
-        idempotency_store=idem_store,
+    await subscribe_typed_event(
+        event_bus=event_bus,
+        queue_name="meta_planner.plan_revisions.suggested",
+        routing_keys=[EventType.PLAN_REVISION_SUGGESTED.value],
+        payload_model=PlanRevisionPayload,
+        on_payload=on_suggested,
+        max_retries=3,
+    )
+    await subscribe_typed_event(
+        event_bus=event_bus,
+        queue_name="meta_planner.plan_revisions.confirmed",
+        routing_keys=[EventType.PLAN_REVISION_CONFIRMED.value],
+        payload_model=PlanRevisionPayload,
+        on_payload=on_confirmed,
         max_retries=3,
     )
 

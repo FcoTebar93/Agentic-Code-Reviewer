@@ -31,7 +31,6 @@ from services.github_service.git_ops import (
     write_files,
 )
 from shared.contracts.events import (
-    BaseEvent,
     EventType,
     PrApprovalPayload,
     PRCreatedPayload,
@@ -228,11 +227,3 @@ async def _handle_pr_request(payload: PRRequestedPayload) -> None:
         tasks_completed.labels(service=SERVICE_NAME).inc()
 
 
-async def _store_event(event: BaseEvent) -> None:
-    """Persist event to memory_service so the event feed shows it."""
-    await store_event(
-        http_client,
-        event,
-        logger=logger,
-        error_message="Failed to store event %s in memory_service",
-    )
