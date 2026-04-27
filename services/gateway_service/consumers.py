@@ -41,9 +41,7 @@ async def consume_all_events(runtime: GatewayRuntime, logger: logging.Logger) ->
 
 
 async def consume_security_approved(runtime: GatewayRuntime, logger: logging.Logger) -> None:
-    """
-    Intercept security.approved events to create pending human approvals.
-    """
+    """Intercept security.approved events to create pending human approvals."""
     idem = IdempotencyStore()
 
     async def handler(event: BaseEvent) -> None:

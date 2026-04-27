@@ -1,9 +1,4 @@
-"""
-Gateway Service -- single entry point for the React frontend.
-
-Composition root: FastAPI app, CORS, lifespan, routers, WebSocket /ws.
-Domain logic lives in plan_aggregate, consumers, and route modules.
-"""
+"""Gateway Service -- single entry point for the React frontend."""
 
 from __future__ import annotations
 

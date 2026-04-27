@@ -174,9 +174,7 @@ def _aggregate_token_usage(
     prompt_price: float,
     completion_price: float,
 ) -> dict[str, Any]:
-    """
-    Aggregate prompt/completion tokens and estimate cost per service and in total.
-    """
+        """Aggregate prompt/completion tokens and estimate cost per service and in total."""
     by_service: dict[str, dict[str, float]] = {}
     total_prompt = 0
     total_completion = 0
@@ -230,10 +228,7 @@ def _compute_pipeline_health(
     health_events: list[dict[str, Any]],
     plan_id: str,
 ) -> dict[str, Any]:
-    """
-    Compute basic pipeline health metrics (status, duration, QA/security counters)
-    from the list of events for a plan.
-    """
+        """Compute basic pipeline health metrics (status, duration, QA/security counters)."""
     first_ts: datetime | None = None
     last_ts: datetime | None = None
     qa_retry_count = 0
@@ -300,9 +295,7 @@ def _count_replans_for_plan(
     events: list[dict[str, Any]],
     plan_id: str,
 ) -> int:
-    """
-    Count how many replanning events in the list target the given original plan_id.
-    """
+        """Count how many replanning events in the list target the given original plan_id."""
     count = 0
     for ev in events:
         payload = ev.get("payload") or {}
@@ -317,13 +310,7 @@ def _build_plan_detail_json(
     tasks: list[dict[str, Any]],
     events: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """
-    Compose a high-level "plan detail" JSON document from raw metrics, tasks and events.
-
-    This is intentionally conservative: it avoids heavy processing and focuses on
-    the most useful signals for the frontend (prompt, planner reasoning, tasks,
-    QA/Security outcomes, replans and a small event sample).
-    """
+        """Compose a high-level "plan detail" JSON document from raw metrics, tasks and events."""
     original_prompt = ""
     planner_reasoning = ""
     created_at = None

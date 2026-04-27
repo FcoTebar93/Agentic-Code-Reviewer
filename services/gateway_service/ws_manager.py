@@ -1,10 +1,4 @@
-"""
-WebSocket connection pool manager.
-
-Maintains the set of active browser connections and provides
-a thread-safe broadcast primitive. FastAPI WebSocket handlers
-are async so this is safe without locks for single-worker uvicorn.
-"""
+"""WebSocket connection pool manager."""
 
 from __future__ import annotations
 
