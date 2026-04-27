@@ -467,19 +467,8 @@ async def _maybe_run_auto_lints(
             return ""
 
         lang = (getattr(task, "language", "") or "").lower()
-        edit_scope = str(getattr(task, "edit_scope", "file") or "").lower()
-        normalized_mode = (mode or "normal").strip().lower()
-        has_feedback = bool((qa_feedback or "").strip())
-        use_scoped_python = bool(
-            cfg.auto_gates_scoped and lang in ("python", "py")
-        )
-        if not use_scoped_python:
-            if (
-                normalized_mode != "strict"
-                and not has_feedback
-                and edit_scope == "file"
-            ):
-                return ""
+        if not _should_run_wide_gate(task, qa_feedback, mode, language=lang):
+            return ""
 
         fp = getattr(task, "file_path", "") or ""
         lint_cmd = ""
@@ -524,19 +513,8 @@ async def _maybe_run_auto_typecheck(
         if lang not in ("python", "py") or not tmpl:
             return ""
 
-        edit_scope = str(getattr(task, "edit_scope", "file") or "").lower()
-        normalized_mode = (mode or "normal").strip().lower()
-        has_feedback = bool((qa_feedback or "").strip())
-        use_scoped_python = bool(
-            cfg.auto_gates_scoped and lang in ("python", "py")
-        )
-        if not use_scoped_python:
-            if (
-                normalized_mode != "strict"
-                and not has_feedback
-                and edit_scope == "file"
-            ):
-                return ""
+        if not _should_run_wide_gate(task, qa_feedback, mode, language=lang):
+            return ""
 
         fp = getattr(task, "file_path", "") or ""
         cmd = format_gate_command(tmpl, fp)
@@ -584,6 +562,15 @@ async def _run_gate_command(
         f"{ok_label} ({out.get('command')}): {status}. "
         f"exit_code={out.get('exit_code')}, timed_out={out.get('timed_out')}."
     )
+
+
+def _should_run_wide_gate(task, qa_feedback: str, mode: str, *, language: str) -> bool:
+    if cfg and cfg.auto_gates_scoped and language in ("python", "py"):
+        return True
+    edit_scope = str(getattr(task, "edit_scope", "file") or "").lower()
+    normalized_mode = (mode or "normal").strip().lower()
+    has_feedback = bool((qa_feedback or "").strip())
+    return normalized_mode == "strict" or has_feedback or edit_scope != "file"
 
 
 def _glob_pattern_for_language(language: str) -> str:
