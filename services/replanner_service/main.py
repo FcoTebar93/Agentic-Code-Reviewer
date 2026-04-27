@@ -19,8 +19,6 @@ from shared.contracts.events import (
     PlanRevisionPayload,
     QAResultPayload,
     SecurityResultPayload,
-    TokensUsedPayload,
-    metrics_tokens_used,
     plan_revision_suggested,
 )
 from shared.http.client import create_async_http_client
@@ -28,6 +26,7 @@ from shared.llm_adapter import get_llm_provider
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.routing import register_health_metrics_routes
+from shared.observability.tokens import emit_token_usage_event
 from shared.observability.metrics import (
     agent_execution_time,
 )
@@ -192,22 +191,15 @@ async def _analyse_and_emit_revision(
                     user_locale=user_locale,
                 )
 
-            if prompt_tokens or completion_tokens:
-                tok_event = metrics_tokens_used(
-                    SERVICE_NAME,
-                    TokensUsedPayload(
-                        plan_id=plan_id,
-                        service=SERVICE_NAME,
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                    ),
-                )
-                await store_event(
-                    http_client,
-                    tok_event,
-                    logger=logger,
-                    error_message="Failed to store replanner event %s",
-                )
+            await emit_token_usage_event(
+                service_name=SERVICE_NAME,
+                plan_id=plan_id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                http_client=http_client,
+                logger=logger,
+                error_message="Failed to store replanner event %s",
+            )
     except Exception:
         logger.exception(
             "Replanner failed while analysing outcome for plan %s (type=%s). "

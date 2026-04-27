@@ -29,8 +29,6 @@ from shared.contracts.events import (
     PlanRequestedPayload,
     PlanRevisionPayload,
     TaskAssignedPayload,
-    TokensUsedPayload,
-    metrics_tokens_used,
     plan_created,
     task_assigned,
 )
@@ -44,6 +42,7 @@ from shared.observability.metrics import (
     tasks_completed,
 )
 from shared.observability.routing import register_health_metrics_routes
+from shared.observability.tokens import emit_token_usage_event
 from shared.plan_idempotency import plan_idempotency_key_meta_planner
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils.path_grouping import infer_group_id
@@ -353,22 +352,15 @@ async def _execute_plan(
         plan_event = plan_created(SERVICE_NAME, plan_payload)
         plan_id = plan_payload.plan_id
 
-        if prompt_tokens or completion_tokens:
-            tok_event = metrics_tokens_used(
-                SERVICE_NAME,
-                TokensUsedPayload(
-                    plan_id=plan_id,
-                    service=SERVICE_NAME,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                ),
-            )
-            await store_event(
-                http_client,
-                tok_event,
-                logger=logger,
-                error_message="Failed to store event %s in memory_service",
-            )
+        await emit_token_usage_event(
+            service_name=SERVICE_NAME,
+            plan_id=plan_id,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            http_client=http_client,
+            logger=logger,
+            error_message="Failed to store event %s in memory_service",
+        )
 
         await event_bus.publish(plan_event)
         await store_event(
