@@ -1,18 +1,4 @@
-"""
-Meta Planner Service -- the orchestrator.
-
-Receives user prompts, decomposes them into tasks via LLM,
-and publishes events for the dev_service to consume.
-
-Entry points:
-- HTTP POST /plan  (user-facing)
-- HTTP POST /ask  (Q&A over semantic memory + optional plan events)
-- RabbitMQ consumer for plan.requested events
-
-Idempotency: identical request (prompt, project, repo, mode, user_locale) within
-IDEM_TTL_SECONDS returns the same plan without re-running the pipeline,
-avoiding duplicate task.assigned and duplicate files.
-"""
+"""Meta Planner: plan creation, semantic Q&A, and replanning orchestration."""
 
 from __future__ import annotations
 
@@ -82,12 +68,7 @@ _replans_per_original_plan: dict[str, int] = {}
 
 
 def _infer_group_id(file_path: str) -> str:
-    """
-    Agrupa tareas por módulo aproximado a partir del file_path.
-
-    Se usa tanto en el plan original como en replannings para poder
-    limitar revisiones a subconjuntos coherentes de archivos.
-    """
+    """Infer approximate module/group id from file path."""
     norm = (file_path or "").replace("\\", "/").strip()
     if not norm:
         return "root"
@@ -104,14 +85,7 @@ def _summarise_planner_memory(
     events: list[dict] | None,
     max_lines: int = 8,
 ) -> str:
-    """
-    Construye un resumen compacto y de alto nivel a partir de:
-    - resultados semánticos (plan.created, pipeline.conclusion, qa.failed, security.blocked)
-    - eventos recientes crudos
-
-    Objetivo: dar al planner "reglas aprendidas" y contexto mínimo sin volcar
-    todos los textos ni scores completos para ahorrar tokens.
-    """
+        """Build compact planner memory summary from semantic results and events."""
     semantic_results = semantic_results or []
     events = events or []
 
@@ -457,10 +431,7 @@ async def _execute_plan(
     }
 
 async def _consume_plan_requests() -> None:
-    """
-    Listen for plan.requested events from the bus.
-    Idempotencia: mismo evento (mismo idempotency_key) no se ejecuta dos veces.
-    """
+    """Consume `plan.requested` and execute plans with delay support."""
     async def on_payload(payload: PlanRequestedPayload) -> None:
         await maybe_agent_delay(logger)
         await _execute_plan(
@@ -482,12 +453,7 @@ async def _consume_plan_requests() -> None:
 
 
 async def _consume_plan_revisions() -> None:
-    """
-    Listen for plan.revision_suggested and plan.revision_confirmed events.
-
-    - plan.revision_suggested: suggestion only (no automatic replanning).
-    - plan.revision_confirmed: always replan (human confirmed in the UI).
-    """
+    """Consume replanning events and trigger confirmed plan revisions."""
     async def on_suggested(payload: PlanRevisionPayload) -> None:
         logger.info(
             "Received plan.revision_suggested for %s (severity=%s) - waiting for human confirmation.",
@@ -517,14 +483,7 @@ async def _consume_plan_revisions() -> None:
 
 
 async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
-    """
-    Replan automatically based on a PlanRevisionPayload.
-
-    - Fetches the original plan.created event to recover the original prompt.
-    - Builds an augmented prompt that incorporates the replanner suggestions.
-    - Infers the repo_url from the existing task state, if any.
-    - Executes a new plan with the provided new_plan_id.
-    """
+    """Replan automatically from a confirmed `PlanRevisionPayload`."""
     original_plan_id = payload.original_plan_id
     new_plan_id = payload.new_plan_id
 
@@ -600,11 +559,7 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
 async def _fetch_original_plan_prompt(
     plan_id: str,
 ) -> tuple[str, str, str]:
-    """
-    Retrieve the original user prompt, planner reasoning, and user_locale for a plan.
-
-    Uses memory_service /events filtered by event_type=plan.created and plan_id.
-    """
+        """Get original prompt, planner reasoning, and user_locale for a plan."""
     if http_client is None:
         return "", "", "en"
 
@@ -644,11 +599,7 @@ async def _fetch_original_plan_prompt(
 
 
 async def _infer_repo_url_for_plan(plan_id: str) -> str:
-    """
-    Infer the repo_url for a given plan by asking memory_service for task state.
-
-    This allows the replanned version to keep targeting the same repository.
-    """
+    """Infer repo URL from stored task state for a plan."""
     if http_client is None:
         return ""
 
@@ -672,13 +623,7 @@ async def _infer_repo_url_for_plan(plan_id: str) -> str:
         return ""
 
 async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
-    """
-    Retrieve a compact textual memory window for the planner based on
-    the current user prompt.
-
-    This uses the memory_service semantic search endpoint, which combines
-    vector similarity with heuristic scoring (importance, recency, etc.).
-    """
+    """Build compact planner memory context from semantic and pattern tools."""
     global tool_registry
     if tool_registry is None:
         return ""

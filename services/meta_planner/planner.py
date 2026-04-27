@@ -1,13 +1,4 @@
-"""
-Core planning logic.
-
-Takes a user prompt and uses the LLM adapter to decompose it into
-a list of concrete development tasks (TaskSpec).
-
-The LLM is asked for both a REASONING block (visible in the event feed)
-and a TASKS block (structured JSON). This surfaces the architect's
-decision-making to the frontend.
-"""
+"""Core planning logic."""
 
 from __future__ import annotations
 
@@ -182,7 +173,7 @@ async def decompose_tasks(
     memory_context: str = "",
     user_locale: str = "en",
 ) -> tuple[PlanResult, int, int]:
-    """Call the LLM to break a user prompt into TaskSpecs with reasoning. Returns (result, prompt_tokens, completion_tokens)."""
+        """Call the LLM to break a user prompt into TaskSpecs with reasoning. Returns (result, prompt_tokens, completi..."""
     prompt = PLANNING_PROMPT_TEMPLATE.format(
         prompt=user_prompt,
         memory_context=memory_context.strip() or "None.",
@@ -233,9 +224,7 @@ async def decompose_tasks_with_tool_loop(
     redis_url: str | None = None,
     user_locale: str = "en",
 ) -> tuple[PlanResult, int, int]:
-    """
-    Multi-turn planning with memory_service tools before REASONING/TASKS.
-    """
+        """Multi-turn planning with memory_service tools before REASONING/TASKS."""
     tools = tools_openai_from_registry(registry, _PLANNER_TOOL_NAMES)
     if not tools:
         logger.warning("Planner tool loop: no tools in registry; single-shot planning")
@@ -373,11 +362,7 @@ async def decompose_tasks_with_tool_loop(
 
 
 def _parse_response(raw: str) -> tuple[str, list[TaskSpec], bool]:
-    """
-    Parse LLM output into (reasoning, TaskSpec list, json_ok).
-
-    json_ok False indica que hubo que usar el fallback de una sola tarea.
-    """
+    """Parse LLM output into (reasoning, TaskSpec list, json_ok)."""
     if not (raw or "").strip():
         return "", [], True
     reasoning = ""

@@ -1,8 +1,4 @@
-"""
-Q&A over the pipeline knowledge base (semantic memory + optional plan events).
-
-Does not create tasks or modify the repo — read-only context + a single LLM completion.
-"""
+"""Q&A over the pipeline knowledge base (semantic memory + optional plan events)."""
 
 from __future__ import annotations
 
@@ -145,9 +141,7 @@ async def run_ask_agent(
     semantic_limit: int = 10,
     events_limit: int = 20,
 ) -> tuple[str, list[dict[str, Any]], int, int]:
-    """
-    Returns (answer_markdown_plain, sources, prompt_tokens, completion_tokens).
-    """
+        """Returns (answer_markdown_plain, sources, prompt_tokens, completion_tokens)."""
     q = (question or "").strip()
     if not q:
         return (

@@ -59,9 +59,7 @@ class FailurePatternsInput(ToolInput):
 
 
 async def semantic_memory_tool(args: SemanticMemoryInput, base_url: str) -> dict[str, Any]:
-    """
-    Wrapper de alto nivel sobre /semantic/search del memory_service.
-    """
+    """Wrapper de alto nivel sobre /semantic/search del memory_service."""
     async with httpx.AsyncClient(base_url=base_url, timeout=10.0) as client:
         resp = await client.post(
             "/semantic/search",
@@ -78,9 +76,7 @@ async def semantic_memory_tool(args: SemanticMemoryInput, base_url: str) -> dict
 
 
 async def query_events_tool(args: QueryEventsInput, base_url: str) -> dict[str, Any]:
-    """
-    Wrapper tipado sobre /events del memory_service.
-    """
+    """Wrapper tipado sobre /events del memory_service."""
     params: dict[str, Any] = {"limit": args.limit}
     if args.event_type:
         params["event_type"] = args.event_type
@@ -95,10 +91,7 @@ async def query_events_tool(args: QueryEventsInput, base_url: str) -> dict[str, 
 
 
 async def failure_patterns_tool(args: FailurePatternsInput, base_url: str) -> dict[str, Any]:
-    """
-    Wrapper sobre /patterns/failures del memory_service.
-    Opcionalmente filtra por prefijo de módulo en el cliente.
-    """
+    """Wrapper sobre /patterns/failures del memory_service."""
     async with httpx.AsyncClient(base_url=base_url, timeout=10.0) as client:
         resp = await client.get(
             "/patterns/failures",
@@ -120,9 +113,7 @@ async def failure_patterns_tool(args: FailurePatternsInput, base_url: str) -> di
 
 
 def build_planner_tool_registry(memory_service_url: str) -> ToolRegistry:
-    """
-    Construye un ToolRegistry con herramientas de memoria para meta_planner.
-    """
+    """Construye un ToolRegistry con herramientas de memoria para meta_planner."""
     registry = ToolRegistry()
 
     async def _semantic_wrapper(args: SemanticMemoryInput) -> dict[str, Any]:
