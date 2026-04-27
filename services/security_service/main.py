@@ -29,9 +29,9 @@ from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import (
     agent_execution_time,
     llm_tokens,
-    metrics_response,
     tasks_completed,
 )
+from shared.observability.routing import register_health_metrics_routes
 from shared.policies import effective_mode, load_project_policy, policy_for_path
 from shared.prompt_locale import (
     security_memory_context_prefix,
@@ -82,15 +82,7 @@ app = FastAPI(
 )
 install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
+register_health_metrics_routes(app, SERVICE_NAME)
 
 async def _consume_pr_requests() -> None:
     async def on_payload(payload: PRRequestedPayload) -> None:

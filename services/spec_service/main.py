@@ -27,7 +27,8 @@ from shared.http.client import create_async_http_client
 from shared.llm_adapter import get_llm_provider
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import agent_execution_time, metrics_response
+from shared.observability.metrics import agent_execution_time
+from shared.observability.routing import register_health_metrics_routes
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
@@ -86,16 +87,7 @@ app = FastAPI(
 )
 install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
+register_health_metrics_routes(app, SERVICE_NAME)
 
 
 async def _consume_tasks() -> None:
