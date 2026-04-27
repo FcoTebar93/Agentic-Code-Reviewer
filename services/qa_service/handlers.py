@@ -405,8 +405,7 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
         if not all(t["status"] == "qa_passed" for t in all_tasks):
             return
 
-        plan_mode = await _infer_plan_mode(plan_id, deps)
-        plan_user_locale = await _infer_plan_user_locale(plan_id, deps)
+        plan_mode, plan_user_locale = await _infer_plan_metadata(plan_id, deps)
 
         seen_paths: set[str] = set()
         files: list[CodeGeneratedPayload] = []
@@ -460,7 +459,7 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
         deps.logger.exception("Error checking plan QA completion for %s", plan_id[:8])
 
 
-async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
+async def _infer_plan_metadata(plan_id: str, deps: QADeps) -> tuple[str, str]:
     try:
         resp = await deps.http_client.get(
             "/events",
@@ -471,41 +470,21 @@ async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
             },
         )
         if resp.status_code != 200:
-            return "normal"
+            return "normal", "en"
         events = resp.json()
         if not isinstance(events, list) or not events:
-            return "normal"
+            return "normal", "en"
         evt = events[0] or {}
         payload = evt.get("payload") or {}
         raw_mode = payload.get("mode", "normal") or "normal"
-        return str(raw_mode).strip().lower() or "normal"
-    except Exception:
-        deps.logger.exception("Error inferring plan mode for %s", plan_id[:8])
-        return "normal"
-
-
-async def _infer_plan_user_locale(plan_id: str, deps: QADeps) -> str:
-    try:
-        resp = await deps.http_client.get(
-            "/events",
-            params={
-                "event_type": EventType.PLAN_CREATED.value,
-                "plan_id": plan_id,
-                "limit": 1,
-            },
-        )
-        if resp.status_code != 200:
-            return "en"
-        events = resp.json()
-        if not isinstance(events, list) or not events:
-            return "en"
-        evt = events[0] or {}
-        payload = evt.get("payload") or {}
         raw = payload.get("user_locale", "en") or "en"
-        return str(raw).strip().lower() or "en"
+        return (
+            str(raw_mode).strip().lower() or "normal",
+            str(raw).strip().lower() or "en",
+        )
     except Exception:
-        deps.logger.exception("Error inferring plan user_locale for %s", plan_id[:8])
-        return "en"
+        deps.logger.exception("Error inferring plan metadata for %s", plan_id[:8])
+        return "normal", "en"
 
 
 def _build_chain_reasoning(

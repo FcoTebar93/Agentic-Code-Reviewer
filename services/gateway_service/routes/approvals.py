@@ -114,6 +114,42 @@ def _approvals_rate_limit_snapshot(rt: GatewayRuntime) -> dict:
     }
 
 
+async def _decide_approval(
+    approval_id: str,
+    rt: GatewayRuntime,
+    *,
+    action: str,
+    decision: str,
+) -> dict | JSONResponse:
+    _enforce_approvals_rate_limit(rt, f"{action}:{approval_id}", action=action)
+    approval = rt.pending_approvals.get(approval_id)
+    if not approval:
+        return error_response(
+            f"Approval {approval_id} not found or already decided",
+            status_code=404,
+        )
+
+    approval.decision = decision
+    rt.pending_approvals.pop(approval_id, None)
+
+    event_builder = pr_human_approved if decision == "approved" else pr_human_rejected
+    event = event_builder(SERVICE_NAME, approval)
+    await rt.event_bus.publish(event)
+    await rt.manager.broadcast(
+        json.dumps({"type": "approval_decided", "approval": approval.model_dump()})
+    )
+    await rt.manager.broadcast(
+        json.dumps({"type": "event", "event": json.loads(event.model_dump_json())})
+    )
+    logger.info(
+        "Human %s PR for plan %s (approval %s)",
+        decision.upper(),
+        approval.plan_id[:8],
+        approval_id[:8],
+    )
+    return {"status": decision, "plan_id": approval.plan_id}
+
+
 @router.get("/approvals/audit_summary")
 async def approvals_audit_summary(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
@@ -154,33 +190,12 @@ async def approve_pr(
     x_approval_token: str | None = Header(default=None),
 ):
     _require_approvals_auth(rt, x_approval_token, action="approve")
-    _enforce_approvals_rate_limit(rt, f"approve:{approval_id}", action="approve")
-    approval = rt.pending_approvals.get(approval_id)
-    if not approval:
-        return error_response(
-            f"Approval {approval_id} not found or already decided",
-            status_code=404,
-        )
-
-    approval.decision = "approved"
-    rt.pending_approvals.pop(approval_id, None)
-
-    event = pr_human_approved(SERVICE_NAME, approval)
-    await rt.event_bus.publish(event)
-
-    await rt.manager.broadcast(
-        json.dumps({"type": "approval_decided", "approval": approval.model_dump()})
+    return await _decide_approval(
+        approval_id,
+        rt,
+        action="approve",
+        decision="approved",
     )
-    await rt.manager.broadcast(
-        json.dumps({"type": "event", "event": json.loads(event.model_dump_json())})
-    )
-
-    logger.info(
-        "Human APPROVED PR for plan %s (approval %s)",
-        approval.plan_id[:8],
-        approval_id[:8],
-    )
-    return {"status": "approved", "plan_id": approval.plan_id}
 
 
 @router.post("/approvals/{approval_id}/reject")
@@ -190,30 +205,9 @@ async def reject_pr(
     x_approval_token: str | None = Header(default=None),
 ):
     _require_approvals_auth(rt, x_approval_token, action="reject")
-    _enforce_approvals_rate_limit(rt, f"reject:{approval_id}", action="reject")
-    approval = rt.pending_approvals.get(approval_id)
-    if not approval:
-        return error_response(
-            f"Approval {approval_id} not found or already decided",
-            status_code=404,
-        )
-
-    approval.decision = "rejected"
-    rt.pending_approvals.pop(approval_id, None)
-
-    event = pr_human_rejected(SERVICE_NAME, approval)
-    await rt.event_bus.publish(event)
-
-    await rt.manager.broadcast(
-        json.dumps({"type": "approval_decided", "approval": approval.model_dump()})
+    return await _decide_approval(
+        approval_id,
+        rt,
+        action="reject",
+        decision="rejected",
     )
-    await rt.manager.broadcast(
-        json.dumps({"type": "event", "event": json.loads(event.model_dump_json())})
-    )
-
-    logger.info(
-        "Human REJECTED PR for plan %s (approval %s)",
-        approval.plan_id[:8],
-        approval_id[:8],
-    )
-    return {"status": "rejected", "plan_id": approval.plan_id}

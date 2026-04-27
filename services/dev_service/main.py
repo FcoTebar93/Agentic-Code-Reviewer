@@ -230,32 +230,26 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         run_lints = path_policy.get("enable_auto_lints", True)
 
         gate_timeout = cfg.auto_gates_timeout_seconds if cfg else 180.0
-        lints_summary = (
-            await _maybe_run_auto_lints(task, qa_feedback, mode, gate_timeout)
-            if run_lints
-            else ""
-        )
-        typecheck_summary = (
-            await _maybe_run_auto_typecheck(task, qa_feedback, mode, gate_timeout)
-            if cfg and cfg.enable_auto_typecheck
-            else ""
-        )
-        tests_summary = (
-            await _maybe_run_auto_tests(task, gate_timeout)
-            if run_tests
-            else ""
-        )
+        lints_summary = await _maybe_run_auto_lints(task, qa_feedback, mode, gate_timeout) if run_lints else ""
+        typecheck_summary = await _maybe_run_auto_typecheck(task, qa_feedback, mode, gate_timeout) if cfg and cfg.enable_auto_typecheck else ""
+        tests_summary = await _maybe_run_auto_tests(task, gate_timeout) if run_tests else ""
 
         combined_reasoning = code_result.reasoning
-        if lints_summary:
-            suffix = f"\n[Dev Service] Automated lints summary: {lints_summary}"
-            combined_reasoning = (combined_reasoning + suffix).strip()
-        if typecheck_summary:
-            suffix = f"\n[Dev Service] Automated typecheck summary: {typecheck_summary}"
-            combined_reasoning = (combined_reasoning + suffix).strip()
-        if tests_summary:
-            suffix = f"\n[Dev Service] Automated tests summary: {tests_summary}"
-            combined_reasoning = (combined_reasoning + suffix).strip()
+        combined_reasoning = _append_reasoning_note(
+            combined_reasoning,
+            "Automated lints summary",
+            lints_summary,
+        )
+        combined_reasoning = _append_reasoning_note(
+            combined_reasoning,
+            "Automated typecheck summary",
+            typecheck_summary,
+        )
+        combined_reasoning = _append_reasoning_note(
+            combined_reasoning,
+            "Automated tests summary",
+            tests_summary,
+        )
 
         formatted_code = code_result.code
         if mode == "strict" and tool_registry is not None:
@@ -532,13 +526,17 @@ def _resolve_test_command(task, lang: str) -> str:
             cfg.test_python_template,
             getattr(task, "file_path", "") or "",
         )
-    if lang in ("javascript", "js"):
-        return cfg.test_command_javascript
-    if lang in ("typescript", "ts"):
-        return cfg.test_command_typescript
-    if lang == "java":
-        return cfg.test_command_java
-    return ""
+    return {
+        "javascript": cfg.test_command_javascript,
+        "js": cfg.test_command_javascript,
+        "typescript": cfg.test_command_typescript,
+        "ts": cfg.test_command_typescript,
+        "java": cfg.test_command_java,
+    }.get(lang, "")
+
+
+def _append_reasoning_note(reasoning: str, label: str, summary: str) -> str:
+    return (reasoning + f"\n[Dev Service] {label}: {summary}").strip() if summary else reasoning
 
 
 def _glob_pattern_for_language(language: str) -> str:
