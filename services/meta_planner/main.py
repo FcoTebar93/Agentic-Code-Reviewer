@@ -46,6 +46,7 @@ from shared.observability.metrics import (
 from shared.observability.routing import register_health_metrics_routes
 from shared.plan_idempotency import plan_idempotency_key_meta_planner
 from shared.tools import ToolRegistry, execute_tool
+from shared.utils.path_grouping import infer_group_id
 from shared.utils import (
     EventBus,
     maybe_agent_delay,
@@ -65,19 +66,6 @@ _MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN = int(
     os.environ.get("MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN", "1")
 )
 _replans_per_original_plan: dict[str, int] = {}
-
-
-def _infer_group_id(file_path: str) -> str:
-    """Infer approximate module/group id from file path."""
-    norm = (file_path or "").replace("\\", "/").strip()
-    if not norm:
-        return "root"
-    parts = norm.split("/")
-    if len(parts) >= 3:
-        return "/".join(parts[:3])
-    if len(parts) >= 2:
-        return "/".join(parts[:2])
-    return norm
 
 
 def _summarise_planner_memory(
@@ -343,7 +331,7 @@ async def _execute_plan(
             gid = (getattr(spec, "group_id", "") or "").strip()
             if not gid:
                 try:
-                    spec.group_id = _infer_group_id(spec.file_path)
+                    spec.group_id = infer_group_id(spec.file_path)
                 except Exception:
                     spec.group_id = "root"
             task_specs.append(spec)

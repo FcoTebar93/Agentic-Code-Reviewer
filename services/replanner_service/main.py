@@ -32,6 +32,7 @@ from shared.observability.metrics import (
     agent_execution_time,
 )
 from shared.tools import ToolRegistry, execute_tool
+from shared.utils.path_grouping import infer_group_id
 from shared.utils import EventBus, store_event, subscribe_typed_event
 
 SERVICE_NAME = "replanner_service"
@@ -41,23 +42,6 @@ cfg: ReplannerConfig = cast(ReplannerConfig, None)
 tool_registry: ToolRegistry = cast(ToolRegistry, None)
 
 _replan_suggested_for_plan: dict[str, bool] = {}
-
-def _infer_group_id(file_path: str) -> str:
-    """
-    Deriva un identificador de grupo/módulo a partir del file_path.
-
-    Mantiene la misma heurística que el meta_planner para poder alinear
-    las decisiones de replanning con los grupos de tareas originales.
-    """
-    norm = (file_path or "").replace("\\", "/").strip()
-    if not norm:
-        return "root"
-    parts = norm.split("/")
-    if len(parts) >= 3:
-        return "/".join(parts[:3])
-    if len(parts) >= 2:
-        return "/".join(parts[:2])
-    return norm
 
 
 @asynccontextmanager
@@ -159,7 +143,7 @@ async def _analyse_and_emit_revision(
     if isinstance(outcome, QAResultPayload):
         fp = (outcome.file_path or "").strip()
         if fp:
-            target_group_ids.append(_infer_group_id(fp))
+            target_group_ids.append(infer_group_id(fp))
     elif isinstance(outcome, SecurityResultPayload):
         ctx = getattr(outcome, "pr_context", {}) or {}
         files = ctx.get("files") or []
@@ -171,7 +155,7 @@ async def _analyse_and_emit_revision(
                 fp = (f.get("file_path") or "").strip()
                 if not fp:
                     continue
-                modules.add(_infer_group_id(fp))
+                modules.add(infer_group_id(fp))
         if modules:
             target_group_ids.extend(list(modules)[:5])
 
