@@ -200,10 +200,7 @@ def _search_in_file(
 
 
 def search_in_repo_tool(args: SearchInRepoInput) -> dict[str, Any]:
-    """
-    Buscar un patrón de texto/regex en los archivos del repositorio.
-    Útil para localizar usos de funciones, clases o rutas antes de editar código.
-    """
+    """Buscar un patrón de texto/regex en los archivos del repositorio."""
     base_dir = _safe_join(args.directory)
     if not base_dir.exists() or not base_dir.is_dir():
         return {"directory": str(base_dir), "matches": []}
@@ -229,13 +226,7 @@ def search_in_repo_tool(args: SearchInRepoInput) -> dict[str, Any]:
 
 
 def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
-    """
-    Formatea código en un lenguaje dado usando herramientas estándar del entorno.
-
-    Soporta:
-    - Python vía 'python -m black'
-    - JavaScript/TypeScript vía 'npx prettier' (cuando está disponible)
-    """
+    """Formatea código en un lenguaje dado usando herramientas estándar del entorno."""
     lang = (args.language or "python").lower()
 
     if lang in {"python", "py"}:
@@ -358,12 +349,7 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
 
 
 async def run_tests_tool(args: RunTestsInput) -> dict[str, Any]:
-    """
-    Ejecuta un comando de tests dentro del repo de forma controlada.
-
-    Importante: este tool está pensado para ser invocado de forma explícita
-    por el agente, no en cada tarea, ya que puede ser costoso.
-    """
+    """Ejecuta un comando de tests dentro del repo de forma controlada."""
     try:
         argv, err = parse_and_validate_repo_cli_command(args.command)
         if argv is None:
@@ -398,11 +384,7 @@ async def run_tests_tool(args: RunTestsInput) -> dict[str, Any]:
 
 
 async def run_lints_tool(args: RunLintsInput) -> dict[str, Any]:
-    """
-    Ejecuta un comando de linting dentro del repo de forma controlada.
-
-    Pensado para comandos como 'ruff .', 'npm run lint' o 'npx eslint .'.
-    """
+    """Ejecuta un comando de linting dentro del repo de forma controlada."""
     try:
         argv, err = parse_and_validate_repo_cli_command(args.command)
         if argv is None:
@@ -437,9 +419,7 @@ async def run_lints_tool(args: RunLintsInput) -> dict[str, Any]:
 
 
 def build_dev_tool_registry() -> ToolRegistry:
-    """
-    Construct a ToolRegistry pre-populated with tools useful for dev_service.
-    """
+    """Construct a ToolRegistry pre-populated with tools useful for dev_service."""
     registry = ToolRegistry()
 
     registry.register(

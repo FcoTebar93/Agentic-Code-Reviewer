@@ -1,13 +1,4 @@
-"""
-Code generation logic using the LLM adapter.
-
-Each developer agent:
-1. Reads the planner's reasoning and explicitly responds to it.
-2. Implements the task with production-quality code.
-3. Returns both REASONING (referencing the planner) and the CODE.
-
-This creates a visible chain of inter-agent communication in the event feed.
-"""
+"""Code generation logic using the LLM adapter."""
 
 from __future__ import annotations
 
@@ -145,7 +136,7 @@ async def generate_code(
     *,
     qa_feedback: str = "",
 ) -> tuple[CodeResult, int, int]:
-    """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
+        """Use the LLM to generate code for a single task. Returns (result, prompt_tokens, completion_tokens)."""
     prompt = _build_codegen_user_content(
         task,
         plan_reasoning,
@@ -188,12 +179,7 @@ async def generate_code_with_tool_loop(
     user_locale: str = "en",
     qa_feedback: str = "",
 ) -> tuple[CodeResult, int, int]:
-    """
-    Multi-turn generation: model may call repo tools before emitting REASONING/CODE.
-
-    Requires an OpenAI-compatible provider that supports Chat Completions tools.
-    The mock provider simulates one read_file round for local tests.
-    """
+        """Multi-turn generation: model may call repo tools before emitting REASONING/CODE."""
     tools = tools_openai_from_registry(registry, _tool_loop_tool_names(include_ci_tools))
     if not tools:
         logger.warning("Tool loop: no tools matched registry; using single-shot codegen")

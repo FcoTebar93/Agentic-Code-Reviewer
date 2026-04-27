@@ -1,8 +1,4 @@
-"""
-Texto breve para el prompt del Dev, alineado con SECURITY_RULES del security_service.
-
-Si añades reglas en services/security_service/config.py, el listado de ids aquí se actualiza solo.
-"""
+"""Texto breve para el prompt del Dev, alineado con SECURITY_RULES del security_service."""
 
 from __future__ import annotations
 

@@ -1,11 +1,4 @@
-"""
-Comandos de puerta determinista (lint/tests/typecheck) acotados al archivo de la tarea.
-
-Placeholders soportados en plantillas de config:
-- {file}   ruta relativa posix (p.ej. services/dev_service/main.py)
-- {parent} directorio padre (p.ej. services/dev_service)
-- {stem}   nombre sin extensión (p.ej. main)
-"""
+"""Comandos de puerta determinista (lint/tests/typecheck) acotados al archivo de la tarea."""
 
 from __future__ import annotations
 

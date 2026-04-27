@@ -1,10 +1,4 @@
-"""
-Dev Service -- the AI developer agent.
-
-Phase 2 change: dev_service no longer publishes pr.requested.
-PR creation is now triggered by qa_service after all tasks pass review.
-This service only generates code and publishes code.generated.
-"""
+"""Dev Service -- the AI developer agent."""
 
 from __future__ import annotations
 
@@ -363,11 +357,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
 
 async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str) -> bool:
-    """
-    Apply defensive idempotency rules before processing a task.
-
-    Returns True if the task should be skipped, False otherwise.
-    """
+    """Apply defensive idempotency rules before processing a task."""
     has_feedback = bool((qa_feedback or "").strip())
     try:
         resp_tasks = await http_client.get(f"/tasks/{plan_id}")
@@ -440,7 +430,7 @@ async def _maybe_run_auto_tests(task, timeout_s: float) -> str:
 async def _maybe_run_auto_lints(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-    """Run automatic lint gates when policy allows it."""
+        """Run automatic lint gates when policy allows it."""
     try:
         if not cfg or not getattr(cfg, "enable_auto_lints", False):
             return ""
@@ -484,7 +474,7 @@ async def _maybe_run_auto_lints(
 async def _maybe_run_auto_typecheck(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-    """Run optional typecheck gate before QA."""
+        """Run optional typecheck gate before QA."""
     try:
         if not cfg or not tool_registry:
             return ""
@@ -758,7 +748,7 @@ async def _fetch_task_spec(
     wait_if_missing: bool = False,
     limit: int = 40,
 ) -> str:
-    """Fetch spec/tests from memory_service, optionally waiting for availability."""
+        """Fetch spec/tests from memory_service, optionally waiting for availability."""
     if http_client is None:
         return ""
 
@@ -837,7 +827,7 @@ def _build_dev_context(
     spec_max_chars: int = 3000,
     max_chars: int = 5600,
 ) -> str:
-    """Build compact structured context for the dev_service LLM."""
+        """Build compact structured context for the dev_service LLM."""
     blocks: list[str] = []
 
     spec = (spec_block or "").strip()
