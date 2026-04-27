@@ -333,59 +333,64 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
 async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str) -> bool:
     has_feedback = bool((qa_feedback or "").strip())
-    resp_tasks = await guarded_http_get(
+    existing_status = await _fetch_task_status(plan_id, task.task_id)
+    if existing_status is not None:
+        if not has_feedback:
+            logger.info(
+                "Task %s already has task state '%s', skipping original assignment (idempotent)",
+                task.task_id[:8],
+                existing_status,
+            )
+            return True
+        if existing_status in {"qa_passed", "qa_failed"}:
+            logger.info(
+                "Task %s already finished with status '%s', skipping QA retry (idempotent)",
+                task.task_id[:8],
+                existing_status,
+            )
+            return True
+
+    if not has_feedback and await _has_code_generated_event(plan_id, task.task_id):
+        logger.info(
+            "Task %s already has code.generated event, skipping (idempotent)",
+            task.task_id[:8],
+        )
+        return True
+    return False
+
+
+async def _fetch_task_status(plan_id: str, task_id: str) -> str | None:
+    resp = await guarded_http_get(
         http_client,
         f"/tasks/{plan_id}",
         logger,
         key="memory_service:/tasks",
     )
-    if resp_tasks is not None and resp_tasks.status_code == 200:
-        tasks = resp_tasks.json() if isinstance(resp_tasks.json(), list) else []
-        existing_status: str | None = None
-        for t in tasks:
-            if t.get("task_id") == task.task_id:
-                existing_status = str(t.get("status") or "")
-                break
+    if resp is None or resp.status_code != 200:
+        return None
+    tasks = resp.json() if isinstance(resp.json(), list) else []
+    for t in tasks:
+        if t.get("task_id") == task_id:
+            return str(t.get("status") or "")
+    return None
 
-        if existing_status is not None:
-            if not has_feedback:
-                logger.info(
-                    "Task %s already has task state '%s', skipping original assignment (idempotent)",
-                    task.task_id[:8],
-                    existing_status,
-                )
-                return True
-            if existing_status in {"qa_passed", "qa_failed"}:
-                logger.info(
-                    "Task %s already finished with status '%s', skipping QA retry (idempotent)",
-                    task.task_id[:8],
-                    existing_status,
-                )
-                return True
 
-    if not has_feedback:
-        resp_events = await guarded_http_get(
-            http_client,
-            "/events",
-            logger,
-            key="memory_service:/events",
-            params={
-                "plan_id": plan_id,
-                "event_type": EventType.CODE_GENERATED.value,
-                "limit": 100,
-            },
-        )
-        if resp_events is not None and resp_events.status_code == 200:
-            events = resp_events.json() if isinstance(resp_events.json(), list) else []
-            for ev in events:
-                ev_payload = ev.get("payload") or {}
-                if ev_payload.get("task_id") == task.task_id:
-                    logger.info(
-                        "Task %s already has code.generated event, skipping (idempotent)",
-                        task.task_id[:8],
-                    )
-                    return True
-    return False
+async def _has_code_generated_event(plan_id: str, task_id: str) -> bool:
+    resp = await guarded_http_get(
+        http_client,
+        "/events",
+        logger,
+        key="memory_service:/events",
+        params={
+            "plan_id": plan_id,
+            "event_type": EventType.CODE_GENERATED.value,
+            "limit": 100,
+        },
+    )
+    if resp is None or resp.status_code != 200:
+        return False
+    events = resp.json() if isinstance(resp.json(), list) else []
+    return any((ev.get("payload") or {}).get("task_id") == task_id for ev in events)
 
 
 async def _maybe_run_auto_tests(task, timeout_s: float) -> str:

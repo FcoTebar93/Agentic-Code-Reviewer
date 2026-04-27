@@ -770,79 +770,31 @@ async def _run_static_lint(
 
     lang = (language or "").lower()
     formatted: list[str] = []
-
+    base_input = {"language": language, "code": code, "file_path": file_path or "tmp"}
+    lint_specs: list[tuple[str, dict[str, Any], Any]] = []
     if lang == "python":
-        formatted.extend(
-            await _run_lint_tool(
-                deps,
-                tool_name="python_lint",
-                tool_input={
-                    "language": "python",
-                    "code": code,
-                    "file_path": file_path or "tmp.py",
-                },
-                issue_formatter=_format_ruff_issue,
-            )
+        py_input = {"language": "python", "code": code, "file_path": file_path or "tmp.py"}
+        lint_specs.extend(
+            [
+                ("python_lint", py_input, _format_ruff_issue),
+                ("python_security_scan", py_input, _format_bandit_issue),
+            ]
         )
-        formatted.extend(
-            await _run_lint_tool(
-                deps,
-                tool_name="python_security_scan",
-                tool_input={
-                    "language": "python",
-                    "code": code,
-                    "file_path": file_path or "tmp.py",
-                },
-                issue_formatter=_format_bandit_issue,
-            )
-        )
-
     if lang in {"javascript", "js", "typescript", "ts"} and deps.cfg.enable_js_lint:
-        formatted.extend(
-            await _run_lint_tool(
-                deps,
-                tool_name="js_ts_lint",
-                tool_input={
-                    "language": language,
-                    "code": code,
-                    "file_path": file_path or "tmp",
-                },
-                issue_formatter=_format_eslint_issue,
-            )
-        )
-
+        lint_specs.append(("js_ts_lint", base_input, _format_eslint_issue))
     if lang == "java" and deps.cfg.enable_java_lint:
-        formatted.extend(
-            await _run_lint_tool(
-                deps,
-                tool_name="java_lint",
-                tool_input={
-                    "language": "java",
-                    "code": code,
-                    "file_path": file_path or "Tmp.java",
-                },
-                issue_formatter=_format_javac_issue,
-            )
+        lint_specs.append(
+            ("java_lint", {"language": "java", "code": code, "file_path": file_path or "Tmp.java"}, _format_javac_issue)
         )
-
-    if deps.cfg.enable_semgrep and lang in {
-        "python",
-        "javascript",
-        "js",
-        "typescript",
-        "ts",
-        "java",
-    }:
+    if deps.cfg.enable_semgrep and lang in {"python", "javascript", "js", "typescript", "ts", "java"}:
+        lint_specs.append(("semgrep_scan", base_input, _format_semgrep_issue))
+    for tool_name, tool_input, issue_formatter in lint_specs:
         formatted.extend(
             await _run_lint_tool(
                 deps,
-                tool_name="semgrep_scan",
-                tool_input={
-                    "language": language,
-                    "code": code,
-                    "file_path": file_path or "tmp",
-                },
-                issue_formatter=_format_semgrep_issue,
+                tool_name=tool_name,
+                tool_input=tool_input,
+                issue_formatter=issue_formatter,
             )
         )
 
@@ -851,10 +803,7 @@ async def _run_static_lint(
 
 def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
     if not issues:
-        return (
-            "No static analysis issues or warnings were reported by linters or "
-            "security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
-        )
+        return "No static analysis issues or warnings were reported by linters or security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
 
     by_source: dict[str, int] = {}
     for issue in issues:
@@ -865,9 +814,7 @@ def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
     header = "Static analysis tools reported the following issues and warnings:\n"
     header += "Resumen por origen: " + "; ".join(summary_parts)
 
-    examples: list[str] = []
-    for idx, issue in enumerate(issues[:max_examples], start=1):
-        examples.append(f"{idx}. {issue}")
+    examples = [f"{idx}. {issue}" for idx, issue in enumerate(issues[:max_examples], start=1)]
 
     if len(issues) > max_examples:
         examples.append(
@@ -878,14 +825,8 @@ def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
 
 
 def _has_severe_static_issues(issues: list[str]) -> bool:
-    if not issues:
-        return False
     severe_keywords = ("HIGH", "CRITICAL", "BLOCKER", "ERROR")
-    for issue in issues:
-        upper = issue.upper()
-        if any(kw in upper for kw in severe_keywords):
-            return True
-    return False
+    return any(any(kw in issue.upper() for kw in severe_keywords) for issue in issues)
 
 
 def _infer_module_from_path(file_path: str) -> str:
@@ -904,12 +845,13 @@ def _infer_severity_hint(issues: list[str]) -> str:
     if not issues:
         return "low"
     text = " ".join(issues).upper()
-    if any(word in text for word in ("CRITICAL", "RCE", "SQL INJECTION", "XSS")):
-        return "critical"
-    if any(word in text for word in ("HIGH", "ERROR", "SECURITY", "BANDIT")):
-        return "high"
-    if any(word in text for word in ("WARNING", "MEDIUM")):
-        return "medium"
+    for severity, keywords in (
+        ("critical", ("CRITICAL", "RCE", "SQL INJECTION", "XSS")),
+        ("high", ("HIGH", "ERROR", "SECURITY", "BANDIT")),
+        ("medium", ("WARNING", "MEDIUM")),
+    ):
+        if any(word in text for word in keywords):
+            return severity
     return "medium"
 
 
@@ -931,16 +873,12 @@ async def _is_hot_module(module: str, deps: QADeps) -> bool:
         patterns = payload.get("patterns") or []
         if not isinstance(patterns, list):
             return False
-        total = 0
-        for p in patterns:
-            if not isinstance(p, dict):
-                continue
-            mod = str(p.get("module", "") or "").replace("\\", "/")
-            if not mod.startswith(normalized):
-                continue
-            qa_n = int(p.get("qa_failed", 0) or 0)
-            sec_n = int(p.get("security_blocked", 0) or 0)
-            total += qa_n + sec_n
+        total = sum(
+            int(p.get("qa_failed", 0) or 0) + int(p.get("security_blocked", 0) or 0)
+            for p in patterns
+            if isinstance(p, dict)
+            and str(p.get("module", "") or "").replace("\\", "/").startswith(normalized)
+        )
         return total >= 3
     except Exception:
         return False
