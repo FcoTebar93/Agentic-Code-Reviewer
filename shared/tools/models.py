@@ -7,32 +7,15 @@ from pydantic import BaseModel
 
 
 class ToolInput(BaseModel):
-    """
-    Base class for tool input models.
-
-    Each concrete tool should define its own subclass that describes and
-    validates the input parameters. This gives us strong typing and schema
-    validation "for free" via Pydantic.
-    """
+    """Base class for tool input models."""
 
 
-ToolFunc = Callable[[Any], Awaitable[Any]] | Callable[[Any], Any]
+    ToolFunc = Callable[[Any], Awaitable[Any]] | Callable[[Any], Any]
 
 
 @dataclass
 class ToolDefinition:
-    """
-    Runtime description of a tool available to agents.
-
-    - name: unique identifier, referenced in prompts and tool calls
-    - description: short natural language description shown to the LLM/agents
-    - input_model: Pydantic model used for validation and JSON-schema export
-    - func: async or sync callable implementing the tool
-    - timeout_s: max wall-clock time for a single execution
-    - max_retries: how many times to retry on failure
-    - sandboxed: whether this tool is expected to be side-effect-safe
-    - tags: free-form labels (e.g. ["filesystem", "git", "tests"])
-    """
+    """Runtime description of a tool available to agents."""
 
     name: str
     description: str
@@ -50,15 +33,7 @@ class ToolDefinition:
 
 @dataclass
 class ToolExecutionResult:
-    """
-    Normalised result of executing a tool.
-
-    - success: whether the tool completed without raising
-    - output: raw value returned by the tool (if any)
-    - error: error message when success is False
-    - retries: how many retry attempts were used
-    - duration_s: approximate wall-clock time in seconds
-    """
+    """Normalised result of executing a tool."""
 
     success: bool
     output: Any = None

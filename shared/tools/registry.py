@@ -7,12 +7,7 @@ from shared.tools.models import ToolDefinition
 
 
 class ToolRegistry:
-    """
-    In-memory registry of tools available to an agent or service.
-
-    Each service typically maintains its own registry and registers tools
-    during startup. The registry is designed to be simple and threadsafe.
-    """
+    """In-memory registry of tools available to an agent or service."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()

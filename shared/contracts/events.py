@@ -1,9 +1,4 @@
-"""
-Versioned event contracts for the ADMADC event bus.
-
-Every message flowing through RabbitMQ MUST conform to one of these contracts.
-BaseEvent provides the envelope; specific event types define typed payloads.
-"""
+"""Versioned event contracts for the ADMADC event bus."""
 
 from __future__ import annotations
 
@@ -40,15 +35,7 @@ class EventType(str, Enum):
 
 
 class BaseEvent(BaseModel):
-    """
-    Canonical envelope for all events in the system.
-
-    Determinism guarantees:
-    - event_id is a UUID4 generated at creation time
-    - idempotency_key is derived from (event_type + payload hash) so
-      identical logical operations produce the same key
-    - timestamp uses UTC with explicit timezone
-    """
+    """Canonical envelope for all events in the system."""
 
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     event_type: EventType
@@ -187,10 +174,7 @@ class SecurityResultPayload(BaseModel):
 
 
 class PrApprovalPayload(BaseModel):
-    """
-    Stored in the gateway pending human review.
-    Published as pr.pending_approval, pr.human_approved, or pr.human_rejected.
-    """
+    """Stored in the gateway pending human review."""
 
     approval_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     plan_id: str
@@ -203,13 +187,7 @@ class PrApprovalPayload(BaseModel):
 
 
 class PipelineConclusionPayload(BaseModel):
-    """
-    Dedicated event emitted by the gateway when the agent pipeline reaches
-    a conclusion (after security.approved or security.blocked). Summarises
-    the full chain and the list of changes for the feed.
-
-    It also captures a compact per-service summary to improve observability.
-    """
+    """Dedicated event emitted by the gateway when the agent pipeline reaches."""
 
     plan_id: str
     branch_name: str = ""
@@ -226,10 +204,7 @@ class PipelineConclusionPayload(BaseModel):
 
 
 class PlanRevisionPayload(BaseModel):
-    """
-    Suggested revision to an existing plan, typically produced by the
-    replanner_service after analysing QA and Security outcomes.
-    """
+    """Suggested revision to an existing plan, typically produced by the."""
 
     original_plan_id: str
     new_plan_id: str = Field(default_factory=lambda: str(uuid.uuid4()))

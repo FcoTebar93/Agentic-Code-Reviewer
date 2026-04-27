@@ -1,10 +1,4 @@
-"""
-Structured JSON logging for all ADMADC services.
-
-Each log entry includes the service name, enabling correlation across
-containers in a distributed system. Outputs to stdout for Docker log
-aggregation.
-"""
+"""Structured JSON logging for all ADMADC services."""
 
 from __future__ import annotations
 
@@ -55,12 +49,7 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_logging(service_name: str) -> logging.Logger:
-    """
-    Configure the root logger for a service with JSON output to stdout.
-
-    Call once at service startup (in main.py or lifespan).
-    Returns the service-specific logger.
-    """
+    """Configure the root logger for a service with JSON output to stdout."""
     level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
 

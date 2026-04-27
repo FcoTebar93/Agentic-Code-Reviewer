@@ -1,10 +1,4 @@
-"""
-Stable idempotency keys for POST /plan (gateway vs meta_planner).
-
-Gateway includes optional client fields that are forwarded in the JSON body
-(even if the planner currently ignores some of them) so cache entries do not
-collide across materially different requests from the UI/CLI.
-"""
+"""Stable idempotency keys for POST /plan (gateway vs meta_planner)."""
 
 from __future__ import annotations
 

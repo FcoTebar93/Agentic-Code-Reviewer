@@ -338,12 +338,7 @@ def rules_for_language(
 
 
 def load_project_policy(base_dir: str | os.PathLike[str]) -> ProjectPolicy:
-    """
-    Load project-wide policies from a JSON file at the repo root.
-
-    The file is optional; if it does not exist or is invalid, sensible defaults
-    are returned. Result is cached in-process.
-    """
+    """Load project-wide policies from a JSON file at the repo root."""
     global _CACHED_POLICY
     if _CACHED_POLICY is not None:
         return _CACHED_POLICY
@@ -386,10 +381,7 @@ def load_project_policy(base_dir: str | os.PathLike[str]) -> ProjectPolicy:
 
 
 def policy_for_path(policy: ProjectPolicy, file_path: str) -> PathPolicy:
-    """
-    Resolve the most specific PathPolicy for a given file_path based on
-    prefix matching against policy['paths'] keys.
-    """
+    """Resolve the most specific PathPolicy for a given file_path based on."""
     paths = policy.get("paths") or {}
     if not isinstance(paths, dict) or not file_path:
         return {}
@@ -409,12 +401,7 @@ def policy_for_path(policy: ProjectPolicy, file_path: str) -> PathPolicy:
 
 
 def effective_mode(plan_mode: str | None, path_policy: PathPolicy, default_mode: str) -> str:
-    """
-    Compute the effective mode for a task/plan combining:
-    - project default_mode,
-    - plan_mode (user-provided),
-    - path-specific forced_mode (highest precedence).
-    """
+    """Compute the effective mode for a task/plan combining:."""
     if "forced_mode" in path_policy:
         m = str(path_policy["forced_mode"] or "").strip().lower()
         return m or "normal"

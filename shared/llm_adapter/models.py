@@ -8,13 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class LLMRequest(BaseModel):
-    """
-    Single-turn: set `prompt` (default) and leave `messages` unset.
-
-    Multi-turn / tools: set `messages` to a Chat Completions–style list
-    (`role` / `content` / optional `tool_calls` / `tool_call_id`).
-    When `messages` is set, `prompt` may be empty.
-    """
+    """Single-turn: set `prompt` (default) and leave `messages` unset."""
 
     prompt: str = ""
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)

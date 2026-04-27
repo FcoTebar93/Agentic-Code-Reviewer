@@ -1,10 +1,4 @@
-"""
-User-facing natural language for agent prompts.
-
-Prompt templates are written in English. Inject `natural_language_rules_for_locale`
-so the model writes prose (reasoning, issues, specs, etc.) in the user's language
-while keeping structural labels (REASONING, CODE, VERDICT, TASKS JSON, …) unchanged.
-"""
+"""User-facing natural language for agent prompts."""
 
 from __future__ import annotations
 
