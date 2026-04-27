@@ -61,7 +61,13 @@ from shared.observability.metrics import (
 )
 from shared.plan_idempotency import plan_idempotency_key_meta_planner
 from shared.tools import ToolRegistry, execute_tool
-from shared.utils import EventBus, IdempotencyStore, store_event
+from shared.utils import (
+    EventBus,
+    IdempotencyStore,
+    maybe_agent_delay,
+    store_event,
+    subscribe_typed_event,
+)
 
 SERVICE_NAME = "meta_planner"
 event_bus: EventBus = cast(EventBus, None)
@@ -457,14 +463,8 @@ async def _consume_plan_requests() -> None:
     Listen for plan.requested events from the bus.
     Idempotencia: mismo evento (mismo idempotency_key) no se ejecuta dos veces.
     """
-    idem_store = IdempotencyStore()
-
-    async def handler(event: BaseEvent) -> None:
-        delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
-        if delay_sec > 0:
-            logger.info("Agent delay: waiting %ds before processing", delay_sec)
-            await asyncio.sleep(delay_sec)
-        payload = PlanRequestedPayload.model_validate(event.payload)
+    async def on_payload(payload: PlanRequestedPayload) -> None:
+        await maybe_agent_delay(logger)
         await _execute_plan(
             payload.user_prompt,
             payload.project_name,
@@ -473,11 +473,12 @@ async def _consume_plan_requests() -> None:
             user_locale=getattr(payload, "user_locale", None) or "en",
         )
 
-    await event_bus.subscribe(
+    await subscribe_typed_event(
+        event_bus=event_bus,
         queue_name="meta_planner.plan_requests",
         routing_keys=[EventType.PLAN_REQUESTED.value],
-        handler=handler,
-        idempotency_store=idem_store,
+        payload_model=PlanRequestedPayload,
+        on_payload=on_payload,
         max_retries=3,
     )
 

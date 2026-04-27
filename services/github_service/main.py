@@ -46,7 +46,7 @@ from shared.observability.metrics import (
     pr_creation_latency,
     tasks_completed,
 )
-from shared.utils import EventBus, IdempotencyStore, store_event
+from shared.utils import EventBus, store_event, subscribe_typed_event
 
 SERVICE_NAME = "github_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -129,10 +129,7 @@ async def _consume_human_approved() -> None:
     Consume pr.human_approved events published by the gateway after
     a human reviewer clicks Approve in the frontend.
     """
-    idem_store = IdempotencyStore()
-
-    async def handler(event: BaseEvent) -> None:
-        approval = PrApprovalPayload.model_validate(event.payload)
+    async def on_payload(approval: PrApprovalPayload) -> None:
         if approval.decision != "approved" or not approval.pr_context:
             logger.warning(
                 "Received pr.human_approved with non-approved decision for plan %s",
@@ -142,11 +139,12 @@ async def _consume_human_approved() -> None:
         pr_payload = PRRequestedPayload.model_validate(approval.pr_context)
         await _handle_pr_request(pr_payload)
 
-    await event_bus.subscribe(
+    await subscribe_typed_event(
+        event_bus=event_bus,
         queue_name="github_service.human_approved",
         routing_keys=[EventType.PR_HUMAN_APPROVED.value],
-        handler=handler,
-        idempotency_store=idem_store,
+        payload_model=PrApprovalPayload,
+        on_payload=on_payload,
         max_retries=3,
     )
 

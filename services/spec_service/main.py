@@ -16,7 +16,6 @@ from services.spec_service.spec_generator import (
 )
 from services.spec_service.tools import REPO_ROOT, build_spec_tool_registry
 from shared.contracts.events import (
-    BaseEvent,
     EventType,
     SpecGeneratedPayload,
     TaskAssignedPayload,
@@ -32,9 +31,9 @@ from shared.observability.metrics import agent_execution_time, metrics_response
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
-    IdempotencyStore,
     build_repo_style_hints,
     guarded_http_get,
+    subscribe_typed_event,
     store_event,
 )
 
@@ -103,17 +102,15 @@ async def _consume_tasks() -> None:
     """
     Listen for task.assigned events and generate a spec/tests helper for each task.
     """
-    idem_store = IdempotencyStore()
-
-    async def handler(event: BaseEvent) -> None:
-        payload = TaskAssignedPayload.model_validate(event.payload)
+    async def on_payload(payload: TaskAssignedPayload) -> None:
         await _handle_task(payload)
 
-    await event_bus.subscribe(
+    await subscribe_typed_event(
+        event_bus=event_bus,
         queue_name="spec_service.tasks",
         routing_keys=[EventType.TASK_ASSIGNED.value],
-        handler=handler,
-        idempotency_store=idem_store,
+        payload_model=TaskAssignedPayload,
+        on_payload=on_payload,
         max_retries=3,
     )
 

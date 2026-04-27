@@ -47,7 +47,12 @@ from shared.policies import effective_mode, load_project_policy, policy_for_path
 from shared.prompt_locale import (
     security_memory_context_prefix,
 )
-from shared.utils import EventBus, IdempotencyStore, store_event
+from shared.utils import (
+    EventBus,
+    maybe_agent_delay,
+    store_event,
+    subscribe_typed_event,
+)
 
 SERVICE_NAME = "security_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -99,21 +104,17 @@ async def metrics():
     return metrics_response()
 
 async def _consume_pr_requests() -> None:
-    idem_store = IdempotencyStore(redis_url=cfg.redis_url)
-
-    async def handler(event: BaseEvent) -> None:
-        delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
-        if delay_sec > 0:
-            logger.info("Agent delay: waiting %ds before processing", delay_sec)
-            await asyncio.sleep(delay_sec)
-        payload = PRRequestedPayload.model_validate(event.payload)
+    async def on_payload(payload: PRRequestedPayload) -> None:
+        await maybe_agent_delay(logger)
         await _handle_security_scan(payload)
 
-    await event_bus.subscribe(
+    await subscribe_typed_event(
+        event_bus=event_bus,
         queue_name="security_service.pr_requests",
         routing_keys=[EventType.PR_REQUESTED.value],
-        handler=handler,
-        idempotency_store=idem_store,
+        payload_model=PRRequestedPayload,
+        on_payload=on_payload,
+        redis_url=cfg.redis_url,
         max_retries=3,
     )
 

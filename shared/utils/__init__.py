@@ -6,6 +6,7 @@ from shared.utils.memory_window import (
     build_short_term_memory_window,
     short_term_memory_event_limit,
 )
+from shared.utils.event_consumer import maybe_agent_delay, subscribe_typed_event
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from shared.utils.repo_style_hints import build_repo_style_hints
 
@@ -15,6 +16,8 @@ __all__ = [
     "build_short_term_memory_window",
     "short_term_memory_event_limit",
     "build_repo_style_hints",
+    "maybe_agent_delay",
+    "subscribe_typed_event",
     "store_event",
     "infer_framework_hint",
     "guarded_http_get",

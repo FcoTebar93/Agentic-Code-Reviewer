@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -29,13 +28,13 @@ from fastapi import FastAPI
 from services.qa_service.config import QAConfig
 from services.qa_service.handlers import QADeps, handle_code_review
 from services.qa_service.tools import build_qa_tool_registry
-from shared.contracts.events import BaseEvent, CodeGeneratedPayload, EventType
+from shared.contracts.events import CodeGeneratedPayload, EventType
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import metrics_response
 from shared.tools import ToolRegistry
-from shared.utils import EventBus, IdempotencyStore
+from shared.utils import EventBus, maybe_agent_delay, subscribe_typed_event
 
 SERVICE_NAME = "qa_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -97,14 +96,8 @@ async def metrics():
     return metrics_response()
 
 async def _consume_code_generated() -> None:
-    idem_store = IdempotencyStore(redis_url=cfg.redis_url)
-
-    async def handler(event: BaseEvent) -> None:
-        delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
-        if delay_sec > 0:
-            logger.info("Agent delay: waiting %ds before processing", delay_sec)
-            await asyncio.sleep(delay_sec)
-        payload = CodeGeneratedPayload.model_validate(event.payload)
+    async def on_payload(payload: CodeGeneratedPayload) -> None:
+        await maybe_agent_delay(logger)
         deps = QADeps(
             logger=logger,
             cfg=cfg,
@@ -117,11 +110,13 @@ async def _consume_code_generated() -> None:
         )
         await handle_code_review(payload, deps)
 
-    await event_bus.subscribe(
+    await subscribe_typed_event(
+        event_bus=event_bus,
         queue_name="qa_service.code_review",
         routing_keys=[EventType.CODE_GENERATED.value],
-        handler=handler,
-        idempotency_store=idem_store,
+        payload_model=CodeGeneratedPayload,
+        on_payload=on_payload,
+        redis_url=cfg.redis_url,
         max_retries=3,
     )
 

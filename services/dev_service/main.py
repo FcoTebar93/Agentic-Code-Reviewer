@@ -24,7 +24,6 @@ from services.dev_service.deterministic_gates import format_gate_command
 from services.dev_service.generator import generate_code, generate_code_with_tool_loop
 from services.dev_service.tools import REPO_ROOT, build_dev_tool_registry
 from shared.contracts.events import (
-    BaseEvent,
     CodeGeneratedPayload,
     EventType,
     SpecGeneratedPayload,
@@ -51,11 +50,12 @@ from shared.policies import (
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
-    IdempotencyStore,
     build_repo_style_hints,
     build_short_term_memory_window,
     guarded_http_get,
+    maybe_agent_delay,
     short_term_memory_event_limit,
+    subscribe_typed_event,
     store_event,
 )
 from shared.utils.code_change_guard import large_change_note
@@ -125,23 +125,17 @@ async def metrics():
     return metrics_response()
 
 async def _consume_tasks() -> None:
-    idem_store = IdempotencyStore(
-        redis_url=cfg.redis_url if hasattr(cfg, "redis_url") else None
-    )
-
-    async def handler(event: BaseEvent) -> None:
-        delay_sec = int(os.environ.get("AGENT_DELAY_SECONDS", "0"))
-        if delay_sec > 0:
-            logger.info("Agent delay: waiting %ds before processing", delay_sec)
-            await asyncio.sleep(delay_sec)
-        payload = TaskAssignedPayload.model_validate(event.payload)
+    async def on_payload(payload: TaskAssignedPayload) -> None:
+        await maybe_agent_delay(logger)
         await _handle_task(payload)
 
-    await event_bus.subscribe(
+    await subscribe_typed_event(
+        event_bus=event_bus,
         queue_name="dev_service.tasks",
         routing_keys=[EventType.TASK_ASSIGNED.value],
-        handler=handler,
-        idempotency_store=idem_store,
+        payload_model=TaskAssignedPayload,
+        on_payload=on_payload,
+        redis_url=cfg.redis_url if hasattr(cfg, "redis_url") else None,
         max_retries=3,
     )
 
