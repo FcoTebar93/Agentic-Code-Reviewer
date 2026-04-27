@@ -38,8 +38,9 @@ async def create_plan(
     try:
         key = plan_idempotency_key_gateway(request_body)
         now = time.monotonic()
-        if key in rt.plan_idem_cache:
-            cached_content, cached_at = rt.plan_idem_cache[key]
+        cached = rt.plan_idem_cache.get(key)
+        if cached:
+            cached_content, cached_at = cached
             if now - cached_at < PLAN_IDEM_TTL_SECONDS:
                 logger.info(
                     "Plan idempotent (same request within %ds), returning cached response",
@@ -108,9 +109,9 @@ async def get_events(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
 ):
     params: dict[str, str | int] = {"limit": limit}
-    if event_type:
+    if event_type is not None:
         params["event_type"] = event_type
-    if plan_id:
+    if plan_id is not None:
         params["plan_id"] = plan_id
     return await proxy_json_request(
         logger=logger,

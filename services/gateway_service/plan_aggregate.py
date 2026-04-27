@@ -376,17 +376,21 @@ def _build_plan_detail_json(
             )
 
     task_summaries: list[dict[str, Any]] = []
+    task_group_map: dict[str, str] = {}
     for t in tasks or []:
         tid = str(t.get("task_id", ""))
         history_list = code_history.get(tid) or []
         history_list.sort(key=lambda h: int(h.get("qa_attempt", 0) or 0))
         latest = history_list[-1] if history_list else {}
+        group_id = str(t.get("group_id", "") or "root")
+        if tid:
+            task_group_map[tid] = group_id
         task_summaries.append(
             {
                 "task_id": t.get("task_id"),
                 "file_path": t.get("file_path", ""),
                 "language": t.get("language", ""),
-                "group_id": t.get("group_id", ""),
+                "group_id": group_id,
                 "status": t.get("status", ""),
                 "qa_attempt": t.get("qa_attempt", 0),
                 "code": latest.get("code", ""),
@@ -404,11 +408,7 @@ def _build_plan_detail_json(
     for qa in qa_outcomes:
         task_id = str(qa.get("task_id") or "")
         severity = str(qa.get("severity_hint", "medium") or "medium")
-        group_id = "root"
-        for t in task_summaries:
-            if t.get("task_id") == task_id:
-                group_id = str(t.get("group_id", "") or "root")
-                break
+        group_id = task_group_map.get(task_id, "root")
         mod = modules_map.setdefault(group_id, {"group_id": group_id, **_MODULE_DEFAULTS})
         mod["qa_failed_count"] += 1
         current = str(mod.get("max_severity_hint", "low") or "low")

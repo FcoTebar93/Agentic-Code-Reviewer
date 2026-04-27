@@ -531,26 +531,24 @@ async def _fetch_original_plan_prompt(
             "limit": 1,
         },
     )
-    if resp is None:
-        return "", "", "en"
-    if resp.status_code != 200:
-        logger.warning(
-            "Failed to fetch original plan.created for %s (status=%s)",
-            plan_id[:8],
-            resp.status_code,
-        )
+    if resp is None or resp.status_code != 200:
+        if resp is not None:
+            logger.warning(
+                "Failed to fetch original plan.created for %s (status=%s)",
+                plan_id[:8],
+                resp.status_code,
+            )
         return "", "", "en"
     try:
         events = resp.json()
         if not isinstance(events, list) or not events:
             return "", "", "en"
-
-        evt = events[0]
-        payload = evt.get("payload") or {}
-        original_prompt = str(payload.get("original_prompt", "")).strip()
-        reasoning = str(payload.get("reasoning", "")).strip()
-        user_locale = str(payload.get("user_locale", "") or "en").strip() or "en"
-        return original_prompt, reasoning, user_locale
+        payload = (events[0] or {}).get("payload") or {}
+        return (
+            str(payload.get("original_prompt", "")).strip(),
+            str(payload.get("reasoning", "")).strip(),
+            str(payload.get("user_locale", "") or "en").strip() or "en",
+        )
     except Exception:
         logger.exception("Error while parsing original plan.created for %s", plan_id[:8])
         return "", "", "en"
@@ -572,14 +570,19 @@ async def _infer_repo_url_for_plan(plan_id: str) -> str:
         tasks = resp.json()
         if not isinstance(tasks, list) or not tasks:
             return ""
-        for t in tasks:
-            repo_url = t.get("repo_url") or ""
-            if isinstance(repo_url, str) and repo_url.strip():
-                return repo_url.strip()
-        return ""
+        return next(
+            (
+                repo_url.strip()
+                for t in tasks
+                for repo_url in [t.get("repo_url") or ""]
+                if isinstance(repo_url, str) and repo_url.strip()
+            ),
+            "",
+        )
     except Exception:
         logger.exception("Error while parsing tasks for plan %s", plan_id[:8])
         return ""
+
 
 async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
     global tool_registry
@@ -655,11 +658,7 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
                     lines
                 )
 
-        if patterns_summary:
-            if summary.strip():
-                return summary + "\n\n" + patterns_summary
-            return patterns_summary
-        return summary
+        return (summary + "\n\n" + patterns_summary) if patterns_summary and summary.strip() else (patterns_summary or summary)
     except Exception:
         logger.exception("Failed to fetch memory context from memory_service")
         return ""
