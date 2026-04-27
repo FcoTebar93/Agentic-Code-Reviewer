@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from shared.utils.env import env_bool, env_float, env_int, env_str
+
 
 @dataclass(frozen=True)
 class DevConfig:
@@ -44,37 +46,30 @@ class DevConfig:
         return cls(
             rabbitmq_url=os.environ["RABBITMQ_URL"],
             memory_service_url=os.environ["MEMORY_SERVICE_URL"],
-            llm_provider=os.environ.get("DEV_LLM_PROVIDER", os.environ.get("LLM_PROVIDER", "mock")),
-            log_level=os.environ.get("LOG_LEVEL", "INFO"),
-            redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
-            step_delay=os.environ.get("AGENT_STEP_DELAY", "0"),
-            agent_name=os.environ.get("AGENT_NAME", "dev_agent"),
-            agent_goal=os.environ.get(
+            llm_provider=env_str(
+                "DEV_LLM_PROVIDER", env_str("LLM_PROVIDER", "mock")
+            ),
+            log_level=env_str("LOG_LEVEL", "INFO"),
+            redis_url=env_str("REDIS_URL", "redis://redis:6379/0"),
+            step_delay=env_str("AGENT_STEP_DELAY", "0"),
+            agent_name=env_str("AGENT_NAME", "dev_agent"),
+            agent_goal=env_str(
                 "AGENT_GOAL",
                 "Escribir código de producción fiel al plan y fácil de mantener.",
             ),
-            token_budget_per_task=int(os.environ.get("TOKEN_BUDGET_PER_TASK", "20000")),
-            strategy=os.environ.get("AGENT_STRATEGY", "implementation"),
-            enable_auto_tests=os.environ.get("DEV_ENABLE_AUTO_TESTS", "false").lower()
-            in ("1", "true", "yes"),
-            enable_auto_lints=os.environ.get("DEV_ENABLE_AUTO_LINTS", "false").lower()
-            in ("1", "true", "yes"),
-            test_command_javascript=os.environ.get("DEV_TEST_COMMAND_JAVASCRIPT", ""),
-            test_command_typescript=os.environ.get("DEV_TEST_COMMAND_TYPESCRIPT", ""),
-            test_command_java=os.environ.get("DEV_TEST_COMMAND_JAVA", ""),
-            enable_tool_loop=os.environ.get("DEV_ENABLE_TOOL_LOOP", "false").lower()
-            in ("1", "true", "yes"),
-            tool_loop_max_steps=int(os.environ.get("DEV_TOOL_LOOP_MAX_STEPS", "8")),
-            tool_loop_include_ci_tools=os.environ.get(
-                "DEV_TOOL_LOOP_INCLUDE_CI_TOOLS", "false"
-            ).lower()
-            in ("1", "true", "yes"),
-            large_diff_warn_enabled=os.environ.get("DEV_LARGE_DIFF_WARN", "true").lower()
-            in ("1", "true", "yes"),
-            large_diff_soft_lines=int(os.environ.get("DEV_LARGE_DIFF_LINE_SOFT", "120")),
-            large_diff_similarity=float(
-                os.environ.get("DEV_LARGE_DIFF_SIMILARITY", "0.52")
-            ),
+            token_budget_per_task=env_int("TOKEN_BUDGET_PER_TASK", 20000),
+            strategy=env_str("AGENT_STRATEGY", "implementation"),
+            enable_auto_tests=env_bool("DEV_ENABLE_AUTO_TESTS"),
+            enable_auto_lints=env_bool("DEV_ENABLE_AUTO_LINTS"),
+            test_command_javascript=env_str("DEV_TEST_COMMAND_JAVASCRIPT", ""),
+            test_command_typescript=env_str("DEV_TEST_COMMAND_TYPESCRIPT", ""),
+            test_command_java=env_str("DEV_TEST_COMMAND_JAVA", ""),
+            enable_tool_loop=env_bool("DEV_ENABLE_TOOL_LOOP"),
+            tool_loop_max_steps=env_int("DEV_TOOL_LOOP_MAX_STEPS", 8),
+            tool_loop_include_ci_tools=env_bool("DEV_TOOL_LOOP_INCLUDE_CI_TOOLS"),
+            large_diff_warn_enabled=env_bool("DEV_LARGE_DIFF_WARN", True),
+            large_diff_soft_lines=env_int("DEV_LARGE_DIFF_LINE_SOFT", 120),
+            large_diff_similarity=env_float("DEV_LARGE_DIFF_SIMILARITY", 0.52),
             spec_wait_max_seconds=float(
                 os.environ.get("DEV_SPEC_WAIT_MAX_SECONDS", "10") or 0
             ),
@@ -92,20 +87,16 @@ class DevConfig:
             ),
             auto_gates_scoped=os.environ.get("DEV_AUTO_GATES_SCOPED", "true").lower()
             in ("1", "true", "yes"),
-            lint_python_scoped_template=os.environ.get(
+            lint_python_scoped_template=env_str(
                 "DEV_LINT_PYTHON_SCOPED", "ruff check {file}"
             ),
-            lint_python_wide_template=os.environ.get(
-                "DEV_LINT_PYTHON_WIDE", "ruff check ."
-            ),
-            test_python_template=os.environ.get("DEV_TEST_COMMAND_PYTHON", "pytest -q"),
+            lint_python_wide_template=env_str("DEV_LINT_PYTHON_WIDE", "ruff check ."),
+            test_python_template=env_str("DEV_TEST_COMMAND_PYTHON", "pytest -q"),
             enable_auto_typecheck=os.environ.get(
                 "DEV_ENABLE_AUTO_TYPECHECK", "false"
             ).lower()
             in ("1", "true", "yes"),
-            typecheck_python_template=os.environ.get(
-                "DEV_TYPECHECK_COMMAND_PYTHON", ""
-            ),
+            typecheck_python_template=env_str("DEV_TYPECHECK_COMMAND_PYTHON", ""),
             auto_gates_timeout_seconds=max(
                 15.0,
                 float(os.environ.get("DEV_AUTO_GATES_TIMEOUT_SECONDS", "180") or 180),

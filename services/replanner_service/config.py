@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from shared.utils.env import env_bool, env_int, env_str
+
 
 @dataclass(frozen=True)
 class ReplannerConfig:
@@ -23,25 +25,20 @@ class ReplannerConfig:
         return cls(
             rabbitmq_url=os.environ["RABBITMQ_URL"],
             memory_service_url=os.environ["MEMORY_SERVICE_URL"],
-            redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
-            llm_provider=os.environ.get(
+            redis_url=env_str("REDIS_URL", "redis://redis:6379/0"),
+            llm_provider=env_str(
                 "REPLANNER_LLM_PROVIDER",
-                os.environ.get("LLM_PROVIDER", "mock"),
+                env_str("LLM_PROVIDER", "mock"),
             ),
-            log_level=os.environ.get("LOG_LEVEL", "INFO"),
-            agent_name=os.environ.get("AGENT_NAME", "replanner_agent"),
-            agent_goal=os.environ.get(
+            log_level=env_str("LOG_LEVEL", "INFO"),
+            agent_name=env_str("AGENT_NAME", "replanner_agent"),
+            agent_goal=env_str(
                 "AGENT_GOAL",
                 "Revisar planes existentes a la luz de fallos de QA y seguridad, proponiendo ajustes mínimos y seguros.",
             ),
-            token_budget_per_plan=int(os.environ.get("TOKEN_BUDGET_PER_PLAN", "30000")),
-            strategy=os.environ.get("AGENT_STRATEGY", "critic_replanning"),
-            enable_tool_loop=os.environ.get(
-                "REPLANNER_ENABLE_TOOL_LOOP", "false"
-            ).lower()
-            in ("1", "true", "yes"),
-            tool_loop_max_steps=int(
-                os.environ.get("REPLANNER_TOOL_LOOP_MAX_STEPS", "8")
-            ),
+            token_budget_per_plan=env_int("TOKEN_BUDGET_PER_PLAN", 30000),
+            strategy=env_str("AGENT_STRATEGY", "critic_replanning"),
+            enable_tool_loop=env_bool("REPLANNER_ENABLE_TOOL_LOOP"),
+            tool_loop_max_steps=env_int("REPLANNER_TOOL_LOOP_MAX_STEPS", 8),
         )
 

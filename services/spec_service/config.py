@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from shared.utils.env import env_bool, env_int, env_str
+
 
 @dataclass(frozen=True)
 class SpecConfig:
@@ -23,25 +25,20 @@ class SpecConfig:
         return cls(
             rabbitmq_url=os.environ["RABBITMQ_URL"],
             memory_service_url=os.environ["MEMORY_SERVICE_URL"],
-            llm_provider=os.environ.get(
+            llm_provider=env_str(
                 "SPEC_LLM_PROVIDER",
-                os.environ.get("LLM_PROVIDER", "mock"),
+                env_str("LLM_PROVIDER", "mock"),
             ),
-            log_level=os.environ.get("LOG_LEVEL", "INFO"),
-            redis_url=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
-            agent_name=os.environ.get("AGENT_NAME", "spec_agent"),
-            agent_goal=os.environ.get(
+            log_level=env_str("LOG_LEVEL", "INFO"),
+            redis_url=env_str("REDIS_URL", "redis://redis:6379/0"),
+            agent_name=env_str("AGENT_NAME", "spec_agent"),
+            agent_goal=env_str(
                 "AGENT_GOAL",
                 "Enriquecer las tareas con especificaciones claras y tests sugeridos antes de que el dev_service genere código.",
             ),
-            token_budget_per_task=int(
-                os.environ.get("SPEC_TOKEN_BUDGET_PER_TASK", "8000")
-            ),
-            strategy=os.environ.get("AGENT_STRATEGY", "spec_and_tests"),
-            enable_tool_loop=os.environ.get("SPEC_ENABLE_TOOL_LOOP", "false").lower()
-            in ("1", "true", "yes"),
-            tool_loop_max_steps=int(
-                os.environ.get("SPEC_TOOL_LOOP_MAX_STEPS", "8")
-            ),
+            token_budget_per_task=env_int("SPEC_TOKEN_BUDGET_PER_TASK", 8000),
+            strategy=env_str("AGENT_STRATEGY", "spec_and_tests"),
+            enable_tool_loop=env_bool("SPEC_ENABLE_TOOL_LOOP"),
+            tool_loop_max_steps=env_int("SPEC_TOOL_LOOP_MAX_STEPS", 8),
         )
 
