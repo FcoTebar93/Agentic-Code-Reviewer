@@ -85,7 +85,7 @@ def _summarise_planner_memory(
     events: list[dict] | None,
     max_lines: int = 8,
 ) -> str:
-        """Build compact planner memory summary from semantic results and events."""
+    """Build compact planner memory summary from semantic results and events."""
     semantic_results = semantic_results or []
     events = events or []
 
@@ -559,7 +559,7 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
 async def _fetch_original_plan_prompt(
     plan_id: str,
 ) -> tuple[str, str, str]:
-        """Get original prompt, planner reasoning, and user_locale for a plan."""
+    """Get original prompt, planner reasoning, and user_locale for a plan."""
     if http_client is None:
         return "", "", "en"
 

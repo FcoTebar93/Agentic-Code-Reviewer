@@ -141,7 +141,7 @@ async def run_ask_agent(
     semantic_limit: int = 10,
     events_limit: int = 20,
 ) -> tuple[str, list[dict[str, Any]], int, int]:
-        """Returns (answer_markdown_plain, sources, prompt_tokens, completion_tokens)."""
+    """Returns (answer_markdown_plain, sources, prompt_tokens, completion_tokens)."""
     q = (question or "").strip()
     if not q:
         return (
