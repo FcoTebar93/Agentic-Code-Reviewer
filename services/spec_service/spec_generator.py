@@ -1,6 +1,4 @@
-"""
-LLM spec generation: single-shot or multi-turn with repository tools.
-"""
+"""LLM spec generation: single-shot or multi-turn with repository tools."""
 
 from __future__ import annotations
 

@@ -141,12 +141,7 @@ def _search_in_file(
 
 
 def search_in_repo_tool(args: SearchInRepoInput) -> dict[str, Any]:
-    """
-    Buscar un patrón de texto/regex en los archivos del repositorio.
-
-    Útil para que el agente de SPEC vea usos existentes de un módulo/función
-    y proponga specs/tests consistentes con el estilo del proyecto.
-    """
+    """Buscar un patrón de texto/regex en los archivos del repositorio."""
     base_dir = _safe_join(args.directory)
     if not base_dir.exists() or not base_dir.is_dir():
         return {"directory": str(base_dir), "matches": []}
@@ -172,10 +167,7 @@ def search_in_repo_tool(args: SearchInRepoInput) -> dict[str, Any]:
 
 
 def build_spec_tool_registry() -> ToolRegistry:
-    """
-    ToolRegistry para spec_service: acceso ligero al repo
-    (lectura de archivos, listado de ficheros y búsqueda simple).
-    """
+    """ToolRegistry para spec_service: acceso ligero al repo."""
     registry = ToolRegistry()
 
     registry.register(

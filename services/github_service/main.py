@@ -1,15 +1,4 @@
-"""
-GitHub Service -- materializes generated code into a repository.
-
-Phase 3 HITL change: now consumes pr.human_approved events instead of
-security.approved. The gateway_service holds security.approved events
-until a human reviews and approves them via the frontend. Only after
-explicit human approval does pr.human_approved reach this service.
-
-Pipeline role:
-  security_service -> [security.approved] -> gateway_service (HITL)
-  human approves -> [pr.human_approved] -> github_service -> [pr.created]
-"""
+"""GitHub Service -- materializes generated code into a repository."""
 
 from __future__ import annotations
 
@@ -124,10 +113,7 @@ async def workspace_info(x_workspace_token: str | None = Header(default=None)):
 
 
 async def _consume_human_approved() -> None:
-    """
-    Consume pr.human_approved events published by the gateway after
-    a human reviewer clicks Approve in the frontend.
-    """
+    """Consume pr.human_approved events published by the gateway after."""
     async def on_payload(approval: PrApprovalPayload) -> None:
         if approval.decision != "approved" or not approval.pr_context:
             logger.warning(

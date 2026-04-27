@@ -1,9 +1,4 @@
-"""
-Memory Service -- unified facade over PostgreSQL, Qdrant, and Redis.
-
-Other services interact with memory exclusively through this service's
-HTTP API. No direct database access from outside.
-"""
+"""Memory Service -- unified facade over PostgreSQL, Qdrant, and Redis."""
 
 from __future__ import annotations
 
@@ -191,16 +186,7 @@ class FailurePatternsResponse(BaseModel):
 
 @app.post("/semantic/search")
 async def semantic_search(req: SemanticSearchRequest):
-    """
-    Semantic retrieval over the unified memory store.
-
-    Returns memories ordered by a heuristic score that combines:
-    - vector similarity
-    - importance
-    - recency
-    - frequency
-    - impact on decisions
-    """
+    """Semantic retrieval over the unified memory store."""
     s = _get_store()
     results = await s.semantic_search(
         query=req.query,
@@ -213,10 +199,7 @@ async def semantic_search(req: SemanticSearchRequest):
 
 @app.get("/patterns/failures")
 async def failure_patterns(limit: int = 200):
-    """
-    Devuelve patrones agregados de fallos históricos (qa.failed, security.blocked)
-    agrupados por módulo aproximado (carpetas iniciales del file_path).
-    """
+    """Devuelve patrones agregados de fallos históricos (qa.failed, security.blocked)."""
     s = _get_store()
     raw = await s.get_failure_patterns(limit_per_kind=limit)
     patterns = [FailurePatternsResponse(**p) for p in raw]

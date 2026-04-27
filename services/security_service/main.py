@@ -1,14 +1,4 @@
-"""
-Security Service -- last gate before code reaches GitHub.
-
-Pipeline role:
-  qa_service -> [pr.requested] -> security_service -> [security.approved] -> github_service
-                                                    -> [security.blocked]  -> (pipeline stopped)
-
-On approval: re-publishes the original pr.requested payload enriched with
-             security_approved=True as a security.approved event.
-On block: publishes security.blocked and stores the result in memory_service.
-"""
+"""Security Service -- last gate before code reaches GitHub."""
 
 from __future__ import annotations
 
@@ -237,15 +227,7 @@ async def _handle_security_scan(payload: PRRequestedPayload) -> None:
 
 
 async def _fetch_security_memory_context(plan_id: str, limit: int = 5) -> str:
-    """
-    Retrieve a small set of past security-related memories for this plan
-    (or globally if plan-specific events are not present), to be attached
-    later to pipeline conclusions or external dashboards.
-
-    Note: the core scanner is intentionally deterministic and does not use
-    the LLM; this context is mainly for observability and potential future
-    human review.
-    """
+    """Retrieve a small set of past security-related memories for this plan."""
     if http_client is None:
         return ""
 

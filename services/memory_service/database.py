@@ -1,8 +1,4 @@
-"""
-SQLAlchemy async engine & session factory for structured memory.
-
-Creates the event_log and task_state tables on startup.
-"""
+"""SQLAlchemy async engine & session factory for structured memory."""
 
 from __future__ import annotations
 
