@@ -1,31 +1,4 @@
-"""
-ADMADC CLI — lightweight client for the gateway API.
-
-Usage:
-  python scripts/admadc_cli.py status
-  python scripts/admadc_cli.py plan --prompt "Add a health endpoint" [--mode save]
-  python scripts/admadc_cli.py ask --question "What patterns appear in QA failures?" [--plan-id UUID]
-  python scripts/admadc_cli.py events [--limit 20]
-  python scripts/admadc_cli.py tasks <plan_id>
-  python scripts/admadc_cli.py metrics <plan_id>
-  python scripts/admadc_cli.py approvals
-  python scripts/admadc_cli.py approve <approval_id>
-  python scripts/admadc_cli.py reject <approval_id>
-  python scripts/admadc_cli.py replan --payload '{"original_plan_id":"...", ...}'
-
-Environment:
-  ADMADC_GATEWAY_URL  Base URL for the gateway (default: http://localhost:8080)
-
-Config file (optional, for profiles):
-  ~/.admadc/config.json
-    {
-      "default_profile": "local",
-      "profiles": {
-        "local":  { "base": "http://localhost:8080" },
-        "staging": { "base": "https://staging-gateway.example.com" }
-      }
-    }
-"""
+"""ADMADC CLI — lightweight client for the gateway API."""
 
 from __future__ import annotations
 
@@ -53,13 +26,7 @@ def _get_client(base: str, timeout: float = 30.0) -> httpx.Client:
 
 
 def _build_ws_url(base: str) -> str:
-    """
-    Convert the HTTP base URL into a WebSocket URL for /ws.
-
-    Examples:
-      http://localhost:8080 -> ws://localhost:8080/ws
-      https://example.com   -> wss://example.com/ws
-    """
+    """Convert the HTTP base URL into a WebSocket URL for /ws."""
     parsed = urlparse(base)
     scheme = "wss" if parsed.scheme == "https" else "ws"
     path = "/ws"
@@ -67,15 +34,7 @@ def _build_ws_url(base: str) -> str:
 
 
 def _load_base_from_profile(profile: str | None, base_arg: str | None) -> str:
-    """
-    Resolve the final base URL combining configuration and flags.
-
-    Priority order:
-    1) If --profile is provided, use profiles[profile].base from ~/.admadc/config.json.
-    2) Else, if ~/.admadc/config.json has "default_profile", use that profile's base.
-    3) Else, fall back to --base (if provided).
-    4) Else, fall back to DEFAULT_BASE / ADMADC_GATEWAY_URL.
-    """
+    """Resolve the final base URL combining configuration and flags."""
     cfg: dict[str, Any] | None = None
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -123,11 +82,7 @@ def _load_base_from_profile(profile: str | None, base_arg: str | None) -> str:
 
 
 def _build_service_url(base: str, port: int) -> str:
-    """
-    Build a service URL (http://host:port) reusing the host/scheme from the gateway base URL.
-
-    This assumes the default docker-compose deployment (ports 8001..8007, 8003, 8004, 8005, 8006).
-    """
+    """Build a service URL (http://host:port) reusing the host/scheme from the gateway base URL."""
     parsed = urlparse(base)
     host = parsed.hostname or "localhost"
     scheme = parsed.scheme or "http"
@@ -350,9 +305,7 @@ def cmd_replan(base: str, payload: dict) -> None:
 
 
 def cmd_health(base: str) -> None:
-    """
-    Query /health for the gateway and core services (default ports).
-    """
+    """Query /health for the gateway and core services (default ports)."""
     services = {
         "gateway": base.rstrip("/"),
         "meta_planner": _build_service_url(base, 8001),
@@ -380,13 +333,7 @@ def cmd_health(base: str) -> None:
 
 
 def cmd_doctor(base: str) -> None:
-    """
-    Quick health diagnostic for the platform.
-
-    - Prints the effective gateway base URL.
-    - Shows gateway status (/api/status).
-    - Runs cmd_health for /health on the core services.
-    """
+    """Quick health diagnostic for the platform."""
     print(f"# ADMADC doctor\n# Gateway base: {base}\n")
 
     print("## Gateway /api/status\n")
@@ -478,21 +425,7 @@ async def _watch_plan_async(
 
 
 def cmd_shell(base: str) -> None:
-    """
-    Minimal interactive shell so you don't have to repeat flags.
-
-    Commands (type 'help' inside the shell for a summary):
-      status
-      plan <prompt...>
-      events [plan_id]
-      tasks <plan_id>
-      metrics [plan_id]
-      approvals
-      approve <approval_id>
-      reject <approval_id>
-      watch-plan [plan_id]
-      quit / exit
-    """
+    """Minimal interactive shell so you don't have to repeat flags."""
     last_plan_id: str | None = None
     print(f"# ADMADC shell (base={base})")
     print("# Type 'help' for commands, 'quit' or 'exit' to leave.\n")
