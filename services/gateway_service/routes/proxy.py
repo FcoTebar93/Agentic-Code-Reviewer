@@ -10,7 +10,11 @@ from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import PLAN_IDEM_TTL_SECONDS, SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
-from services.gateway_service.http_helpers import parse_json_response, proxy_json_request
+from services.gateway_service.http_helpers import (
+    error_response,
+    parse_json_response,
+    proxy_json_request,
+)
 from services.gateway_service.plan_aggregate import (
     aggregate_plan_metrics,
     build_plan_detail_json_response,
@@ -54,7 +58,7 @@ async def create_plan(
         return JSONResponse(content=content, status_code=resp.status_code)
     except Exception as exc:
         logger.exception("Failed to proxy /api/plan")
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return error_response(str(exc), status_code=502)
 
 
 @router.post("/agent_ask")
@@ -81,10 +85,7 @@ async def confirm_replan(
     try:
         payload = PlanRevisionPayload.model_validate(request_body)
     except Exception as exc:
-        return JSONResponse(
-            content={"error": f"Invalid PlanRevisionPayload: {exc}"},
-            status_code=400,
-        )
+        return error_response(f"Invalid PlanRevisionPayload: {exc}", status_code=400)
 
     event = plan_revision_confirmed(SERVICE_NAME, payload)
     await rt.event_bus.publish(event)

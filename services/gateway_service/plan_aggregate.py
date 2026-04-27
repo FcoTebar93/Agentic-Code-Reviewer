@@ -10,6 +10,7 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import SERVICE_NAME
+from services.gateway_service.http_helpers import error_response
 from services.gateway_service.runtime import GatewayRuntime
 from shared.contracts.events import EventType
 
@@ -121,7 +122,7 @@ async def aggregate_plan_metrics(
         }
     except Exception as exc:
         logger.exception("Failed to get plan_metrics for %s", plan_id[:8])
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return error_response(str(exc), status_code=502)
 
 
 async def build_plan_detail_json_response(
@@ -166,7 +167,7 @@ async def build_plan_detail_json_response(
         return JSONResponse(content=detail, status_code=200)
     except Exception as exc:
         logger.exception("Failed to build plan_detail for %s", plan_id[:8])
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return error_response(str(exc), status_code=502)
 
 
 def _aggregate_token_usage(

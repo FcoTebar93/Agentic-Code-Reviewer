@@ -5,10 +5,10 @@ import logging
 import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
+from services.gateway_service.http_helpers import error_response
 from services.gateway_service.runtime import GatewayRuntime
 from shared.contracts.events import pr_human_approved, pr_human_rejected
 from shared.observability.metrics import approvals_access_denied
@@ -157,8 +157,8 @@ async def approve_pr(
     _enforce_approvals_rate_limit(rt, f"approve:{approval_id}", action="approve")
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
-        return JSONResponse(
-            content={"error": f"Approval {approval_id} not found or already decided"},
+        return error_response(
+            f"Approval {approval_id} not found or already decided",
             status_code=404,
         )
 
@@ -193,8 +193,8 @@ async def reject_pr(
     _enforce_approvals_rate_limit(rt, f"reject:{approval_id}", action="reject")
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
-        return JSONResponse(
-            content={"error": f"Approval {approval_id} not found or already decided"},
+        return error_response(
+            f"Approval {approval_id} not found or already decided",
             status_code=404,
         )
 

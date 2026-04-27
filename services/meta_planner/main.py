@@ -69,6 +69,12 @@ _MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN = int(
 _replans_per_original_plan: dict[str, int] = {}
 
 
+def _error_response(status_code: int, detail: str, **extra: Any) -> JSONResponse:
+    payload: dict[str, Any] = {"detail": detail}
+    payload.update(extra)
+    return JSONResponse(status_code=status_code, content=payload)
+
+
 def _summarise_planner_memory(
     semantic_results: list[dict] | None,
     events: list[dict] | None,
@@ -225,23 +231,19 @@ async def create_plan(req: PlanRequest):
         )
         if is_rate_limit:
             logger.warning("LLM rate limit (429): %s", err_str[:200])
-            return JSONResponse(
-                status_code=429,
-                content={
-                    "detail": "Límite de uso del LLM alcanzado (rate limit). Espera unos minutos o cambia de proveedor.",
-                    "hint": "Groq free tier: 100k tokens/día. Puedes usar LLM_PROVIDER=gemini o LLM_PROVIDER=local (Ollama) mientras tanto.",
-                    "error": err_str[:500],
-                    "error_type": type(e).__name__,
-                },
+            return _error_response(
+                429,
+                "Límite de uso del LLM alcanzado (rate limit). Espera unos minutos o cambia de proveedor.",
+                hint="Groq free tier: 100k tokens/día. Puedes usar LLM_PROVIDER=gemini o LLM_PROVIDER=local (Ollama) mientras tanto.",
+                error=err_str[:500],
+                error_type=type(e).__name__,
             )
         logger.exception("Plan execution failed")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "Plan execution failed",
-                "error": err_str,
-                "error_type": type(e).__name__,
-            },
+        return _error_response(
+            500,
+            "Plan execution failed",
+            error=err_str,
+            error_type=type(e).__name__,
         )
 
 
@@ -250,16 +252,10 @@ async def agent_ask(req: AskRequest):
     """Answer questions using semantic memory and optional plan-scoped events."""
     global http_client, cfg
     if http_client is None or cfg is None:
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "Service not ready"},
-        )
+        return _error_response(503, "Service not ready")
     q = (req.question or "").strip()
     if not q:
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "question must be non-empty"},
-        )
+        return _error_response(400, "question must be non-empty")
     try:
         llm = get_llm_provider(provider_name=cfg.llm_provider)
         answer, sources, pt, ct = await run_ask_agent(
@@ -280,13 +276,11 @@ async def agent_ask(req: AskRequest):
         )
     except Exception as e:
         logger.exception("agent ask failed")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "Agent ask failed",
-                "error": str(e),
-                "error_type": type(e).__name__,
-            },
+        return _error_response(
+            500,
+            "Agent ask failed",
+            error=str(e),
+            error_type=type(e).__name__,
         )
 
 
