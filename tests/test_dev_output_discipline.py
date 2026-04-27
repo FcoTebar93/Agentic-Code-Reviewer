@@ -1,5 +1,4 @@
 """Regresión: prompts del dev incluyen disciplina de parche y una sola salida CODE."""
-
 from __future__ import annotations
 
 from services.dev_service.prompts import (

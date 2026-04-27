@@ -1,5 +1,4 @@
 """Claves de deduplicación del consumidor RabbitMQ."""
-
 from __future__ import annotations
 
 from shared.contracts.events import BaseEvent, EventType
