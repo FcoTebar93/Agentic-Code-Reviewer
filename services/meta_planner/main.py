@@ -48,6 +48,7 @@ from shared.tools import ToolRegistry, execute_tool
 from shared.utils.path_grouping import infer_group_id
 from shared.utils import (
     EventBus,
+    guarded_http_get,
     maybe_agent_delay,
     store_event,
     subscribe_typed_event,
@@ -531,23 +532,27 @@ async def _fetch_original_plan_prompt(
     if http_client is None:
         return "", "", "en"
 
-    try:
-        resp = await http_client.get(
-            "/events",
-            params={
-                "event_type": "plan.created",
-                "plan_id": plan_id,
-                "limit": 1,
-            },
+    resp = await guarded_http_get(
+        http_client,
+        "/events",
+        logger,
+        key="memory_service:/events",
+        params={
+            "event_type": "plan.created",
+            "plan_id": plan_id,
+            "limit": 1,
+        },
+    )
+    if resp is None:
+        return "", "", "en"
+    if resp.status_code != 200:
+        logger.warning(
+            "Failed to fetch original plan.created for %s (status=%s)",
+            plan_id[:8],
+            resp.status_code,
         )
-        if resp.status_code != 200:
-            logger.warning(
-                "Failed to fetch original plan.created for %s (status=%s)",
-                plan_id[:8],
-                resp.status_code,
-            )
-            return "", "", "en"
-
+        return "", "", "en"
+    try:
         events = resp.json()
         if not isinstance(events, list) or not events:
             return "", "", "en"
@@ -559,10 +564,7 @@ async def _fetch_original_plan_prompt(
         user_locale = str(payload.get("user_locale", "") or "en").strip() or "en"
         return original_prompt, reasoning, user_locale
     except Exception:
-        logger.exception(
-            "Error while fetching original plan.created for %s",
-            plan_id[:8],
-        )
+        logger.exception("Error while parsing original plan.created for %s", plan_id[:8])
         return "", "", "en"
 
 
@@ -571,10 +573,15 @@ async def _infer_repo_url_for_plan(plan_id: str) -> str:
     if http_client is None:
         return ""
 
+    resp = await guarded_http_get(
+        http_client,
+        f"/tasks/{plan_id}",
+        logger,
+        key="memory_service:/tasks",
+    )
+    if resp is None or resp.status_code != 200:
+        return ""
     try:
-        resp = await http_client.get(f"/tasks/{plan_id}")
-        if resp.status_code != 200:
-            return ""
         tasks = resp.json()
         if not isinstance(tasks, list) or not tasks:
             return ""
@@ -584,10 +591,7 @@ async def _infer_repo_url_for_plan(plan_id: str) -> str:
                 return repo_url.strip()
         return ""
     except Exception:
-        logger.exception(
-            "Error while inferring repo_url for plan %s",
-            plan_id[:8],
-        )
+        logger.exception("Error while parsing tasks for plan %s", plan_id[:8])
         return ""
 
 async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:

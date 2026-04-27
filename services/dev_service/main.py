@@ -213,16 +213,18 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         )
 
         current_attempt = 0
-        try:
-            resp = await http_client.get(f"/tasks/{plan_id}")
-            if resp.status_code == 200:
-                tasks = resp.json()
-                for t in tasks:
-                    if t["task_id"] == task.task_id:
-                        current_attempt = t.get("qa_attempt", 0)
-                        break
-        except Exception:
-            pass
+        resp = await guarded_http_get(
+            http_client,
+            f"/tasks/{plan_id}",
+            logger,
+            key="memory_service:/tasks",
+        )
+        if resp is not None and resp.status_code == 200:
+            tasks = resp.json()
+            for t in tasks:
+                if t["task_id"] == task.task_id:
+                    current_attempt = t.get("qa_attempt", 0)
+                    break
 
         run_tests = path_policy.get("enable_auto_tests", True)
         run_lints = path_policy.get("enable_auto_lints", True)
@@ -338,53 +340,58 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str) -> bool:
     """Apply defensive idempotency rules before processing a task."""
     has_feedback = bool((qa_feedback or "").strip())
-    try:
-        resp_tasks = await http_client.get(f"/tasks/{plan_id}")
-        if resp_tasks.status_code == 200:
-            tasks = resp_tasks.json() if isinstance(resp_tasks.json(), list) else []
-            existing_status: str | None = None
-            for t in tasks:
-                if t.get("task_id") == task.task_id:
-                    existing_status = str(t.get("status") or "")
-                    break
+    resp_tasks = await guarded_http_get(
+        http_client,
+        f"/tasks/{plan_id}",
+        logger,
+        key="memory_service:/tasks",
+    )
+    if resp_tasks is not None and resp_tasks.status_code == 200:
+        tasks = resp_tasks.json() if isinstance(resp_tasks.json(), list) else []
+        existing_status: str | None = None
+        for t in tasks:
+            if t.get("task_id") == task.task_id:
+                existing_status = str(t.get("status") or "")
+                break
 
-            if existing_status is not None:
-                if not has_feedback:
+        if existing_status is not None:
+            if not has_feedback:
+                logger.info(
+                    "Task %s already has task state '%s', skipping original assignment (idempotent)",
+                    task.task_id[:8],
+                    existing_status,
+                )
+                return True
+            if existing_status in {"qa_passed", "qa_failed"}:
+                logger.info(
+                    "Task %s already finished with status '%s', skipping QA retry (idempotent)",
+                    task.task_id[:8],
+                    existing_status,
+                )
+                return True
+
+    if not has_feedback:
+        resp_events = await guarded_http_get(
+            http_client,
+            "/events",
+            logger,
+            key="memory_service:/events",
+            params={
+                "plan_id": plan_id,
+                "event_type": EventType.CODE_GENERATED.value,
+                "limit": 100,
+            },
+        )
+        if resp_events is not None and resp_events.status_code == 200:
+            events = resp_events.json() if isinstance(resp_events.json(), list) else []
+            for ev in events:
+                ev_payload = ev.get("payload") or {}
+                if ev_payload.get("task_id") == task.task_id:
                     logger.info(
-                        "Task %s already has task state '%s', skipping original assignment (idempotent)",
+                        "Task %s already has code.generated event, skipping (idempotent)",
                         task.task_id[:8],
-                        existing_status,
                     )
                     return True
-                if existing_status in {"qa_passed", "qa_failed"}:
-                    logger.info(
-                        "Task %s already finished with status '%s', skipping QA retry (idempotent)",
-                        task.task_id[:8],
-                        existing_status,
-                    )
-                    return True
-
-        if not has_feedback:
-            resp_events = await http_client.get(
-                "/events",
-                params={
-                    "plan_id": plan_id,
-                    "event_type": EventType.CODE_GENERATED.value,
-                    "limit": 100,
-                },
-            )
-            if resp_events.status_code == 200:
-                events = resp_events.json() if isinstance(resp_events.json(), list) else []
-                for ev in events:
-                    ev_payload = ev.get("payload") or {}
-                    if ev_payload.get("task_id") == task.task_id:
-                        logger.info(
-                            "Task %s already has code.generated event, skipping (idempotent)",
-                            task.task_id[:8],
-                        )
-                        return True
-    except Exception:
-        logger.warning("Idempotency pre-check failed for task %s", task.task_id[:8])
     return False
 
 
