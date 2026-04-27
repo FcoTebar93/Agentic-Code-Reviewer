@@ -266,7 +266,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             else ""
         )
         tests_summary = (
-            await _maybe_run_auto_tests(task, mode, gate_timeout)
+            await _maybe_run_auto_tests(task, gate_timeout)
             if run_tests
             else ""
         )
@@ -419,30 +419,13 @@ async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str
     return False
 
 
-async def _maybe_run_auto_tests(
-    task, mode: str, timeout_s: float
-) -> str:
-    """
-    Optionally run configured automated tests for the task's language.
-
-    Returns a short human-readable summary, or an empty string if tests
-    are disabled or fail in a non-critical way.
-    """
+async def _maybe_run_auto_tests(task, timeout_s: float) -> str:
+    """Run configured automated tests for the task language."""
     try:
-        test_cmd = ""
         lang = (task.language or "").lower()
-        if cfg and cfg.enable_auto_tests and tool_registry is not None:
-            if lang == "python":
-                test_cmd = format_gate_command(
-                    cfg.test_python_template,
-                    getattr(task, "file_path", "") or "",
-                )
-            elif lang in ("javascript", "js"):
-                test_cmd = cfg.test_command_javascript
-            elif lang in ("typescript", "ts"):
-                test_cmd = cfg.test_command_typescript
-            elif lang == "java":
-                test_cmd = cfg.test_command_java
+        if not (cfg and cfg.enable_auto_tests and tool_registry is not None):
+            return ""
+        test_cmd = _resolve_test_command(task, lang)
         return await _run_gate_command(
             tool_name="run_tests",
             command=test_cmd,
@@ -457,9 +440,7 @@ async def _maybe_run_auto_tests(
 async def _maybe_run_auto_lints(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-    """
-    Linters automáticos. En Python con puertas acotadas: ruff check {file} barato en cada tarea.
-    """
+    """Run automatic lint gates when policy allows it."""
     try:
         if not cfg or not getattr(cfg, "enable_auto_lints", False):
             return ""
@@ -498,13 +479,12 @@ async def _maybe_run_auto_lints(
         )
     except Exception:
         return ""
-    return ""
 
 
 async def _maybe_run_auto_typecheck(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-    """Typecheck opcional (p. ej. mypy sobre {file}) antes del LLM de QA."""
+    """Run optional typecheck gate before QA."""
     try:
         if not cfg or not tool_registry:
             return ""
@@ -530,7 +510,6 @@ async def _maybe_run_auto_typecheck(
         )
     except Exception:
         return ""
-    return ""
 
 
 async def _run_gate_command(
@@ -573,25 +552,39 @@ def _should_run_wide_gate(task, qa_feedback: str, mode: str, *, language: str) -
     return normalized_mode == "strict" or has_feedback or edit_scope != "file"
 
 
+def _resolve_test_command(task, lang: str) -> str:
+    if not cfg:
+        return ""
+    if lang == "python":
+        return format_gate_command(
+            cfg.test_python_template,
+            getattr(task, "file_path", "") or "",
+        )
+    if lang in ("javascript", "js"):
+        return cfg.test_command_javascript
+    if lang in ("typescript", "ts"):
+        return cfg.test_command_typescript
+    if lang == "java":
+        return cfg.test_command_java
+    return ""
+
+
 def _glob_pattern_for_language(language: str) -> str:
     """Patr?n glob por lenguaje para list_project_files."""
     lang = (language or "python").lower()
-    if lang in ("python", "py"):
-        return "*.py"
-    if lang in ("javascript", "js"):
-        return "*.js"
-    if lang in ("typescript", "ts"):
-        return "*.ts"
-    if lang == "java":
-        return "*.java"
-    return "*"
+    return {
+        "python": "*.py",
+        "py": "*.py",
+        "javascript": "*.js",
+        "js": "*.js",
+        "typescript": "*.ts",
+        "ts": "*.ts",
+        "java": "*.java",
+    }.get(lang, "*")
 
 
 async def _list_files_in_task_directory(task) -> str:
-    """
-    Usa el tool list_project_files para listar archivos del directorio de la tarea,
-    as? el generador conoce qu? archivos existen (imports, consistencia).
-    """
+    """List nearby files to provide local repository context."""
     global tool_registry
     if not tool_registry:
         return ""
@@ -620,10 +613,7 @@ async def _list_files_in_task_directory(task) -> str:
 
 
 async def _maybe_read_existing_file(file_path: str) -> str:
-    """
-    Best-effort helper: usa el tool read_file para recuperar un peque?o
-    preview del archivo objetivo, si ya existe en el repo.
-    """
+    """Best-effort preview of target file content from repository."""
     global tool_registry
     if not tool_registry:
         return ""
@@ -665,10 +655,7 @@ def _read_existing_repo_full_text(file_path: str, max_bytes: int = 400_000) -> s
 
 
 async def _build_short_term_memory(plan_id: str, limit: int | None = None) -> str:
-    """
-    Build a compact short-term memory window for a given plan_id by querying
-    recent events from the memory_service.
-    """
+    """Build a compact short-term memory window for the given plan."""
     if http_client is None:
         return ""
 
@@ -707,13 +694,7 @@ async def _build_short_term_memory(plan_id: str, limit: int | None = None) -> st
 
 
 async def _build_failure_patterns_for_dev(file_path: str, limit: int = 200) -> str:
-    """
-    Recupera patrones históricos agregados de fallos (qa.failed, security.blocked)
-    para el módulo/directorio del archivo objetivo, usando memory_service.
-
-    Esto permite al dev_service saber si está tocando una "zona caliente" del código
-    y reforzar validaciones, manejo de errores y tests en consecuencia.
-    """
+    """Fetch aggregated historical QA/security failures for nearby modules."""
     if http_client is None or not file_path.strip():
         return ""
     try:
@@ -738,7 +719,6 @@ async def _build_failure_patterns_for_dev(file_path: str, limit: int = 200) -> s
             return ""
 
         lines: list[str] = []
-        total = 0
         for p in patterns:
             if not isinstance(p, dict):
                 continue
@@ -749,7 +729,6 @@ async def _build_failure_patterns_for_dev(file_path: str, limit: int = 200) -> s
             sec_n = int(p.get("security_blocked", 0) or 0)
             if not qa_n and not sec_n:
                 continue
-            total += qa_n + sec_n
             pieces: list[str] = []
             if qa_n:
                 pieces.append(f"QA_FAILED x{qa_n}")
@@ -779,12 +758,7 @@ async def _fetch_task_spec(
     wait_if_missing: bool = False,
     limit: int = 40,
 ) -> str:
-    """
-    Fetch spec/tests for a given task from memory_service (spec.generated events).
-
-    Optionally waits (poll) so spec_service can finish before codegen — only on
-    first assignment (no qa_feedback); QA retries skip waiting.
-    """
+    """Fetch spec/tests from memory_service, optionally waiting for availability."""
     if http_client is None:
         return ""
 
@@ -863,13 +837,7 @@ def _build_dev_context(
     spec_max_chars: int = 3000,
     max_chars: int = 5600,
 ) -> str:
-    """
-    Construye un contexto compacto y estructurado para el LLM del dev_service.
-
-    - Prioriza spec + tests (spec_service) cuando existen.
-    - Añade eventos recientes, preview del archivo, listado de directorio, estilo repo.
-    - Recorta el total a max_chars.
-    """
+    """Build compact structured context for the dev_service LLM."""
     blocks: list[str] = []
 
     spec = (spec_block or "").strip()
