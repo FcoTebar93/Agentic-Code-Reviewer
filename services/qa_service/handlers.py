@@ -70,9 +70,7 @@ class QADeps:
 
 
 async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> None:
-    """
-    Main entrypoint for handling a code.generated event in qa_service.
-    """
+    """Main entrypoint for handling a code.generated event."""
     plan_id = payload.plan_id
     task_id = payload.task_id
 
@@ -319,7 +317,7 @@ _QA_RETRY_REASONING_MAX = 2000
 
 
 def _qa_retry_feedback_document(result: ReviewResult, file_path: str) -> str:
-    """Texto estructurado para el Dev: reasoning, issues, required_changes, opcionales."""
+    """Build structured QA retry feedback for dev_service."""
     parts: list[str] = [
         "=== QA RETRY — previous submission failed review ===",
         f"Target file: {file_path}",
@@ -358,7 +356,7 @@ async def _retry_task(
     result: ReviewResult,
     deps: QADeps,
 ) -> None:
-    """Re-enqueue the task to dev_service with QA feedback embedded."""
+    """Re-enqueue task to dev_service with QA feedback."""
     next_attempt = original.qa_attempt + 1
     await _update_task_state(
         deps.http_client,
@@ -404,10 +402,7 @@ async def _retry_task(
 
 
 async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
-    """
-    Check if all tasks in the plan have passed QA.
-    If so, aggregate files (with combined dev+QA reasoning) and publish pr.requested.
-    """
+    """Publish `pr.requested` once all tasks in the plan are QA-passed."""
     try:
         if plan_id in deps.pr_requested_plan_ids:
             return
@@ -478,12 +473,7 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
 
 
 async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
-    """
-    Best-effort retrieval of the original plan mode from memory_service.
-
-    Falls back to \"normal\" if anything goes wrong so that downstream services
-    never depend critically on this lookup.
-    """
+    """Best-effort retrieval of original plan mode from memory_service."""
     try:
         resp = await deps.http_client.get(
             "/events",
@@ -508,7 +498,7 @@ async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
 
 
 async def _infer_plan_user_locale(plan_id: str, deps: QADeps) -> str:
-    """Best-effort user_locale from plan.created (defaults to en)."""
+    """Best-effort `user_locale` from `plan.created` (defaults to `en`)."""
     try:
         resp = await deps.http_client.get(
             "/events",
@@ -537,7 +527,7 @@ def _build_chain_reasoning(
     dev_reasoning_cache: dict[str, str],
     qa_reasoning_cache: dict[str, str],
 ) -> str:
-    """Build the combined dev+QA reasoning string for a task."""
+    """Build combined dev + QA reasoning string for one task."""
     dev = dev_reasoning_cache.get(task_id, "")
     qa = qa_reasoning_cache.get(task_id, "")
     parts: list[str] = []
@@ -588,9 +578,7 @@ async def _build_short_term_memory(
     deps: QADeps,
     limit: int | None = None,
 ) -> str:
-    """
-    Build a compact short-term memory window for QA using the tool query_events.
-    """
+    """Build compact short-term memory for QA using `query_events`."""
     if not deps.tool_registry:
         return ""
 
@@ -636,9 +624,7 @@ def _build_qa_context(
     *,
     user_locale: str = "en",
 ) -> str:
-    """
-    Compact structured context for the QA LLM: plan memory first, then repo snippets.
-    """
+    """Build compact context for the QA LLM (memory first, then repo snippets)."""
     mem_title, repo_title = qa_memory_section_headers(user_locale)
     blocks: list[str] = []
 
@@ -661,10 +647,7 @@ async def _build_repo_context(
     code: str,
     deps: QADeps,
 ) -> str:
-    """
-    Use the search_in_repo tool to find references to the module/file
-    in the directory, giving context to the reviewer (style, similar usages).
-    """
+    """Build local repo context from `search_in_repo` matches."""
     if not deps.tool_registry or not (file_path or "").strip():
         return ""
     base = file_path.replace("\\", "/").rsplit("/", 1)[-1]
@@ -702,10 +685,7 @@ async def _build_failure_patterns_context(
     file_path: str,
     deps: QADeps,
 ) -> str:
-    """
-    Usa la herramienta failure_patterns para recuperar patrones históricos
-    de fallos en módulos cercanos al archivo que estamos revisando.
-    """
+    """Fetch historical failure patterns near the target file/module."""
     if not deps.tool_registry or not (file_path or "").strip():
         return ""
     directory = (
@@ -825,10 +805,7 @@ async def _run_static_lint(
     language: str,
     deps: QADeps,
 ) -> list[str]:
-    """
-    Run language-specific static analysis tools and return a list of issues
-    formatted for the QA agent.
-    """
+    """Run language-specific static tools and return formatted issues."""
     if not deps.tool_registry:
         return []
 
@@ -914,13 +891,7 @@ async def _run_static_lint(
 
 
 def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
-    """
-    Resume la salida de linters/herramientas estáticas para el prompt de QA.
-
-    - Agrupa por origen (ruff, bandit, semgrep, eslint, javac, etc.).
-    - Devuelve un resumen corto con contadores y algunos ejemplos, en lugar de
-      volcar todas las líneas, para reducir tokens.
-    """
+    """Summarize static-tool issues for the QA prompt with grouped counts."""
     if not issues:
         return (
             "No static analysis issues or warnings were reported by linters or "
@@ -949,10 +920,7 @@ def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
 
 
 def _has_severe_static_issues(issues: list[str]) -> bool:
-    """
-    Heurística simple para detectar issues \"graves\" a partir del texto de
-    los linters/semgrep/bandit: buscamos palabras clave de severidad alta.
-    """
+    """Detect severe issues via high-severity keywords in issue text."""
     if not issues:
         return False
     severe_keywords = ("HIGH", "CRITICAL", "BLOCKER", "ERROR")
@@ -964,12 +932,7 @@ def _has_severe_static_issues(issues: list[str]) -> bool:
 
 
 def _infer_module_from_path(file_path: str) -> str:
-    """
-    Deriva un identificador de módulo/directorio a partir del file_path.
-
-    Heurística similar a la usada por el replanner para group_id, para que
-    Planner/Replanner puedan alinear fácilmente tareas futuras con estas zonas.
-    """
+    """Infer module/group identifier from file path."""
     norm = (file_path or "").replace("\\", "/").strip()
     if not norm:
         return "root"
@@ -982,10 +945,7 @@ def _infer_module_from_path(file_path: str) -> str:
 
 
 def _infer_severity_hint(issues: list[str]) -> str:
-    """
-    Calcula una severidad QA heurística (low|medium|high|critical)
-    a partir de las issues estáticas y su texto.
-    """
+    """Infer heuristic QA severity from static-issue text."""
     if not issues:
         return "low"
     text = " ".join(issues).upper()
@@ -999,15 +959,7 @@ def _infer_severity_hint(issues: list[str]) -> str:
 
 
 async def _is_hot_module(module: str, deps: QADeps) -> bool:
-    """
-    Determina si un módulo/directorio se considera \"zona caliente\" en base a
-    patrones históricos agregados de qa.failed/security.blocked.
-
-    Heurística:
-    - Usa la tool failure_patterns para recuperar patrones filtrados por prefijo.
-    - Si para este módulo (o submódulos) la suma qa_failed+security_blocked >= 3,
-      se considera hot.
-    """
+    """Determine if a module is "hot" from aggregated QA/security failures."""
     if not deps.tool_registry:
         return False
     normalized = (module or "").replace("\\", "/").strip()
