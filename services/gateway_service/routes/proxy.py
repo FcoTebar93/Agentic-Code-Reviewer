@@ -62,7 +62,7 @@ async def agent_ask(
     request_body: dict[str, Any],
     rt: GatewayRuntime = Depends(get_gateway_runtime),
 ):
-        """Q&A over pipeline semantic memory (and optional plan events)."""
+    """Q&A over pipeline semantic memory (and optional plan events)."""
     return await proxy_json_request(
         logger=logger,
         log_context="/api/agent_ask",
