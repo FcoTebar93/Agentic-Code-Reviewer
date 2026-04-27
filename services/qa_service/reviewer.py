@@ -1,13 +1,4 @@
-"""
-QA review logic: static pattern analysis + LLM-based code review.
-
-Each QA agent:
-1. Reads the developer's reasoning and explicitly responds to it.
-2. Performs static and semantic review of the code.
-3. Returns REASONING that references the developer's decisions.
-
-This creates a visible inter-agent dialogue: dev explains choices, QA responds.
-"""
+"""QA reviewer: static checks plus LLM-based code review."""
 
 from __future__ import annotations
 
@@ -84,37 +75,9 @@ async def review_code(
     static_analysis_report: str = "",
     user_locale: str = "en",
 ) -> tuple[ReviewResult, int, int]:
-    """
-    Run static checks then LLM review. Returns (result, prompt_tokens, completion_tokens).
-    """
     static_issues = _static_check(code, user_locale=user_locale)
     if static_issues:
-        reasoning = (
-            f"Static analysis detected {len(static_issues)} dangerous pattern(s) "
-            "before LLM review. Immediate rejection applied regardless of "
-            "developer's stated rationale."
-        )
-        logger.warning("Static check FAILED for %s: %s", file_path, static_issues)
-        return (
-            ReviewResult(
-                passed=False,
-                issues=static_issues,
-                reasoning=reasoning,
-                structured_feedback={
-                    "functionality": [],
-                    "style": [],
-                    "security": [
-                        {
-                            "severity": "critical",
-                            "title": qa_static_pattern_security_title(user_locale),
-                            "details": "; ".join(static_issues),
-                        }
-                    ],
-                },
-            ),
-            0,
-            0,
-        )
+        return _static_fail_result(static_issues, file_path, user_locale=user_locale)
 
     return await _llm_review(
         llm,
@@ -147,32 +110,7 @@ async def review_code_with_tool_loop(
 ) -> tuple[ReviewResult, int, int]:
     static_issues = _static_check(code, user_locale=user_locale)
     if static_issues:
-        reasoning = (
-            f"Static analysis detected {len(static_issues)} dangerous pattern(s) "
-            "before LLM review. Immediate rejection applied regardless of "
-            "developer's stated rationale."
-        )
-        logger.warning("Static check FAILED for %s: %s", file_path, static_issues)
-        return (
-            ReviewResult(
-                passed=False,
-                issues=static_issues,
-                reasoning=reasoning,
-                structured_feedback={
-                    "functionality": [],
-                    "style": [],
-                    "security": [
-                        {
-                            "severity": "critical",
-                            "title": qa_static_pattern_security_title(user_locale),
-                            "details": "; ".join(static_issues),
-                        }
-                    ],
-                },
-            ),
-            0,
-            0,
-        )
+        return _static_fail_result(static_issues, file_path, user_locale=user_locale)
     return await _llm_review_with_tool_loop(
         llm,
         code,
@@ -203,10 +141,7 @@ def _static_check(code: str, *, user_locale: str = "en") -> list[str]:
 
 
 def _heuristic_suspicious_snippets(code: str, *, user_locale: str = "en") -> list[str]:
-    """
-    Lightweight heuristics for suspicious code (network, filesystem, secrets).
-    Does not fail the review alone; attached as high-priority security context.
-    """
+    """Lightweight heuristics for suspicious network/fs/secret patterns."""
     lowered = code.lower()
     findings: list[str] = []
 
@@ -484,10 +419,7 @@ async def _llm_review_with_tool_loop(
 
 
 def _build_qa_rules_block(language: str) -> str:
-    """
-    Build the textual QA rules block for the given language, prioritising
-    high-severity rules (blocker/error) to keep the prompt focused.
-    """
+    """Build QA policy block, prioritizing blocker/error rules."""
     qa_rules: list[Rule] = rules_for_language(language, category="qa")
     if not qa_rules:
         return "No specific rules."
@@ -614,4 +546,38 @@ def _parse_review_response(content: str) -> ReviewResult:
         structured_feedback=structured,
         required_changes=required_changes,
         optional_improvements=optional_improvements,
+    )
+
+
+def _static_fail_result(
+    static_issues: list[str],
+    file_path: str,
+    *,
+    user_locale: str = "en",
+) -> tuple[ReviewResult, int, int]:
+    reasoning = (
+        f"Static analysis detected {len(static_issues)} dangerous pattern(s) "
+        "before LLM review. Immediate rejection applied regardless of "
+        "developer's stated rationale."
+    )
+    logger.warning("Static check FAILED for %s: %s", file_path, static_issues)
+    return (
+        ReviewResult(
+            passed=False,
+            issues=static_issues,
+            reasoning=reasoning,
+            structured_feedback={
+                "functionality": [],
+                "style": [],
+                "security": [
+                    {
+                        "severity": "critical",
+                        "title": qa_static_pattern_security_title(user_locale),
+                        "details": "; ".join(static_issues),
+                    }
+                ],
+            },
+        ),
+        0,
+        0,
     )

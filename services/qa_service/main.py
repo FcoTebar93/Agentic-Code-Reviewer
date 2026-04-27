@@ -1,19 +1,4 @@
-"""
-QA Service -- code quality gate between dev_service and github_service.
-
-Pipeline role:
-  dev_service -> [code.generated] -> qa_service -> [pr.requested] -> security_service
-
-On QA pass: aggregates all tasks for the plan and publishes pr.requested.
-On QA fail (retries remaining): re-enqueues task.assigned with feedback for dev_service.
-On QA fail (retries exhausted): publishes qa.failed and logs to memory_service.
-
-Inter-agent reasoning:
-  - Each code.generated event carries the developer's reasoning.
-  - The QA reviewer receives this reasoning and explicitly responds to it.
-  - Dev + QA reasoning are cached per task and forwarded to security_service
-    so the final security scan can reference the full reasoning chain.
-"""
+"""QA Service -- code quality gate between dev_service and github_service."""
 
 from __future__ import annotations
 

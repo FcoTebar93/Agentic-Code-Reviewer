@@ -142,10 +142,7 @@ class FormatCodeInput(ToolInput):
 
 
 def python_lint_tool(args: LintInput) -> dict[str, Any]:
-    """
-    Ejecuta ruff sobre el código proporcionado y devuelve una lista estructurada
-    de issues. Solo soporta lenguaje 'python'.
-    """
+    """Ejecuta ruff sobre el código proporcionado y devuelve una lista estructurada."""
     if args.language.lower() != "python":
         return {
             "supported": False,
@@ -253,9 +250,7 @@ def search_in_repo_tool(args: SearchInRepoInput) -> dict[str, Any]:
 
 
 async def query_events_tool(args: QueryEventsInput) -> dict[str, Any]:
-    """
-    Consulta eventos recientes al memory_service (fachada HTTP sobre PostgreSQL).
-    """
+    """Consulta eventos recientes al memory_service (fachada HTTP sobre PostgreSQL)."""
     params: dict[str, Any] = {"limit": args.limit}
     if args.event_type:
         params["event_type"] = args.event_type
@@ -270,9 +265,7 @@ async def query_events_tool(args: QueryEventsInput) -> dict[str, Any]:
 
 
 async def failure_patterns_tool(args: FailurePatternsInput) -> dict[str, Any]:
-    """
-    Consulta los patrones agregados de fallos históricos desde memory_service.
-    """
+    """Consulta los patrones agregados de fallos históricos desde memory_service."""
     async with httpx.AsyncClient(base_url=MEMORY_SERVICE_URL, timeout=10.0) as client:
         resp = await client.get(
             "/patterns/failures",
@@ -294,10 +287,7 @@ async def failure_patterns_tool(args: FailurePatternsInput) -> dict[str, Any]:
 
 
 def js_ts_lint_tool(args: LintInput) -> dict[str, Any]:
-    """
-    Ejecuta ESLint sobre código JS/TS en un archivo temporal.
-    Requiere que eslint esté disponible (por ejemplo vía `npx eslint`).
-    """
+    """Ejecuta ESLint sobre código JS/TS en un archivo temporal."""
     lang = args.language.lower()
     if lang not in {"javascript", "js", "typescript", "ts"}:
         return {
@@ -381,10 +371,7 @@ def js_ts_lint_tool(args: LintInput) -> dict[str, Any]:
 
 
 def java_lint_tool(args: LintInput) -> dict[str, Any]:
-    """
-    Ejecuta javac sobre el código proporcionado para detectar errores de compilación.
-    No realiza análisis profundo, pero ayuda a detectar problemas básicos.
-    """
+    """Ejecuta javac sobre el código proporcionado para detectar errores de compilación."""
     if args.language.lower() != "java":
         return {
             "supported": False,
@@ -455,10 +442,7 @@ def java_lint_tool(args: LintInput) -> dict[str, Any]:
 
 
 def semgrep_tool(args: LintInput) -> dict[str, Any]:
-    """
-    Ejecuta semgrep como analizador multi-lenguaje sobre el archivo temporal.
-    Usa --config=p/ci para una configuración general de buenas prácticas.
-    """
+    """Ejecuta semgrep como analizador multi-lenguaje sobre el archivo temporal."""
     lang = args.language.lower()
     supported_langs = {
         "python": ".py",
@@ -573,10 +557,7 @@ def semgrep_tool(args: LintInput) -> dict[str, Any]:
 
 
 def python_security_tool(args: LintInput) -> dict[str, Any]:
-    """
-    Ejecuta bandit sobre el código proporcionado y devuelve issues de seguridad estructurados.
-    Solo soporta lenguaje 'python'. Si bandit no está instalado, se marca como unsupported.
-    """
+    """Ejecuta bandit sobre el código proporcionado y devuelve issues de seguridad estructurados."""
     if args.language.lower() != "python":
         return {
             "supported": False,
@@ -655,13 +636,7 @@ def python_security_tool(args: LintInput) -> dict[str, Any]:
 
 
 def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
-    """
-    Formatea código en un lenguaje dado usando herramientas estándar del entorno.
-
-    Soporta:
-    - Python vía 'python -m black'
-    - JavaScript/TypeScript vía 'npx prettier' (cuando está disponible)
-    """
+    """Formatea código en un lenguaje dado usando herramientas estándar del entorno."""
     lang = (args.language or "python").lower()
 
     if lang in {"python", "py"}:
@@ -784,9 +759,7 @@ def format_code_tool(args: FormatCodeInput) -> dict[str, Any]:
 
 
 def build_qa_tool_registry() -> ToolRegistry:
-    """
-    Construct a ToolRegistry pre-populated with tools useful for qa_service.
-    """
+    """Construct a ToolRegistry pre-populated with tools useful for qa_service."""
     registry = ToolRegistry()
 
     registry.register(
