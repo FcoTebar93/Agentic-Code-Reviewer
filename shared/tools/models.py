@@ -5,12 +5,11 @@ from typing import Any, Awaitable, Callable, Type
 
 from pydantic import BaseModel
 
+ToolFunc = Callable[[Any], Awaitable[Any]] | Callable[[Any], Any]
+
 
 class ToolInput(BaseModel):
     """Base class for tool input models."""
-
-
-    ToolFunc = Callable[[Any], Awaitable[Any]] | Callable[[Any], Any]
 
 
 @dataclass

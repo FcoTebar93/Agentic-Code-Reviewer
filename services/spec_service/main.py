@@ -33,8 +33,8 @@ from shared.utils import (
     EventBus,
     build_repo_style_hints,
     guarded_http_get,
-    subscribe_typed_event,
     store_event,
+    subscribe_typed_event,
 )
 from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 

@@ -5,6 +5,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime

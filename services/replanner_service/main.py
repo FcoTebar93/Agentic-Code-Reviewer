@@ -25,15 +25,15 @@ from shared.http.client import create_async_http_client
 from shared.llm_adapter import get_llm_provider
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.routing import register_health_metrics_routes
-from shared.observability.tokens import emit_token_usage_event
 from shared.observability.metrics import (
     agent_execution_time,
 )
+from shared.observability.routing import register_health_metrics_routes
+from shared.observability.tokens import emit_token_usage_event
 from shared.tools import ToolRegistry, execute_tool
-from shared.utils.path_grouping import infer_group_id
 from shared.utils import EventBus, store_event, subscribe_typed_event
 from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
+from shared.utils.path_grouping import infer_group_id
 
 SERVICE_NAME = "replanner_service"
 event_bus: EventBus = cast(EventBus, None)

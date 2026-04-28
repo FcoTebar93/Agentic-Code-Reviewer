@@ -29,11 +29,11 @@ from shared.contracts.events import (
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.routing import register_health_metrics_routes
 from shared.observability.metrics import (
     pr_creation_latency,
     tasks_completed,
 )
+from shared.observability.routing import register_health_metrics_routes
 from shared.utils import EventBus, store_event, subscribe_typed_event
 from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 

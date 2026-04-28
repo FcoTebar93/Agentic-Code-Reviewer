@@ -28,12 +28,12 @@ from shared.http.client import create_async_http_client
 from shared.llm_adapter import get_llm_provider
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.routing import register_health_metrics_routes
-from shared.observability.tokens import emit_token_usage_event
 from shared.observability.metrics import (
     agent_execution_time,
     tasks_completed,
 )
+from shared.observability.routing import register_health_metrics_routes
+from shared.observability.tokens import emit_token_usage_event
 from shared.policies import (
     ProjectPolicy,
     effective_mode,
@@ -48,8 +48,8 @@ from shared.utils import (
     guarded_http_get,
     maybe_agent_delay,
     short_term_memory_event_limit,
-    subscribe_typed_event,
     store_event,
+    subscribe_typed_event,
 )
 from shared.utils.code_change_guard import large_change_note
 from shared.utils.lifecycle import connect_event_bus, shutdown_runtime

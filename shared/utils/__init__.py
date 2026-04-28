@@ -2,13 +2,14 @@ import logging
 import time
 from typing import Any
 
+from shared.utils.event_consumer import maybe_agent_delay, subscribe_typed_event
 from shared.utils.memory_window import (
     build_short_term_memory_window,
     short_term_memory_event_limit,
 )
-from shared.utils.event_consumer import maybe_agent_delay, subscribe_typed_event
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from shared.utils.repo_style_hints import build_repo_style_hints
+from shared.utils.tasks import update_task_state
 
 __all__ = [
     "EventBus",
@@ -18,7 +19,9 @@ __all__ = [
     "build_repo_style_hints",
     "maybe_agent_delay",
     "subscribe_typed_event",
+    "publish_and_store",
     "store_event",
+    "update_task_state",
     "infer_framework_hint",
     "guarded_http_get",
 ]
@@ -55,6 +58,23 @@ async def store_event(
             event_id = getattr(event, "event_id", "")
             short_id = event_id[:8] if isinstance(event_id, str) else event_id
             logger.exception(error_message, short_id)
+
+
+async def publish_and_store(
+    event_bus,
+    http_client,
+    event,
+    *,
+    logger: logging.Logger | None = None,
+    error_message: str = "Failed to store event %s",
+) -> None:
+    await event_bus.publish(event)
+    await store_event(
+        http_client,
+        event,
+        logger=logger,
+        error_message=error_message,
+    )
 
 
 def infer_framework_hint(language: str, file_path: str | None) -> str:

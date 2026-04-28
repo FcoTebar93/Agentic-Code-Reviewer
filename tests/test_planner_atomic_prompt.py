@@ -1,4 +1,6 @@
-"""Regresión: planner pide tareas atómicas y orden contrato→implementación."""m __future__ import annotations
+"""Regresión: planner pide tareas atómicas y orden contrato→implementación."""
+
+from __future__ import annotations
 
 from services.meta_planner.planner import (
     _PLANNER_PARSE_REPAIR,

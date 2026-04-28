@@ -45,7 +45,6 @@ from shared.observability.routing import register_health_metrics_routes
 from shared.observability.tokens import emit_token_usage_event
 from shared.plan_idempotency import plan_idempotency_key_meta_planner
 from shared.tools import ToolRegistry, execute_tool
-from shared.utils.path_grouping import infer_group_id
 from shared.utils import (
     EventBus,
     guarded_http_get,
@@ -54,6 +53,7 @@ from shared.utils import (
     subscribe_typed_event,
 )
 from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
+from shared.utils.path_grouping import infer_group_id
 
 SERVICE_NAME = "meta_planner"
 event_bus: EventBus = cast(EventBus, None)
