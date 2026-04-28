@@ -31,9 +31,10 @@ from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.tokens import emit_token_usage_event
 from shared.observability.metrics import (
     agent_execution_time,
-    metrics_response,
     tasks_completed,
 )
+from shared.observability.routing import register_health_metrics_routes
+from shared.observability.tokens import emit_token_usage_event
 from shared.policies import (
     ProjectPolicy,
     effective_mode,
@@ -48,10 +49,11 @@ from shared.utils import (
     guarded_http_get,
     maybe_agent_delay,
     short_term_memory_event_limit,
-    subscribe_typed_event,
     store_event,
+    subscribe_typed_event,
 )
 from shared.utils.code_change_guard import large_change_note
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 
 SERVICE_NAME = "dev_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -78,8 +80,7 @@ async def lifespan(application: FastAPI):
     except Exception:
         project_policy = {"default_mode": "normal", "paths": {}}
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     application.state.dev_pipeline_deps = DevPipelineDeps(
         http_client=http_client,
@@ -92,11 +93,7 @@ async def lifespan(application: FastAPI):
     logger.info("Dev Service ready")
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(
@@ -107,15 +104,7 @@ app = FastAPI(
 )
 install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
+register_health_metrics_routes(app, SERVICE_NAME)
 
 async def _consume_tasks() -> None:
     async def on_payload(payload: TaskAssignedPayload) -> None:
@@ -225,47 +214,43 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         )
 
         current_attempt = 0
-        try:
-            resp = await http_client.get(f"/tasks/{plan_id}")
-            if resp.status_code == 200:
-                tasks = resp.json()
-                for t in tasks:
-                    if t["task_id"] == task.task_id:
-                        current_attempt = t.get("qa_attempt", 0)
-                        break
-        except Exception:
-            pass
+        resp = await guarded_http_get(
+            http_client,
+            f"/tasks/{plan_id}",
+            logger,
+            key="memory_service:/tasks",
+        )
+        if resp is not None and resp.status_code == 200:
+            tasks = resp.json()
+            for t in tasks:
+                if t["task_id"] == task.task_id:
+                    current_attempt = t.get("qa_attempt", 0)
+                    break
 
         run_tests = path_policy.get("enable_auto_tests", True)
         run_lints = path_policy.get("enable_auto_lints", True)
 
         gate_timeout = cfg.auto_gates_timeout_seconds if cfg else 180.0
-        lints_summary = (
-            await _maybe_run_auto_lints(task, qa_feedback, mode, gate_timeout)
-            if run_lints
-            else ""
-        )
-        typecheck_summary = (
-            await _maybe_run_auto_typecheck(task, qa_feedback, mode, gate_timeout)
-            if cfg and cfg.enable_auto_typecheck
-            else ""
-        )
-        tests_summary = (
-            await _maybe_run_auto_tests(task, gate_timeout)
-            if run_tests
-            else ""
-        )
+        lints_summary = await _maybe_run_auto_lints(task, qa_feedback, mode, gate_timeout) if run_lints else ""
+        typecheck_summary = await _maybe_run_auto_typecheck(task, qa_feedback, mode, gate_timeout) if cfg and cfg.enable_auto_typecheck else ""
+        tests_summary = await _maybe_run_auto_tests(task, gate_timeout) if run_tests else ""
 
         combined_reasoning = code_result.reasoning
-        if lints_summary:
-            suffix = f"\n[Dev Service] Automated lints summary: {lints_summary}"
-            combined_reasoning = (combined_reasoning + suffix).strip()
-        if typecheck_summary:
-            suffix = f"\n[Dev Service] Automated typecheck summary: {typecheck_summary}"
-            combined_reasoning = (combined_reasoning + suffix).strip()
-        if tests_summary:
-            suffix = f"\n[Dev Service] Automated tests summary: {tests_summary}"
-            combined_reasoning = (combined_reasoning + suffix).strip()
+        combined_reasoning = _append_reasoning_note(
+            combined_reasoning,
+            "Automated lints summary",
+            lints_summary,
+        )
+        combined_reasoning = _append_reasoning_note(
+            combined_reasoning,
+            "Automated typecheck summary",
+            typecheck_summary,
+        )
+        combined_reasoning = _append_reasoning_note(
+            combined_reasoning,
+            "Automated tests summary",
+            tests_summary,
+        )
 
         formatted_code = code_result.code
         if mode == "strict" and tool_registry is not None:
@@ -348,60 +333,68 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
 
 
 async def _should_skip_task_for_idempotency(task, plan_id: str, qa_feedback: str) -> bool:
-    """Apply defensive idempotency rules before processing a task."""
     has_feedback = bool((qa_feedback or "").strip())
-    try:
-        resp_tasks = await http_client.get(f"/tasks/{plan_id}")
-        if resp_tasks.status_code == 200:
-            tasks = resp_tasks.json() if isinstance(resp_tasks.json(), list) else []
-            existing_status: str | None = None
-            for t in tasks:
-                if t.get("task_id") == task.task_id:
-                    existing_status = str(t.get("status") or "")
-                    break
-
-            if existing_status is not None:
-                if not has_feedback:
-                    logger.info(
-                        "Task %s already has task state '%s', skipping original assignment (idempotent)",
-                        task.task_id[:8],
-                        existing_status,
-                    )
-                    return True
-                if existing_status in {"qa_passed", "qa_failed"}:
-                    logger.info(
-                        "Task %s already finished with status '%s', skipping QA retry (idempotent)",
-                        task.task_id[:8],
-                        existing_status,
-                    )
-                    return True
-
+    existing_status = await _fetch_task_status(plan_id, task.task_id)
+    if existing_status is not None:
         if not has_feedback:
-            resp_events = await http_client.get(
-                "/events",
-                params={
-                    "plan_id": plan_id,
-                    "event_type": EventType.CODE_GENERATED.value,
-                    "limit": 100,
-                },
+            logger.info(
+                "Task %s already has task state '%s', skipping original assignment (idempotent)",
+                task.task_id[:8],
+                existing_status,
             )
-            if resp_events.status_code == 200:
-                events = resp_events.json() if isinstance(resp_events.json(), list) else []
-                for ev in events:
-                    ev_payload = ev.get("payload") or {}
-                    if ev_payload.get("task_id") == task.task_id:
-                        logger.info(
-                            "Task %s already has code.generated event, skipping (idempotent)",
-                            task.task_id[:8],
-                        )
-                        return True
-    except Exception:
-        logger.warning("Idempotency pre-check failed for task %s", task.task_id[:8])
+            return True
+        if existing_status in {"qa_passed", "qa_failed"}:
+            logger.info(
+                "Task %s already finished with status '%s', skipping QA retry (idempotent)",
+                task.task_id[:8],
+                existing_status,
+            )
+            return True
+
+    if not has_feedback and await _has_code_generated_event(plan_id, task.task_id):
+        logger.info(
+            "Task %s already has code.generated event, skipping (idempotent)",
+            task.task_id[:8],
+        )
+        return True
     return False
 
 
+async def _fetch_task_status(plan_id: str, task_id: str) -> str | None:
+    resp = await guarded_http_get(
+        http_client,
+        f"/tasks/{plan_id}",
+        logger,
+        key="memory_service:/tasks",
+    )
+    if resp is None or resp.status_code != 200:
+        return None
+    tasks = resp.json() if isinstance(resp.json(), list) else []
+    for t in tasks:
+        if t.get("task_id") == task_id:
+            return str(t.get("status") or "")
+    return None
+
+
+async def _has_code_generated_event(plan_id: str, task_id: str) -> bool:
+    resp = await guarded_http_get(
+        http_client,
+        "/events",
+        logger,
+        key="memory_service:/events",
+        params={
+            "plan_id": plan_id,
+            "event_type": EventType.CODE_GENERATED.value,
+            "limit": 100,
+        },
+    )
+    if resp is None or resp.status_code != 200:
+        return False
+    events = resp.json() if isinstance(resp.json(), list) else []
+    return any((ev.get("payload") or {}).get("task_id") == task_id for ev in events)
+
+
 async def _maybe_run_auto_tests(task, timeout_s: float) -> str:
-    """Run configured automated tests for the task language."""
     try:
         lang = (task.language or "").lower()
         if not (cfg and cfg.enable_auto_tests and tool_registry is not None):
@@ -421,7 +414,6 @@ async def _maybe_run_auto_tests(task, timeout_s: float) -> str:
 async def _maybe_run_auto_lints(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-    """Run automatic lint gates when policy allows it."""
     try:
         if not cfg or not getattr(cfg, "enable_auto_lints", False):
             return ""
@@ -465,7 +457,6 @@ async def _maybe_run_auto_lints(
 async def _maybe_run_auto_typecheck(
     task, qa_feedback: str, mode: str, timeout_s: float
 ) -> str:
-    """Run optional typecheck gate before QA."""
     try:
         if not cfg or not tool_registry:
             return ""
@@ -541,17 +532,20 @@ def _resolve_test_command(task, lang: str) -> str:
             cfg.test_python_template,
             getattr(task, "file_path", "") or "",
         )
-    if lang in ("javascript", "js"):
-        return cfg.test_command_javascript
-    if lang in ("typescript", "ts"):
-        return cfg.test_command_typescript
-    if lang == "java":
-        return cfg.test_command_java
-    return ""
+    return {
+        "javascript": cfg.test_command_javascript,
+        "js": cfg.test_command_javascript,
+        "typescript": cfg.test_command_typescript,
+        "ts": cfg.test_command_typescript,
+        "java": cfg.test_command_java,
+    }.get(lang, "")
+
+
+def _append_reasoning_note(reasoning: str, label: str, summary: str) -> str:
+    return (reasoning + f"\n[Dev Service] {label}: {summary}").strip() if summary else reasoning
 
 
 def _glob_pattern_for_language(language: str) -> str:
-    """Patr?n glob por lenguaje para list_project_files."""
     lang = (language or "python").lower()
     return {
         "python": "*.py",
@@ -565,7 +559,6 @@ def _glob_pattern_for_language(language: str) -> str:
 
 
 async def _list_files_in_task_directory(task) -> str:
-    """List nearby files to provide local repository context."""
     global tool_registry
     if not tool_registry:
         return ""
@@ -594,7 +587,6 @@ async def _list_files_in_task_directory(task) -> str:
 
 
 async def _maybe_read_existing_file(file_path: str) -> str:
-    """Best-effort preview of target file content from repository."""
     global tool_registry
     if not tool_registry:
         return ""
@@ -619,7 +611,6 @@ async def _maybe_read_existing_file(file_path: str) -> str:
         return ""
 
 def _read_existing_repo_full_text(file_path: str, max_bytes: int = 400_000) -> str:
-    """Best-effort full text of target path under REPO_ROOT (for diff heuristics)."""
     if not file_path.strip():
         return ""
     root = REPO_ROOT.resolve()
@@ -636,7 +627,6 @@ def _read_existing_repo_full_text(file_path: str, max_bytes: int = 400_000) -> s
 
 
 async def _build_short_term_memory(plan_id: str, limit: int | None = None) -> str:
-    """Build a compact short-term memory window for the given plan."""
     if http_client is None:
         return ""
 
@@ -675,7 +665,6 @@ async def _build_short_term_memory(plan_id: str, limit: int | None = None) -> st
 
 
 async def _build_failure_patterns_for_dev(file_path: str, limit: int = 200) -> str:
-    """Fetch aggregated historical QA/security failures for nearby modules."""
     if http_client is None or not file_path.strip():
         return ""
     try:
@@ -739,7 +728,6 @@ async def _fetch_task_spec(
     wait_if_missing: bool = False,
     limit: int = 40,
 ) -> str:
-    """Fetch spec/tests from memory_service, optionally waiting for availability."""
     if http_client is None:
         return ""
 
@@ -818,7 +806,6 @@ def _build_dev_context(
     spec_max_chars: int = 3000,
     max_chars: int = 5600,
 ) -> str:
-    """Build compact structured context for the dev_service LLM."""
     blocks: list[str] = []
 
     spec = (spec_block or "").strip()

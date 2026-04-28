@@ -13,8 +13,9 @@ class LLMProvider(ABC):
     @abstractmethod
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Send a prompt and return the model's response."""
+        raise NotImplementedError
 
-        async def generate_text(self, prompt: str, **kwargs) -> LLMResponse:
-            """Convenience wrapper: accepts a plain string prompt."""
-            request = LLMRequest(prompt=prompt, temperature=0.0, **kwargs)
+    async def generate_text(self, prompt: str, **kwargs) -> LLMResponse:
+        """Convenience wrapper: accepts a plain string prompt."""
+        request = LLMRequest(prompt=prompt, temperature=0.0, **kwargs)
         return await self.generate(request)

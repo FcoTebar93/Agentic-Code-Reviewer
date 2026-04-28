@@ -10,10 +10,13 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import SERVICE_NAME
+from services.gateway_service.http_helpers import error_response
 from services.gateway_service.runtime import GatewayRuntime
 from shared.contracts.events import EventType
 
 logger = logging.getLogger(SERVICE_NAME)
+_MODULE_DEFAULTS = {"tasks_count": 0, "qa_failed_count": 0, "max_severity_hint": "low"}
+_SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 async def _fetch_events(
@@ -72,42 +75,22 @@ async def aggregate_plan_metrics(
 
         health_summary = _compute_pipeline_health(health_events, plan_id)
 
-        replan_suggestions_count = 0
-        replan_confirmed_count = 0
-        try:
-            events_sugg, _ = await _fetch_events(
-                runtime,
-                event_type=EventType.PLAN_REVISION_SUGGESTED.value,
-                limit=200,
-            )
-            replan_suggestions_count = _count_replans_for_plan(events_sugg, plan_id)
-        except Exception:
-            logger.warning(
-                "Failed to fetch plan.revision_suggested events for health metrics"
-            )
-
-        try:
-            events_conf, _ = await _fetch_events(
-                runtime,
-                event_type=EventType.PLAN_REVISION_CONFIRMED.value,
-                limit=200,
-            )
-            replan_confirmed_count = _count_replans_for_plan(events_conf, plan_id)
-        except Exception:
-            logger.warning(
-                "Failed to fetch plan.revision_confirmed events for health metrics"
-            )
+        replan_suggestions_count = await _safe_replan_count(
+            runtime,
+            plan_id=plan_id,
+            event_type=EventType.PLAN_REVISION_SUGGESTED.value,
+            warning_msg="Failed to fetch plan.revision_suggested events for health metrics",
+        )
+        replan_confirmed_count = await _safe_replan_count(
+            runtime,
+            plan_id=plan_id,
+            event_type=EventType.PLAN_REVISION_CONFIRMED.value,
+            warning_msg="Failed to fetch plan.revision_confirmed events for health metrics",
+        )
 
         return {
             "plan_id": plan_id,
-            "total_prompt_tokens": token_summary["total_prompt_tokens"],
-            "total_completion_tokens": token_summary["total_completion_tokens"],
-            "total_tokens": token_summary["total_tokens"],
-            "estimated_cost_prompt_usd": token_summary["estimated_cost_prompt_usd"],
-            "estimated_cost_completion_usd": token_summary[
-                "estimated_cost_completion_usd"
-            ],
-            "estimated_cost_total_usd": token_summary["estimated_cost_total_usd"],
+            **token_summary,
             "pipeline_status": health_summary["pipeline_status"],
             "first_event_at": health_summary["first_event_at"],
             "last_event_at": health_summary["last_event_at"],
@@ -117,56 +100,74 @@ async def aggregate_plan_metrics(
             "security_blocked_count": health_summary["security_blocked_count"],
             "replan_suggestions_count": replan_suggestions_count,
             "replan_confirmed_count": replan_confirmed_count,
-            "by_service": token_summary["by_service"],
         }
     except Exception as exc:
         logger.exception("Failed to get plan_metrics for %s", plan_id[:8])
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return error_response(str(exc), status_code=502)
 
 
 async def build_plan_detail_json_response(
     runtime: GatewayRuntime, plan_id: str,
 ) -> JSONResponse:
     try:
-        metrics_resp = await aggregate_plan_metrics(runtime, plan_id)
-        if isinstance(metrics_resp, JSONResponse) and metrics_resp.status_code != 200:
-            metrics_data: dict[str, Any] = {}
-        else:
-            metrics_data_raw = (
-                metrics_resp
-                if isinstance(metrics_resp, dict)
-                else getattr(metrics_resp, "body", None)
-            )
-            if not isinstance(metrics_data_raw, dict):
-                try:
-                    metrics_data = (
-                        json_lib.loads(metrics_resp.body)
-                        if isinstance(metrics_resp, JSONResponse)
-                        else {}
-                    )
-                except Exception:
-                    metrics_data = {}
-            else:
-                metrics_data = metrics_data_raw
-
-        try:
-            tasks_http = await runtime.http_client.get(
-                f"{runtime.cfg.memory_service_url}/tasks/{plan_id}"
-            )
-            tasks_data = tasks_http.json() if tasks_http.status_code == 200 else []
-        except Exception:
-            tasks_data = []
-
-        try:
-            events_data, _ = await _fetch_events(runtime, plan_id=plan_id, limit=500)
-        except Exception:
-            events_data = []
+        metrics_data = _extract_metrics_data(await aggregate_plan_metrics(runtime, plan_id))
+        tasks_data = await _safe_fetch_tasks(runtime, plan_id)
+        events_data = await _safe_fetch_plan_events(runtime, plan_id)
 
         detail = _build_plan_detail_json(plan_id, metrics_data, tasks_data, events_data)
         return JSONResponse(content=detail, status_code=200)
     except Exception as exc:
         logger.exception("Failed to build plan_detail for %s", plan_id[:8])
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return error_response(str(exc), status_code=502)
+
+
+async def _safe_replan_count(
+    runtime: GatewayRuntime,
+    *,
+    plan_id: str,
+    event_type: str,
+    warning_msg: str,
+) -> int:
+    try:
+        events, _ = await _fetch_events(runtime, event_type=event_type, limit=200)
+        return _count_replans_for_plan(events, plan_id)
+    except Exception:
+        logger.warning(warning_msg)
+        return 0
+
+
+def _extract_metrics_data(metrics_resp: dict[str, Any] | JSONResponse) -> dict[str, Any]:
+    if isinstance(metrics_resp, dict):
+        return metrics_resp
+    if not isinstance(metrics_resp, JSONResponse) or metrics_resp.status_code != 200:
+        return {}
+    try:
+        body = getattr(metrics_resp, "body", None)
+        return json_lib.loads(body) if body else {}
+    except Exception:
+        return {}
+
+
+async def _safe_fetch_tasks(runtime: GatewayRuntime, plan_id: str) -> list[dict[str, Any]]:
+    try:
+        tasks_http = await runtime.http_client.get(
+            f"{runtime.cfg.memory_service_url}/tasks/{plan_id}"
+        )
+        data = tasks_http.json() if tasks_http.status_code == 200 else []
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+async def _safe_fetch_plan_events(
+    runtime: GatewayRuntime,
+    plan_id: str,
+) -> list[dict[str, Any]]:
+    try:
+        events_data, _ = await _fetch_events(runtime, plan_id=plan_id, limit=500)
+        return events_data
+    except Exception:
+        return []
 
 
 def _aggregate_token_usage(
@@ -331,20 +332,14 @@ def _build_plan_detail_json(
             planner_reasoning = str(payload.get("reasoning", "")).strip()
         elif etype == "code.generated":
             task_id = str(payload.get("task_id", ""))
-            file_path = str(payload.get("file_path", "") or "")
-            language = str(payload.get("language", "") or "")
-            code = str(payload.get("code", "") or "")
-            reasoning = str(payload.get("reasoning", "") or "")
-            qa_attempt = int(payload.get("qa_attempt", 0) or 0)
             if task_id:
-                history_list = code_history.setdefault(task_id, [])
-                history_list.append(
+                code_history.setdefault(task_id, []).append(
                     {
-                        "qa_attempt": qa_attempt,
-                        "code": code,
-                        "reasoning": reasoning,
-                        "file_path": file_path,
-                        "language": language,
+                        "qa_attempt": int(payload.get("qa_attempt", 0) or 0),
+                        "code": str(payload.get("code", "") or ""),
+                        "reasoning": str(payload.get("reasoning", "") or ""),
+                        "file_path": str(payload.get("file_path", "") or ""),
+                        "language": str(payload.get("language", "") or ""),
                     }
                 )
         elif etype == "qa.failed":
@@ -358,7 +353,7 @@ def _build_plan_detail_json(
                     "qa_attempt": payload.get("qa_attempt", 0),
                 }
             )
-        elif etype == "security.approved" or etype == "security.blocked":
+        elif etype in {"security.approved", "security.blocked"}:
             security_outcome = {
                 "approved": bool(payload.get("approved", False)),
                 "severity_hint": payload.get("severity_hint", "medium"),
@@ -366,7 +361,7 @@ def _build_plan_detail_json(
                 "reasoning": payload.get("reasoning", ""),
                 "files_scanned": payload.get("files_scanned", 0),
             }
-        elif etype == "plan.revision_suggested" or etype == "plan.revision_confirmed":
+        elif etype in {"plan.revision_suggested", "plan.revision_confirmed"}:
             replans.append(
                 {
                     "event_type": etype,
@@ -381,17 +376,21 @@ def _build_plan_detail_json(
             )
 
     task_summaries: list[dict[str, Any]] = []
+    task_group_map: dict[str, str] = {}
     for t in tasks or []:
         tid = str(t.get("task_id", ""))
         history_list = code_history.get(tid) or []
         history_list.sort(key=lambda h: int(h.get("qa_attempt", 0) or 0))
         latest = history_list[-1] if history_list else {}
+        group_id = str(t.get("group_id", "") or "root")
+        if tid:
+            task_group_map[tid] = group_id
         task_summaries.append(
             {
                 "task_id": t.get("task_id"),
                 "file_path": t.get("file_path", ""),
                 "language": t.get("language", ""),
-                "group_id": t.get("group_id", ""),
+                "group_id": group_id,
                 "status": t.get("status", ""),
                 "qa_attempt": t.get("qa_attempt", 0),
                 "code": latest.get("code", ""),
@@ -403,38 +402,17 @@ def _build_plan_detail_json(
     modules_map: dict[str, dict[str, Any]] = {}
     for t in task_summaries:
         gid = str(t.get("group_id", "") or "root")
-        mod = modules_map.setdefault(
-            gid,
-            {
-                "group_id": gid,
-                "tasks_count": 0,
-                "qa_failed_count": 0,
-                "max_severity_hint": "low",
-            },
-        )
+        mod = modules_map.setdefault(gid, {"group_id": gid, **_MODULE_DEFAULTS})
         mod["tasks_count"] += 1
 
     for qa in qa_outcomes:
         task_id = str(qa.get("task_id") or "")
         severity = str(qa.get("severity_hint", "medium") or "medium")
-        group_id = "root"
-        for t in task_summaries:
-            if t.get("task_id") == task_id:
-                group_id = str(t.get("group_id", "") or "root")
-                break
-        mod = modules_map.setdefault(
-            group_id,
-            {
-                "group_id": group_id,
-                "tasks_count": 0,
-                "qa_failed_count": 0,
-                "max_severity_hint": "low",
-            },
-        )
+        group_id = task_group_map.get(task_id, "root")
+        mod = modules_map.setdefault(group_id, {"group_id": group_id, **_MODULE_DEFAULTS})
         mod["qa_failed_count"] += 1
-        order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
         current = str(mod.get("max_severity_hint", "low") or "low")
-        if order.get(severity, 1) > order.get(current, 0):
+        if _SEVERITY_ORDER.get(severity, 1) > _SEVERITY_ORDER.get(current, 0):
             mod["max_severity_hint"] = severity
 
     modules_summary = list(modules_map.values())

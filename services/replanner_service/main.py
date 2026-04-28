@@ -27,11 +27,12 @@ from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import (
     agent_execution_time,
-    metrics_response,
 )
+from shared.observability.routing import register_health_metrics_routes
 from shared.observability.tokens import emit_token_usage_event
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import EventBus, store_event, subscribe_typed_event
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 from shared.utils.path_grouping import infer_group_id
 
 SERVICE_NAME = "replanner_service"
@@ -56,18 +57,13 @@ async def lifespan(application: FastAPI):
 
     tool_registry = build_replanner_tool_registry(memory_service_url=cfg.memory_service_url)
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     asyncio.create_task(_consume_outcomes())
     logger.info("Replanner Service ready (strategy=%s)", cfg.strategy)
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(
@@ -78,16 +74,7 @@ app = FastAPI(
 )
 install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
+register_health_metrics_routes(app, SERVICE_NAME)
 
 
 async def _consume_outcomes() -> None:
@@ -207,6 +194,7 @@ async def _analyse_and_emit_revision(
                 completion_tokens=completion_tokens,
                 http_client=http_client,
                 logger=logger,
+                error_message="Failed to store replanner event %s",
             )
     except Exception:
         logger.exception(

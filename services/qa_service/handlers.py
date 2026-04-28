@@ -308,7 +308,6 @@ _QA_RETRY_REASONING_MAX = 2000
 
 
 def _qa_retry_feedback_document(result: ReviewResult, file_path: str) -> str:
-    """Build structured QA retry feedback for dev_service."""
     parts: list[str] = [
         "=== QA RETRY — previous submission failed review ===",
         f"Target file: {file_path}",
@@ -347,7 +346,6 @@ async def _retry_task(
     result: ReviewResult,
     deps: QADeps,
 ) -> None:
-    """Re-enqueue task to dev_service with QA feedback."""
     next_attempt = original.qa_attempt + 1
     await _update_task_state(
         deps.http_client,
@@ -393,7 +391,6 @@ async def _retry_task(
 
 
 async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
-    """Publish `pr.requested` once all tasks in the plan are QA-passed."""
     try:
         if plan_id in deps.pr_requested_plan_ids:
             return
@@ -408,8 +405,7 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
         if not all(t["status"] == "qa_passed" for t in all_tasks):
             return
 
-        plan_mode = await _infer_plan_mode(plan_id, deps)
-        plan_user_locale = await _infer_plan_user_locale(plan_id, deps)
+        plan_mode, plan_user_locale = await _infer_plan_metadata(plan_id, deps)
 
         seen_paths: set[str] = set()
         files: list[CodeGeneratedPayload] = []
@@ -463,8 +459,7 @@ async def _check_plan_ready_for_pr(plan_id: str, deps: QADeps) -> None:
         deps.logger.exception("Error checking plan QA completion for %s", plan_id[:8])
 
 
-async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
-    """Best-effort retrieval of original plan mode from memory_service."""
+async def _infer_plan_metadata(plan_id: str, deps: QADeps) -> tuple[str, str]:
     try:
         resp = await deps.http_client.get(
             "/events",
@@ -475,42 +470,21 @@ async def _infer_plan_mode(plan_id: str, deps: QADeps) -> str:
             },
         )
         if resp.status_code != 200:
-            return "normal"
+            return "normal", "en"
         events = resp.json()
         if not isinstance(events, list) or not events:
-            return "normal"
+            return "normal", "en"
         evt = events[0] or {}
         payload = evt.get("payload") or {}
         raw_mode = payload.get("mode", "normal") or "normal"
-        return str(raw_mode).strip().lower() or "normal"
-    except Exception:
-        deps.logger.exception("Error inferring plan mode for %s", plan_id[:8])
-        return "normal"
-
-
-async def _infer_plan_user_locale(plan_id: str, deps: QADeps) -> str:
-    """Best-effort `user_locale` from `plan.created` (defaults to `en`)."""
-    try:
-        resp = await deps.http_client.get(
-            "/events",
-            params={
-                "event_type": EventType.PLAN_CREATED.value,
-                "plan_id": plan_id,
-                "limit": 1,
-            },
-        )
-        if resp.status_code != 200:
-            return "en"
-        events = resp.json()
-        if not isinstance(events, list) or not events:
-            return "en"
-        evt = events[0] or {}
-        payload = evt.get("payload") or {}
         raw = payload.get("user_locale", "en") or "en"
-        return str(raw).strip().lower() or "en"
+        return (
+            str(raw_mode).strip().lower() or "normal",
+            str(raw).strip().lower() or "en",
+        )
     except Exception:
-        deps.logger.exception("Error inferring plan user_locale for %s", plan_id[:8])
-        return "en"
+        deps.logger.exception("Error inferring plan metadata for %s", plan_id[:8])
+        return "normal", "en"
 
 
 def _build_chain_reasoning(
@@ -518,7 +492,6 @@ def _build_chain_reasoning(
     dev_reasoning_cache: dict[str, str],
     qa_reasoning_cache: dict[str, str],
 ) -> str:
-    """Build combined dev + QA reasoning string for one task."""
     dev = dev_reasoning_cache.get(task_id, "")
     qa = qa_reasoning_cache.get(task_id, "")
     parts: list[str] = []
@@ -569,7 +542,6 @@ async def _build_short_term_memory(
     deps: QADeps,
     limit: int | None = None,
 ) -> str:
-    """Build compact short-term memory for QA using `query_events`."""
     if not deps.tool_registry:
         return ""
 
@@ -615,7 +587,6 @@ def _build_qa_context(
     *,
     user_locale: str = "en",
 ) -> str:
-    """Build compact context for the QA LLM (memory first, then repo snippets)."""
     mem_title, repo_title = qa_memory_section_headers(user_locale)
     blocks: list[str] = []
 
@@ -638,7 +609,6 @@ async def _build_repo_context(
     code: str,
     deps: QADeps,
 ) -> str:
-    """Build local repo context from `search_in_repo` matches."""
     if not deps.tool_registry or not (file_path or "").strip():
         return ""
     base = file_path.replace("\\", "/").rsplit("/", 1)[-1]
@@ -676,7 +646,6 @@ async def _build_failure_patterns_context(
     file_path: str,
     deps: QADeps,
 ) -> str:
-    """Fetch historical failure patterns near the target file/module."""
     if not deps.tool_registry or not (file_path or "").strip():
         return ""
     directory = (
@@ -796,85 +765,36 @@ async def _run_static_lint(
     language: str,
     deps: QADeps,
 ) -> list[str]:
-    """Run language-specific static tools and return formatted issues."""
     if not deps.tool_registry:
         return []
 
     lang = (language or "").lower()
     formatted: list[str] = []
-
+    base_input = {"language": language, "code": code, "file_path": file_path or "tmp"}
+    lint_specs: list[tuple[str, dict[str, Any], Any]] = []
     if lang == "python":
-        formatted.extend(
-            await _run_lint_tool(
-                deps,
-                tool_name="python_lint",
-                tool_input={
-                    "language": "python",
-                    "code": code,
-                    "file_path": file_path or "tmp.py",
-                },
-                issue_formatter=_format_ruff_issue,
-            )
+        py_input = {"language": "python", "code": code, "file_path": file_path or "tmp.py"}
+        lint_specs.extend(
+            [
+                ("python_lint", py_input, _format_ruff_issue),
+                ("python_security_scan", py_input, _format_bandit_issue),
+            ]
         )
-        formatted.extend(
-            await _run_lint_tool(
-                deps,
-                tool_name="python_security_scan",
-                tool_input={
-                    "language": "python",
-                    "code": code,
-                    "file_path": file_path or "tmp.py",
-                },
-                issue_formatter=_format_bandit_issue,
-            )
-        )
-
     if lang in {"javascript", "js", "typescript", "ts"} and deps.cfg.enable_js_lint:
-        formatted.extend(
-            await _run_lint_tool(
-                deps,
-                tool_name="js_ts_lint",
-                tool_input={
-                    "language": language,
-                    "code": code,
-                    "file_path": file_path or "tmp",
-                },
-                issue_formatter=_format_eslint_issue,
-            )
-        )
-
+        lint_specs.append(("js_ts_lint", base_input, _format_eslint_issue))
     if lang == "java" and deps.cfg.enable_java_lint:
-        formatted.extend(
-            await _run_lint_tool(
-                deps,
-                tool_name="java_lint",
-                tool_input={
-                    "language": "java",
-                    "code": code,
-                    "file_path": file_path or "Tmp.java",
-                },
-                issue_formatter=_format_javac_issue,
-            )
+        lint_specs.append(
+            ("java_lint", {"language": "java", "code": code, "file_path": file_path or "Tmp.java"}, _format_javac_issue)
         )
-
-    if deps.cfg.enable_semgrep and lang in {
-        "python",
-        "javascript",
-        "js",
-        "typescript",
-        "ts",
-        "java",
-    }:
+    if deps.cfg.enable_semgrep and lang in {"python", "javascript", "js", "typescript", "ts", "java"}:
+        lint_specs.append(("semgrep_scan", base_input, _format_semgrep_issue))
+    for tool_name, tool_input, issue_formatter in lint_specs:
         formatted.extend(
             await _run_lint_tool(
                 deps,
-                tool_name="semgrep_scan",
-                tool_input={
-                    "language": language,
-                    "code": code,
-                    "file_path": file_path or "tmp",
-                },
-                issue_formatter=_format_semgrep_issue,
+                tool_name=tool_name,
+                tool_input=tool_input,
+                issue_formatter=issue_formatter,
             )
         )
 
@@ -882,12 +802,8 @@ async def _run_static_lint(
 
 
 def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
-    """Summarize static-tool issues for the QA prompt with grouped counts."""
     if not issues:
-        return (
-            "No static analysis issues or warnings were reported by linters or "
-            "security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
-        )
+        return "No static analysis issues or warnings were reported by linters or security tools (ruff, Bandit, Semgrep, ESLint/javac if enabled)."
 
     by_source: dict[str, int] = {}
     for issue in issues:
@@ -898,9 +814,7 @@ def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
     header = "Static analysis tools reported the following issues and warnings:\n"
     header += "Resumen por origen: " + "; ".join(summary_parts)
 
-    examples: list[str] = []
-    for idx, issue in enumerate(issues[:max_examples], start=1):
-        examples.append(f"{idx}. {issue}")
+    examples = [f"{idx}. {issue}" for idx, issue in enumerate(issues[:max_examples], start=1)]
 
     if len(issues) > max_examples:
         examples.append(
@@ -911,19 +825,11 @@ def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
 
 
 def _has_severe_static_issues(issues: list[str]) -> bool:
-    """Detect severe issues via high-severity keywords in issue text."""
-    if not issues:
-        return False
     severe_keywords = ("HIGH", "CRITICAL", "BLOCKER", "ERROR")
-    for issue in issues:
-        upper = issue.upper()
-        if any(kw in upper for kw in severe_keywords):
-            return True
-    return False
+    return any(any(kw in issue.upper() for kw in severe_keywords) for issue in issues)
 
 
 def _infer_module_from_path(file_path: str) -> str:
-    """Infer module/group identifier from file path."""
     norm = (file_path or "").replace("\\", "/").strip()
     if not norm:
         return "root"
@@ -936,21 +842,20 @@ def _infer_module_from_path(file_path: str) -> str:
 
 
 def _infer_severity_hint(issues: list[str]) -> str:
-    """Infer heuristic QA severity from static-issue text."""
     if not issues:
         return "low"
     text = " ".join(issues).upper()
-    if any(word in text for word in ("CRITICAL", "RCE", "SQL INJECTION", "XSS")):
-        return "critical"
-    if any(word in text for word in ("HIGH", "ERROR", "SECURITY", "BANDIT")):
-        return "high"
-    if any(word in text for word in ("WARNING", "MEDIUM")):
-        return "medium"
+    for severity, keywords in (
+        ("critical", ("CRITICAL", "RCE", "SQL INJECTION", "XSS")),
+        ("high", ("HIGH", "ERROR", "SECURITY", "BANDIT")),
+        ("medium", ("WARNING", "MEDIUM")),
+    ):
+        if any(word in text for word in keywords):
+            return severity
     return "medium"
 
 
 async def _is_hot_module(module: str, deps: QADeps) -> bool:
-    """Determine if a module is "hot" from aggregated QA/security failures."""
     if not deps.tool_registry:
         return False
     normalized = (module or "").replace("\\", "/").strip()
@@ -968,16 +873,12 @@ async def _is_hot_module(module: str, deps: QADeps) -> bool:
         patterns = payload.get("patterns") or []
         if not isinstance(patterns, list):
             return False
-        total = 0
-        for p in patterns:
-            if not isinstance(p, dict):
-                continue
-            mod = str(p.get("module", "") or "").replace("\\", "/")
-            if not mod.startswith(normalized):
-                continue
-            qa_n = int(p.get("qa_failed", 0) or 0)
-            sec_n = int(p.get("security_blocked", 0) or 0)
-            total += qa_n + sec_n
+        total = sum(
+            int(p.get("qa_failed", 0) or 0) + int(p.get("security_blocked", 0) or 0)
+            for p in patterns
+            if isinstance(p, dict)
+            and str(p.get("module", "") or "").replace("\\", "/").startswith(normalized)
+        )
         return total >= 3
     except Exception:
         return False

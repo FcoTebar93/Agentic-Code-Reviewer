@@ -10,7 +10,11 @@ from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import PLAN_IDEM_TTL_SECONDS, SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
-from services.gateway_service.http_helpers import parse_json_response, proxy_json_request
+from services.gateway_service.http_helpers import (
+    error_response,
+    parse_json_response,
+    proxy_json_request,
+)
 from services.gateway_service.plan_aggregate import (
     aggregate_plan_metrics,
     build_plan_detail_json_response,
@@ -34,8 +38,9 @@ async def create_plan(
     try:
         key = plan_idempotency_key_gateway(request_body)
         now = time.monotonic()
-        if key in rt.plan_idem_cache:
-            cached_content, cached_at = rt.plan_idem_cache[key]
+        cached = rt.plan_idem_cache.get(key)
+        if cached:
+            cached_content, cached_at = cached
             if now - cached_at < PLAN_IDEM_TTL_SECONDS:
                 logger.info(
                     "Plan idempotent (same request within %ds), returning cached response",
@@ -54,7 +59,7 @@ async def create_plan(
         return JSONResponse(content=content, status_code=resp.status_code)
     except Exception as exc:
         logger.exception("Failed to proxy /api/plan")
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return error_response(str(exc), status_code=502)
 
 
 @router.post("/agent_ask")
@@ -81,10 +86,7 @@ async def confirm_replan(
     try:
         payload = PlanRevisionPayload.model_validate(request_body)
     except Exception as exc:
-        return JSONResponse(
-            content={"error": f"Invalid PlanRevisionPayload: {exc}"},
-            status_code=400,
-        )
+        return error_response(f"Invalid PlanRevisionPayload: {exc}", status_code=400)
 
     event = plan_revision_confirmed(SERVICE_NAME, payload)
     await rt.event_bus.publish(event)
@@ -107,9 +109,9 @@ async def get_events(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
 ):
     params: dict[str, str | int] = {"limit": limit}
-    if event_type:
+    if event_type is not None:
         params["event_type"] = event_type
-    if plan_id:
+    if plan_id is not None:
         params["plan_id"] = plan_id
     return await proxy_json_request(
         logger=logger,

@@ -14,7 +14,7 @@ from services.memory_service.database import close_db, init_db
 from services.memory_service.store import MemoryStore
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import metrics_response
+from shared.observability.routing import register_health_metrics_routes
 
 SERVICE_NAME = "memory_service"
 store: MemoryStore | None = None
@@ -69,21 +69,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 install_correlation_middleware(app)
+register_health_metrics_routes(app, SERVICE_NAME)
 
 
 def _get_store() -> MemoryStore:
     if store is None:
         raise HTTPException(status_code=503, detail="Store not initialized")
     return store
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
 
 class StoreEventRequest(BaseModel):
     event_id: str

@@ -39,18 +39,20 @@ from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import (
     agent_execution_time,
     llm_tokens,
-    metrics_response,
     tasks_completed,
 )
+from shared.observability.routing import register_health_metrics_routes
 from shared.observability.tokens import emit_token_usage_event
 from shared.plan_idempotency import plan_idempotency_key_meta_planner
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
+    guarded_http_get,
     maybe_agent_delay,
     store_event,
     subscribe_typed_event,
 )
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 from shared.utils.path_grouping import infer_group_id
 
 SERVICE_NAME = "meta_planner"
@@ -67,12 +69,17 @@ _MAX_AUTO_REPLANS_PER_ORIGINAL_PLAN = int(
 _replans_per_original_plan: dict[str, int] = {}
 
 
+def _error_response(status_code: int, detail: str, **extra: Any) -> JSONResponse:
+    payload: dict[str, Any] = {"detail": detail}
+    payload.update(extra)
+    return JSONResponse(status_code=status_code, content=payload)
+
+
 def _summarise_planner_memory(
     semantic_results: list[dict] | None,
     events: list[dict] | None,
     max_lines: int = 8,
 ) -> str:
-    """Build compact planner memory summary from semantic results and events."""
     semantic_results = semantic_results or []
     events = events or []
 
@@ -134,8 +141,7 @@ async def lifespan(application: FastAPI):
 
     tool_registry = build_planner_tool_registry(memory_service_url=cfg.memory_service_url)
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     application.state.meta_planner_deps = MetaPlannerDeps(
         http_client=http_client,
@@ -149,11 +155,7 @@ async def lifespan(application: FastAPI):
     logger.info("Meta Planner ready (with replanning support)")
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(
@@ -164,15 +166,7 @@ app = FastAPI(
 )
 install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
+register_health_metrics_routes(app, SERVICE_NAME)
 
 class PlanRequest(BaseModel):
     prompt: str
@@ -236,41 +230,30 @@ async def create_plan(req: PlanRequest):
         )
         if is_rate_limit:
             logger.warning("LLM rate limit (429): %s", err_str[:200])
-            return JSONResponse(
-                status_code=429,
-                content={
-                    "detail": "Límite de uso del LLM alcanzado (rate limit). Espera unos minutos o cambia de proveedor.",
-                    "hint": "Groq free tier: 100k tokens/día. Puedes usar LLM_PROVIDER=gemini o LLM_PROVIDER=local (Ollama) mientras tanto.",
-                    "error": err_str[:500],
-                    "error_type": type(e).__name__,
-                },
+            return _error_response(
+                429,
+                "Límite de uso del LLM alcanzado (rate limit). Espera unos minutos o cambia de proveedor.",
+                hint="Groq free tier: 100k tokens/día. Puedes usar LLM_PROVIDER=gemini o LLM_PROVIDER=local (Ollama) mientras tanto.",
+                error=err_str[:500],
+                error_type=type(e).__name__,
             )
         logger.exception("Plan execution failed")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "Plan execution failed",
-                "error": err_str,
-                "error_type": type(e).__name__,
-            },
+        return _error_response(
+            500,
+            "Plan execution failed",
+            error=err_str,
+            error_type=type(e).__name__,
         )
 
 
 @app.post("/ask", response_model=AskResponse)
 async def agent_ask(req: AskRequest):
-    """Answer questions using semantic memory and optional plan-scoped events."""
     global http_client, cfg
     if http_client is None or cfg is None:
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "Service not ready"},
-        )
+        return _error_response(503, "Service not ready")
     q = (req.question or "").strip()
     if not q:
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "question must be non-empty"},
-        )
+        return _error_response(400, "question must be non-empty")
     try:
         llm = get_llm_provider(provider_name=cfg.llm_provider)
         answer, sources, pt, ct = await run_ask_agent(
@@ -291,13 +274,11 @@ async def agent_ask(req: AskRequest):
         )
     except Exception as e:
         logger.exception("agent ask failed")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "Agent ask failed",
-                "error": str(e),
-                "error_type": type(e).__name__,
-            },
+        return _error_response(
+            500,
+            "Agent ask failed",
+            error=str(e),
+            error_type=type(e).__name__,
         )
 
 
@@ -367,6 +348,7 @@ async def _execute_plan(
             completion_tokens=completion_tokens,
             http_client=http_client,
             logger=logger,
+            error_message="Failed to store event %s in memory_service",
         )
 
         await event_bus.publish(plan_event)
@@ -410,7 +392,6 @@ async def _execute_plan(
     }
 
 async def _consume_plan_requests() -> None:
-    """Consume `plan.requested` and execute plans with delay support."""
     async def on_payload(payload: PlanRequestedPayload) -> None:
         await maybe_agent_delay(logger)
         await _execute_plan(
@@ -432,7 +413,6 @@ async def _consume_plan_requests() -> None:
 
 
 async def _consume_plan_revisions() -> None:
-    """Consume replanning events and trigger confirmed plan revisions."""
     async def on_suggested(payload: PlanRevisionPayload) -> None:
         logger.info(
             "Received plan.revision_suggested for %s (severity=%s) - waiting for human confirmation.",
@@ -462,7 +442,6 @@ async def _consume_plan_revisions() -> None:
 
 
 async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
-    """Replan automatically from a confirmed `PlanRevisionPayload`."""
     original_plan_id = payload.original_plan_id
     new_plan_id = payload.new_plan_id
 
@@ -538,71 +517,74 @@ async def _handle_plan_revision(payload: PlanRevisionPayload) -> None:
 async def _fetch_original_plan_prompt(
     plan_id: str,
 ) -> tuple[str, str, str]:
-    """Get original prompt, planner reasoning, and user_locale for a plan."""
     if http_client is None:
         return "", "", "en"
 
-    try:
-        resp = await http_client.get(
-            "/events",
-            params={
-                "event_type": "plan.created",
-                "plan_id": plan_id,
-                "limit": 1,
-            },
-        )
-        if resp.status_code != 200:
+    resp = await guarded_http_get(
+        http_client,
+        "/events",
+        logger,
+        key="memory_service:/events",
+        params={
+            "event_type": "plan.created",
+            "plan_id": plan_id,
+            "limit": 1,
+        },
+    )
+    if resp is None or resp.status_code != 200:
+        if resp is not None:
             logger.warning(
                 "Failed to fetch original plan.created for %s (status=%s)",
                 plan_id[:8],
                 resp.status_code,
             )
-            return "", "", "en"
-
+        return "", "", "en"
+    try:
         events = resp.json()
         if not isinstance(events, list) or not events:
             return "", "", "en"
-
-        evt = events[0]
-        payload = evt.get("payload") or {}
-        original_prompt = str(payload.get("original_prompt", "")).strip()
-        reasoning = str(payload.get("reasoning", "")).strip()
-        user_locale = str(payload.get("user_locale", "") or "en").strip() or "en"
-        return original_prompt, reasoning, user_locale
-    except Exception:
-        logger.exception(
-            "Error while fetching original plan.created for %s",
-            plan_id[:8],
+        payload = (events[0] or {}).get("payload") or {}
+        return (
+            str(payload.get("original_prompt", "")).strip(),
+            str(payload.get("reasoning", "")).strip(),
+            str(payload.get("user_locale", "") or "en").strip() or "en",
         )
+    except Exception:
+        logger.exception("Error while parsing original plan.created for %s", plan_id[:8])
         return "", "", "en"
 
 
 async def _infer_repo_url_for_plan(plan_id: str) -> str:
-    """Infer repo URL from stored task state for a plan."""
     if http_client is None:
         return ""
 
+    resp = await guarded_http_get(
+        http_client,
+        f"/tasks/{plan_id}",
+        logger,
+        key="memory_service:/tasks",
+    )
+    if resp is None or resp.status_code != 200:
+        return ""
     try:
-        resp = await http_client.get(f"/tasks/{plan_id}")
-        if resp.status_code != 200:
-            return ""
         tasks = resp.json()
         if not isinstance(tasks, list) or not tasks:
             return ""
-        for t in tasks:
-            repo_url = t.get("repo_url") or ""
-            if isinstance(repo_url, str) and repo_url.strip():
-                return repo_url.strip()
-        return ""
-    except Exception:
-        logger.exception(
-            "Error while inferring repo_url for plan %s",
-            plan_id[:8],
+        return next(
+            (
+                repo_url.strip()
+                for t in tasks
+                for repo_url in [t.get("repo_url") or ""]
+                if isinstance(repo_url, str) and repo_url.strip()
+            ),
+            "",
         )
+    except Exception:
+        logger.exception("Error while parsing tasks for plan %s", plan_id[:8])
         return ""
 
+
 async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
-    """Build compact planner memory context from semantic and pattern tools."""
     global tool_registry
     if tool_registry is None:
         return ""
@@ -676,11 +658,7 @@ async def _fetch_memory_context(user_prompt: str, limit: int = 3) -> str:
                     lines
                 )
 
-        if patterns_summary:
-            if summary.strip():
-                return summary + "\n\n" + patterns_summary
-            return patterns_summary
-        return summary
+        return (summary + "\n\n" + patterns_summary) if patterns_summary and summary.strip() else (patterns_summary or summary)
     except Exception:
         logger.exception("Failed to fetch memory context from memory_service")
         return ""

@@ -25,16 +25,18 @@ from shared.http.client import create_async_http_client
 from shared.llm_adapter import get_llm_provider
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import agent_execution_time, metrics_response
+from shared.observability.metrics import agent_execution_time
+from shared.observability.routing import register_health_metrics_routes
 from shared.observability.tokens import emit_token_usage_event
 from shared.tools import ToolRegistry, execute_tool
 from shared.utils import (
     EventBus,
     build_repo_style_hints,
     guarded_http_get,
-    subscribe_typed_event,
     store_event,
+    subscribe_typed_event,
 )
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 
 SERVICE_NAME = "spec_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -56,8 +58,7 @@ async def lifespan(application: FastAPI):
 
     tool_registry = build_spec_tool_registry()
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     application.state.spec_pipeline_deps = SpecPipelineDeps(
         http_client=http_client,
@@ -70,11 +71,7 @@ async def lifespan(application: FastAPI):
     logger.info("Spec Service ready (strategy=%s)", cfg.strategy)
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(
@@ -85,16 +82,7 @@ app = FastAPI(
 )
 install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
+register_health_metrics_routes(app, SERVICE_NAME)
 
 
 async def _consume_tasks() -> None:
@@ -201,6 +189,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
                 completion_tokens=completion_tokens,
                 http_client=http_client,
                 logger=logger,
+                error_message="Failed to store spec_service metrics event %s",
             )
     except Exception:
         logger.exception(

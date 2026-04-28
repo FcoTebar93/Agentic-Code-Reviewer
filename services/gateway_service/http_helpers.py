@@ -27,4 +27,9 @@ async def proxy_json_request(
         return JSONResponse(content=parse_json_response(resp), status_code=resp.status_code)
     except Exception as exc:
         logger.exception("Failed to proxy %s", log_context)
-        return JSONResponse(content={"error": str(exc)}, status_code=502)
+        return error_response(str(exc), status_code=502)
+
+
+def error_response(message: str, *, status_code: int = 502) -> JSONResponse:
+    """Build a standard JSON error payload."""
+    return JSONResponse(content={"error": message}, status_code=status_code)

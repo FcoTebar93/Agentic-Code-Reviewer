@@ -29,9 +29,9 @@ from shared.middleware.correlation import install_correlation_middleware
 from shared.observability.metrics import (
     agent_execution_time,
     llm_tokens,
-    metrics_response,
     tasks_completed,
 )
+from shared.observability.routing import register_health_metrics_routes
 from shared.policies import effective_mode, load_project_policy, policy_for_path
 from shared.prompt_locale import (
     security_memory_context_prefix,
@@ -42,6 +42,7 @@ from shared.utils import (
     store_event,
     subscribe_typed_event,
 )
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 
 SERVICE_NAME = "security_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -60,18 +61,13 @@ async def lifespan(application: FastAPI):
         default_timeout=30.0,
     )
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     asyncio.create_task(_consume_pr_requests())
     logger.info("Security Service ready")
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(
@@ -82,15 +78,7 @@ app = FastAPI(
 )
 install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
+register_health_metrics_routes(app, SERVICE_NAME)
 
 async def _consume_pr_requests() -> None:
     async def on_payload(payload: PRRequestedPayload) -> None:

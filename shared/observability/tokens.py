@@ -14,8 +14,9 @@ async def emit_token_usage_event(
     completion_tokens: int,
     http_client,
     logger: logging.Logger,
+    error_message: str = "Failed to store event %s",
 ) -> None:
-    """Emit and persist a metrics.tokens_used event when tokens are present."""
+    """Persist a metrics.tokens_used event when token counters are non-zero."""
     if not (prompt_tokens or completion_tokens):
         return
     tok_event = metrics_tokens_used(
@@ -31,5 +32,5 @@ async def emit_token_usage_event(
         http_client,
         tok_event,
         logger=logger,
-        error_message="Failed to store event %s",
+        error_message=error_message,
     )

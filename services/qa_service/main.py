@@ -17,9 +17,10 @@ from shared.contracts.events import CodeGeneratedPayload, EventType
 from shared.http.client import create_async_http_client
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.metrics import metrics_response
+from shared.observability.routing import register_health_metrics_routes
 from shared.tools import ToolRegistry
 from shared.utils import EventBus, maybe_agent_delay, subscribe_typed_event
+from shared.utils.lifecycle import connect_event_bus, shutdown_runtime
 
 SERVICE_NAME = "qa_service"
 event_bus: EventBus = cast(EventBus, None)
@@ -44,8 +45,7 @@ async def lifespan(application: FastAPI):
 
     tool_registry = build_qa_tool_registry()
 
-    event_bus = EventBus(cfg.rabbitmq_url)
-    await event_bus.connect()
+    event_bus = await connect_event_bus(cfg.rabbitmq_url)
 
     asyncio.create_task(_consume_code_generated())
     logger.info(
@@ -55,11 +55,7 @@ async def lifespan(application: FastAPI):
     )
     yield
 
-    logger.info("Shutting down")
-    if event_bus:
-        await event_bus.close()
-    if http_client:
-        await http_client.aclose()
+    await shutdown_runtime(logger=logger, event_bus=event_bus, http_client=http_client)
 
 
 app = FastAPI(
@@ -70,15 +66,7 @@ app = FastAPI(
 )
 install_correlation_middleware(app)
 logger = logging.getLogger(SERVICE_NAME)
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": SERVICE_NAME}
-
-
-@app.get("/metrics")
-async def metrics():
-    return metrics_response()
+register_health_metrics_routes(app, SERVICE_NAME)
 
 async def _consume_code_generated() -> None:
     async def on_payload(payload: CodeGeneratedPayload) -> None:
