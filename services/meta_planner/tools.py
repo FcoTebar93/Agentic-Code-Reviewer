@@ -5,6 +5,14 @@ from typing import Any
 import httpx
 from pydantic import Field
 
+from services.spec_service.tools import (
+    ListProjectFilesInput,
+    ReadFileInput,
+    SearchInRepoInput,
+    list_project_files_tool,
+    read_file_tool,
+    search_in_repo_tool,
+)
 from shared.tools import ToolDefinition, ToolInput, ToolRegistry
 
 
@@ -161,6 +169,43 @@ def build_planner_tool_registry(memory_service_url: str) -> ToolRegistry:
             max_retries=0,
             sandboxed=True,
             tags=["memory", "patterns"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="read_file",
+            description="Leer un fragmento de un archivo del repositorio (solo lectura; rutas relativas al repo)",
+            input_model=ReadFileInput,
+            func=read_file_tool,
+            timeout_s=3.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["repo", "read"],
+        )
+    )
+    registry.register(
+        ToolDefinition(
+            name="list_project_files",
+            description="Listar rutas bajo un directorio del repo con patrón glob",
+            input_model=ListProjectFilesInput,
+            func=list_project_files_tool,
+            timeout_s=5.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["repo", "discover"],
+        )
+    )
+    registry.register(
+        ToolDefinition(
+            name="search_in_repo",
+            description="Buscar texto o regex en el repo (solo lectura)",
+            input_model=SearchInRepoInput,
+            func=search_in_repo_tool,
+            timeout_s=8.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["repo", "search"],
         )
     )
 

@@ -44,6 +44,9 @@ _PLANNER_TOOL_NAMES = (
     "semantic_search_memory",
     "query_events",
     "failure_patterns",
+    "read_file",
+    "list_project_files",
+    "search_in_repo",
 )
 
 PLANNER_SENIOR_GUIDELINES = """
@@ -136,6 +139,7 @@ PLANNER_TOOL_LOOP_SYSTEM = (
     """You are a senior software architect (PLANNER) in a multi-agent CI pipeline.
 
 Call memory tools when you need past events, semantic recall, or failure-by-module patterns.
+Use read_file, list_project_files, and search_in_repo sparingly to ground file_path and module layout in the real repo.
 Keep tasks small (ideally one file), one primary intent per task, avoid huge cross-cutting changes, put contracts before
 heavy implementation when both are needed, and respect QA/security hotspots from tool data.
 
