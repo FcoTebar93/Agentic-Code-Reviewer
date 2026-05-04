@@ -11,7 +11,7 @@ from shared.utils.rabbitmq import EventBus, IdempotencyStore
 PayloadT = TypeVar("PayloadT")
 
 
-class _PayloadModel(Protocol[PayloadT]):
+class _PayloadModel(Protocol[PayloadT]):  # type: ignore[misc]
     @classmethod
     def model_validate(cls, value: Any) -> PayloadT: ...
 
