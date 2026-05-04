@@ -26,6 +26,8 @@ class DevConfig:
     enable_tool_loop: bool
     tool_loop_max_steps: int
     tool_loop_include_ci_tools: bool
+    tool_loop_include_format_code: bool
+    tool_loop_include_typecheck: bool
     large_diff_warn_enabled: bool
     large_diff_soft_lines: int
     large_diff_similarity: float
@@ -67,6 +69,14 @@ class DevConfig:
             enable_tool_loop=env_bool("DEV_ENABLE_TOOL_LOOP"),
             tool_loop_max_steps=env_int("DEV_TOOL_LOOP_MAX_STEPS", 8),
             tool_loop_include_ci_tools=env_bool("DEV_TOOL_LOOP_INCLUDE_CI_TOOLS"),
+            tool_loop_include_format_code=os.environ.get(
+                "DEV_TOOL_LOOP_INCLUDE_FORMAT_CODE", "true"
+            ).lower()
+            in ("1", "true", "yes"),
+            tool_loop_include_typecheck=os.environ.get(
+                "DEV_TOOL_LOOP_INCLUDE_TYPECHECK", "false"
+            ).lower()
+            in ("1", "true", "yes"),
             large_diff_warn_enabled=env_bool("DEV_LARGE_DIFF_WARN", True),
             large_diff_soft_lines=env_int("DEV_LARGE_DIFF_LINE_SOFT", 120),
             large_diff_similarity=env_float("DEV_LARGE_DIFF_SIMILARITY", 0.52),

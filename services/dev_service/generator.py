@@ -68,10 +68,19 @@ _READ_ONLY_TOOLS = ("read_file", "list_project_files", "search_in_repo")
 _CI_TOOLS = ("run_tests", "run_lints")
 
 
-def _tool_loop_tool_names(include_ci: bool) -> list[str]:
+def _tool_loop_tool_names(
+    *,
+    include_ci: bool,
+    include_format_code: bool,
+    include_typecheck: bool,
+) -> list[str]:
     names = list(_READ_ONLY_TOOLS)
+    if include_format_code:
+        names.append("format_code")
     if include_ci:
         names.extend(_CI_TOOLS)
+    if include_typecheck:
+        names.append("run_typecheck")
     return names
 
 
@@ -185,13 +194,22 @@ async def generate_code_with_tool_loop(
     registry: ToolRegistry,
     max_steps: int = 8,
     include_ci_tools: bool = False,
+    include_format_code: bool = True,
+    include_typecheck: bool = False,
     plan_id: str | None = None,
     redis_url: str | None = None,
     user_locale: str = "en",
     qa_feedback: str = "",
 ) -> tuple[CodeResult, int, int]:
     """Multi-turn generation: model may call repo tools before emitting REASONING/CODE."""
-    tools = tools_openai_from_registry(registry, _tool_loop_tool_names(include_ci_tools))
+    tools = tools_openai_from_registry(
+        registry,
+        _tool_loop_tool_names(
+            include_ci=include_ci_tools,
+            include_format_code=include_format_code,
+            include_typecheck=include_typecheck,
+        ),
+    )
     if not tools:
         logger.warning("Tool loop: no tools matched registry; using single-shot codegen")
         agent_tool_loop_outcomes_total.labels(

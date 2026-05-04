@@ -418,6 +418,11 @@ async def run_lints_tool(args: RunLintsInput) -> dict[str, Any]:
         }
 
 
+async def run_typecheck_tool(args: RunLintsInput) -> dict[str, Any]:
+    """Ejecuta un comando de typecheck (mypy, tsc, etc.) dentro del repo."""
+    return await run_lints_tool(args)
+
+
 def build_dev_tool_registry() -> ToolRegistry:
     """Construct a ToolRegistry pre-populated with tools useful for dev_service."""
     registry = ToolRegistry()
@@ -474,6 +479,22 @@ def build_dev_tool_registry() -> ToolRegistry:
             max_retries=0,
             sandboxed=False,
             tags=["lint", "ci"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="run_typecheck",
+            description=(
+                "Ejecutar typecheck acotado al repo (p. ej. 'python -m mypy {path}', "
+                "'npx tsc --noEmit -p tsconfig.json'). Usa rutas relativas al workspace."
+            ),
+            input_model=RunLintsInput,
+            func=run_typecheck_tool,
+            timeout_s=600.0,
+            max_retries=0,
+            sandboxed=False,
+            tags=["typecheck", "ci"],
         )
     )
 
