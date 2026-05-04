@@ -97,8 +97,10 @@ OPTIONAL_IMPROVEMENTS:
 
 QA_TOOL_LOOP_SYSTEM = """You are the same strict QA reviewer as in the user prompt.
 
-Before the final verdict you may call read_file and search_in_repo to compare the patch with the rest
-of the repository (read-only). Be brief: few calls, repo-relative paths.
+Before the final verdict you may call read_file, search_in_repo, query_events, and failure_patterns.
+Use query_events with this plan's plan_id (and optional event_type such as qa.failed) for recent pipeline context;
+use failure_patterns for historical qa.failed/security.blocked hotspots by module. Prefer read-only repo paths.
+Be brief: few calls, repo-relative paths.
 
 When finished, respond with NO tool calls using the exact required format from the user prompt:
 REASONING:, VERDICT:, ISSUES:, REQUIRED_CHANGES:, OPTIONAL_IMPROVEMENTS: (exact labels).

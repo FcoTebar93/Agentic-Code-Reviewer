@@ -46,7 +46,12 @@ from shared.tools.models import ToolExecutionResult
 logger = logging.getLogger(__name__)
 
 ADMADC_TOOL_LOOP_QA = "[ADMADC_TOOL_LOOP_QA]"
-_QA_READ_TOOLS = ("read_file", "search_in_repo")
+_QA_READ_TOOLS = (
+    "read_file",
+    "search_in_repo",
+    "query_events",
+    "failure_patterns",
+)
 _QA_PARSE_REPAIR = (
     "You must include the line VERDICT: PASS or VERDICT: FAIL and all other sections in the required format."
 )
