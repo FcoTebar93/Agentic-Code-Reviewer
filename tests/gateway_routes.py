@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from services.gateway_service.http_helpers import parse_json_response
 from services.gateway_service.routes.approvals import (
     approvals_audit_summary,
     approve_pr,
@@ -15,7 +16,6 @@ from services.gateway_service.routes.approvals import (
     reject_pr,
 )
 from services.gateway_service.routes.health import get_status, health
-from services.gateway_service.routes.proxy import _proxy_json
 from shared.contracts.events import PrApprovalPayload
 
 
@@ -110,7 +110,7 @@ def test_reject_pr_returns_404_for_unknown_approval() -> None:
     asyncio.run(_run())
 
 
-def test_proxy_json_handles_empty_and_invalid_payloads() -> None:
+def test_parse_json_response_handles_empty_and_invalid_payloads() -> None:
     class _Resp:
         def __init__(self, text: str, status_code: int, parsed: Any = None):
             self.text = text
@@ -122,10 +122,10 @@ def test_proxy_json_handles_empty_and_invalid_payloads() -> None:
                 raise ValueError("bad json")
             return self._parsed
 
-    empty = _proxy_json(_Resp("", 502))
+    empty = parse_json_response(_Resp("", 502))
     assert empty["status"] == 502
 
-    invalid = _proxy_json(_Resp("{bad", 200, "raise"))
+    invalid = parse_json_response(_Resp("{bad", 200, "raise"))
     assert "Invalid upstream response" in invalid["error"]
 
 

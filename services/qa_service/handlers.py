@@ -735,6 +735,9 @@ async def _run_lint_tool(
     tool_input: dict[str, Any],
     issue_formatter,
 ) -> list[str]:
+    if deps.tool_registry is None:
+        deps.logger.warning("%s tool skipped: no tool_registry", tool_name)
+        return []
     try:
         result = await execute_tool(
             deps.tool_registry,

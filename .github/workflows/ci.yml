@@ -32,7 +32,7 @@ jobs:
 
       - name: Tests backend (pytest)
         working-directory: ${{ github.workspace }}
-        run: pytest -q tests
+        run: pytest -q tests -m "not e2e"
 
   frontend-quality:
     runs-on: ubuntu-latest

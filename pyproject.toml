@@ -1,6 +1,13 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+python_files = ["*.py"]
 addopts = "-q"
+markers = [
+    "e2e: contra Gateway real con Docker Compose; usar ADMADC_E2E=1",
+    "e2e_security_block: E2E negativo security.blocked (tests/e2e/security_blocked.py)",
+    "e2e_qa_fail: E2E negativo qa.failed (tests/e2e/qa_failed.py)",
+    "integration: integración sin stack completo (carpeta tests/integration)",
+]
 
 [tool.ruff]
 line-length = 88
