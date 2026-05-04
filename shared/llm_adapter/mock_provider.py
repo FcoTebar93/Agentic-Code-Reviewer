@@ -8,6 +8,7 @@ import re
 
 from shared.llm_adapter.base import LLMProvider
 from shared.llm_adapter.models import LLMRequest, LLMResponse
+from shared.utils.env import env_bool
 
 _PLANNING_MARKERS = ("decompose it into a list", "software architect", "user request:")
 _CODEGEN_MARKERS = ("production-quality code", "write", "code should be written for file")
@@ -113,10 +114,21 @@ def _codegen_response(prompt: str) -> str:
         f'if __name__ == "__main__":\n'
         f"    {_to_func_name(fname)}()\n"
     )
+    if env_bool("ADMADC_MOCK_CODEGEN_INJECT_EVAL"):
+        code += "\n\n# admadc-e2e-trigger (security scanner)\n_dummy_eval = eval('1')\n"
     return f"REASONING: {reasoning}\nCODE:\n{code}"
 
 
 def _qa_response(prompt: str) -> str:
+    if env_bool("ADMADC_MOCK_QA_FORCE_FAIL"):
+        return (
+            "REASONING: Mock QA forced FAIL for automated E2E.\n"
+            "VERDICT: FAIL\n"
+            "ISSUES: forced failure for automated testing\n"
+            "REQUIRED_CHANGES: satisfy mock QA\n"
+            "OPTIONAL_IMPROVEMENTS: none\n"
+        )
+
     file_path, language, code_lines = _extract_qa_context(prompt)
 
     reasoning = (

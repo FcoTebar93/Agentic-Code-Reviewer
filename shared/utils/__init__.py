@@ -9,7 +9,6 @@ from shared.utils.memory_window import (
 )
 from shared.utils.rabbitmq import EventBus, IdempotencyStore
 from shared.utils.repo_style_hints import build_repo_style_hints
-from shared.utils.tasks import update_task_state
 
 __all__ = [
     "EventBus",
@@ -21,7 +20,6 @@ __all__ = [
     "subscribe_typed_event",
     "publish_and_store",
     "store_event",
-    "update_task_state",
     "infer_framework_hint",
     "guarded_http_get",
 ]
