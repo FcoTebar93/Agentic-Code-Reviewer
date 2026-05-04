@@ -10,6 +10,7 @@ import { CodePreview } from "./plan/CodePreview";
 import { QAList } from "./plan/QAList";
 import { SecuritySummary } from "./plan/SecuritySummary";
 import { ManualReplan } from "./plan/ManualReplan";
+import { PipelineTrace } from "./plan/PipelineTrace";
 import type { ReplanPrefill } from "./plan/replanPrefill";
 
 export function PlanDetailCard({ planId }: { planId: string | null }) {
@@ -97,12 +98,21 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
   return (
     <Card>
       <SectionHeader>Plan Detail</SectionHeader>
-      <p
-        className="text-neutral-500 text-xs font-mono truncate mb-2"
-        title={data.plan_id}
-      >
-        plan_id: {data.plan_id.slice(0, 8)}…
-      </p>
+      <div className="flex items-center gap-2 mb-2">
+        <p
+          className="text-neutral-500 text-xs font-mono truncate flex-1 min-w-0"
+          title={data.plan_id}
+        >
+          plan_id: {data.plan_id.slice(0, 8)}…
+        </p>
+        <button
+          type="button"
+          className="shrink-0 text-[10px] font-mono text-sky-400 hover:text-sky-300"
+          onClick={() => void navigator.clipboard.writeText(data.plan_id)}
+        >
+          Copiar id
+        </button>
+      </div>
       <div className="flex items-center justify-between mb-2">
         <span className="text-neutral-500 text-xs font-mono">Pipeline</span>
         <Badge className={statusBadgeClass}>
@@ -161,6 +171,11 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
           onSelectModule={setSelectedModuleId}
         />
       )}
+
+      <PipelineTrace
+        rows={data.pipeline_trace}
+        selectedTaskId={selectedTaskId}
+      />
 
       <TaskList
         tasks={filteredTasks}

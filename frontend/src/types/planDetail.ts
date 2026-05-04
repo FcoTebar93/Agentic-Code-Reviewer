@@ -28,6 +28,14 @@ export interface PlanMetrics {
   by_service: PlanMetricsByService[];
 }
 
+export interface DevToolTraceStep {
+  llm_round?: number;
+  tool?: string;
+  ok?: boolean;
+  args_preview?: string;
+  result_preview?: string;
+}
+
 export interface PlanTaskSummary {
   task_id: string;
   file_path: string;
@@ -37,7 +45,14 @@ export interface PlanTaskSummary {
   qa_attempt: number;
   code?: string;
   dev_reasoning?: string;
-  code_history?: { qa_attempt: number; code: string }[];
+  code_history?: Array<{
+    qa_attempt: number;
+    code: string;
+    reasoning?: string;
+    file_path?: string;
+    language?: string;
+    tool_trace?: DevToolTraceStep[];
+  }>;
 }
 
 export interface PlanModuleSummary {
@@ -85,6 +100,17 @@ export interface PlanEvent {
   payload: Record<string, unknown>;
 }
 
+/** Cronológico: una fila por evento de pipeline (sin métricas token-a-token). */
+export interface PipelineTraceRow {
+  event_id?: string;
+  created_at?: string | null;
+  event_type: string;
+  producer?: string;
+  task_id?: string | null;
+  details?: Record<string, unknown>;
+  tool_trace?: DevToolTraceStep[] | null;
+}
+
 export interface PlanDetail {
   plan_id: string;
   created_at: string | null;
@@ -99,5 +125,6 @@ export interface PlanDetail {
   security_outcome: SecurityOutcome | Record<string, never>;
   replans: PlanReplans;
   events: PlanEvent[];
+  pipeline_trace?: PipelineTraceRow[];
 }
 
