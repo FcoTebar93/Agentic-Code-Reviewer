@@ -419,7 +419,8 @@ def _infer_test_layout(file_path: str, language: str) -> str:
 
     if lang in {"python", "py"}:
         hints.append(
-            f"Python: tests/test_{stem}.py (pytest) o tests/{stem}/test_{stem}.py"
+            f"Python: tests/{stem}.py con funciones test_* (pytest descubre *.py bajo tests/) "
+            f"o carpeta tests/{stem}/"
         )
     elif lang in {"javascript", "js", "typescript", "ts"}:
         hints.append(

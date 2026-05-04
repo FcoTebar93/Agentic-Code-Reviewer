@@ -1,4 +1,4 @@
-"""Roundtrip JSON de payloads adicionales (no cubiertos en test_event_contracts)."""
+"""Roundtrip JSON de payloads adicionales (no cubiertos en `contracts_events.py`)."""
 
 from __future__ import annotations
 

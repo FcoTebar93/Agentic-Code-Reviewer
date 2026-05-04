@@ -1,1 +1,1 @@
-"""Pruebas end-to-end contra el Gateway con stack Docker (ver test_pipeline_e2e)."""
+"""E2E contra el Gateway con Docker — ver `pipeline_smoke.py` y escenarios hermanos."""

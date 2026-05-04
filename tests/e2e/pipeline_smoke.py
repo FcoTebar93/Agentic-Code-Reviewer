@@ -4,7 +4,7 @@ Smoke E2E: plan → agentes (mock) → HITL → PR materializado.
 Requisitos:
   - Stack completo: `docker compose up --build` con `LLM_PROVIDER=mock` (valor por defecto en `.env.example`).
   - Puerto del Gateway expuesto (8080 por defecto).
-  - Ejecutar: `ADMADC_E2E=1 pytest tests/e2e/test_pipeline_e2e.py -q`
+  - Ejecutar: `ADMADC_E2E=1 pytest tests/e2e/pipeline_smoke.py -q`
 
 Opcional: si el gateway tiene `GATEWAY_APPROVALS_AUTH_ENABLED=true`, pasá el mismo token en
 `ADMADC_E2E_APPROVAL_TOKEN`.
