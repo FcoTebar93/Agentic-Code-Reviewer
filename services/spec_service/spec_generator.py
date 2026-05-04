@@ -32,7 +32,12 @@ logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "spec_service"
 
-_SPEC_TOOLS = ("read_file", "list_project_files", "search_in_repo")
+_SPEC_TOOLS = (
+    "read_file",
+    "list_project_files",
+    "search_in_repo",
+    "find_neighbor_tests",
+)
 
 _SPEC_REPAIR = (
     "The final answer must contain SPEC: (including ACCEPTANCE CRITERIA: as a numbered list) "
