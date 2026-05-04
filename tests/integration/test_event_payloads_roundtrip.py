@@ -8,8 +8,8 @@ import pytest
 
 from shared.contracts.events import (
     BaseEvent,
-    PlanRevisionPayload,
     PipelineConclusionPayload,
+    PlanRevisionPayload,
     PrApprovalPayload,
     SpecGeneratedPayload,
     TokensUsedPayload,
