@@ -32,7 +32,7 @@ SERVICE_NAME = "replanner_service"
 
 ADMADC_TOOL_LOOP_MARKER = "[ADMADC_TOOL_LOOP]"
 
-_REPLANNER_TOOL_NAMES = ("semantic_outcome_memory", "failure_patterns")
+_REPLANNER_TOOL_NAMES = ("semantic_outcome_memory", "failure_patterns", "query_events")
 
 REPLANNER_SENIOR_BAR = """
 Professional replanning bar (same quality expectations as planner/QA):
@@ -96,7 +96,8 @@ _REPLANNER_PARSE_REPAIR = (
 REPLANNER_TOOL_LOOP_SYSTEM = (
     """You are a replanning critic in a multi-agent dev pipeline.
 
-Use semantic_outcome_memory (with the plan id) and failure_patterns when you need richer memory than the summary below.
+Use semantic_outcome_memory (with the plan id), query_events (same plan_id, optional event_type), and failure_patterns
+when you need richer memory than the summary below.
 Prefer minimal, targeted tool calls.
 
 """

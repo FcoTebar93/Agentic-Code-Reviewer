@@ -33,6 +33,23 @@ class FailurePatternsInput(ToolInput):
     )
 
 
+class QueryEventsInput(ToolInput):
+    event_type: str | None = Field(
+        default=None,
+        description="Tipo de evento (p. ej. 'qa.failed', 'code.generated')",
+    )
+    plan_id: str | None = Field(
+        default=None,
+        description="Filtrar por plan_id",
+    )
+    limit: int = Field(
+        default=80,
+        ge=1,
+        le=500,
+        description="Máximo de eventos",
+    )
+
+
 async def semantic_outcome_memory_tool(
     args: SemanticOutcomeInput,
     base_url: str,
@@ -58,6 +75,20 @@ async def semantic_outcome_memory_tool(
         resp.raise_for_status()
         data = resp.json()
     return {"results": data.get("results", [])}
+
+
+async def query_events_tool(args: QueryEventsInput, base_url: str) -> dict[str, Any]:
+    params: dict[str, Any] = {"limit": args.limit}
+    if args.event_type:
+        params["event_type"] = args.event_type
+    if args.plan_id:
+        params["plan_id"] = args.plan_id
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=10.0) as client:
+        resp = await client.get("/events", params=params)
+        resp.raise_for_status()
+        data = resp.json()
+    return {"events": data}
 
 
 async def failure_patterns_tool(
@@ -100,6 +131,9 @@ def build_replanner_tool_registry(memory_service_url: str) -> ToolRegistry:
     async def _failure_patterns_wrapper(args: FailurePatternsInput) -> dict[str, Any]:
         return await failure_patterns_tool(args, base_url=memory_service_url)
 
+    async def _query_events_wrapper(args: QueryEventsInput) -> dict[str, Any]:
+        return await query_events_tool(args, base_url=memory_service_url)
+
     registry.register(
         ToolDefinition(
             name="semantic_outcome_memory",
@@ -123,6 +157,19 @@ def build_replanner_tool_registry(memory_service_url: str) -> ToolRegistry:
             max_retries=0,
             sandboxed=True,
             tags=["memory", "patterns"],
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="query_events",
+            description="Listar eventos recientes del memory_service para este u otros planes",
+            input_model=QueryEventsInput,
+            func=_query_events_wrapper,
+            timeout_s=10.0,
+            max_retries=0,
+            sandboxed=True,
+            tags=["memory", "events"],
         )
     )
 
