@@ -1,6 +1,12 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "e2e: contra Gateway real con Docker Compose; usar ADMADC_E2E=1",
+    "e2e_security_block: E2E negativo security.blocked (ver test_security_blocked_e2e)",
+    "e2e_qa_fail: E2E negativo qa.failed (ver test_qa_failed_e2e)",
+    "integration: integración sin stack completo (carpeta tests/integration)",
+]
 
 [tool.ruff]
 line-length = 88
