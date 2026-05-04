@@ -175,6 +175,13 @@ def test_build_plan_detail_extracts_plan_created_and_code_history() -> None:
     assert len(detail["tasks"]) == 1
     assert len(detail["tasks"][0]["code_history"]) == 2
     assert detail["tasks"][0]["code_history"][-1]["code"] == "x=2"
+    pt = detail["pipeline_trace"]
+    assert isinstance(pt, list)
+    assert [row["event_type"] for row in pt] == [
+        "plan.created",
+        "code.generated",
+        "code.generated",
+    ]
 
 
 class _FakeResp:

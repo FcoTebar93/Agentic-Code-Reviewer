@@ -102,6 +102,10 @@ class CodeGeneratedPayload(BaseModel):
     reasoning: str = ""
     mode: str = "normal"
     user_locale: str = "en"
+    tool_trace: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Dev agent tool loop steps for user-facing traceability (UI).",
+    )
 
 
 class PRRequestedPayload(BaseModel):

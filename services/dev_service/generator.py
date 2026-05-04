@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from services.dev_service.prompts import (
@@ -38,10 +38,21 @@ from shared.utils import infer_framework_hint
 logger = logging.getLogger(__name__)
 
 
+def _preview_json(obj: Any, max_chars: int = 280) -> str:
+    try:
+        s = json.dumps(obj, ensure_ascii=False, default=str)
+    except Exception:
+        s = str(obj)
+    if len(s) > max_chars:
+        return f"{s[: max_chars - 3]}..."
+    return s
+
+
 @dataclass
 class CodeResult:
     code: str
     reasoning: str
+    tool_trace: list[dict[str, Any]] = field(default_factory=list)
 
 
 SERVICE_NAME = "dev_service"
@@ -217,6 +228,7 @@ async def generate_code_with_tool_loop(
     total_ct = 0
     llm_rounds = 0
     tools_executed = 0
+    tool_trace: list[dict[str, Any]] = []
     budget = tool_loop_budget_from_env(max_steps)
 
     for _step in range(max(1, budget.max_steps)):
@@ -247,6 +259,7 @@ async def generate_code_with_tool_loop(
                         "Dev tool loop detenido: presupuesto de tokens del bucle superado "
                         "(ADMADC_TOOL_LOOP_MAX_TOKENS_PER_LOOP)."
                     ),
+                    tool_trace=tool_trace,
                 ),
                 total_pt,
                 total_ct,
@@ -267,6 +280,7 @@ async def generate_code_with_tool_loop(
                             "Dev tool loop detenido: presupuesto acumulado de tokens por plan "
                             "superado (ADMADC_PLAN_TOOL_LOOP_MAX_TOKENS)."
                         ),
+                        tool_trace=tool_trace,
                     ),
                     total_pt,
                     total_ct,
@@ -312,6 +326,7 @@ async def generate_code_with_tool_loop(
                                 "Dev tool loop detenido: límite de llamadas a herramientas "
                                 "superado (ADMADC_TOOL_LOOP_MAX_TOOL_CALLS)."
                             ),
+                            tool_trace=tool_trace,
                         ),
                         total_pt,
                         total_ct,
@@ -321,6 +336,20 @@ async def generate_code_with_tool_loop(
                     tool_name=name or "unknown",
                     result="success" if exec_result.success else "failure",
                 ).inc()
+                preview_raw = _tool_message_payload(exec_result)
+                if len(preview_raw) > 420:
+                    preview_raw = f"{preview_raw[:417]}..."
+                tool_trace.append(
+                    {
+                        "llm_round": llm_rounds,
+                        "tool": name or "unknown",
+                        "ok": exec_result.success,
+                        "args_preview": _preview_json(args_dict)
+                        if isinstance(args_dict, dict)
+                        else "",
+                        "result_preview": preview_raw,
+                    }
+                )
                 messages.append(
                     {
                         "role": "tool",
@@ -354,7 +383,15 @@ async def generate_code_with_tool_loop(
             task.file_path,
             result.reasoning[:80],
         )
-        return result, total_pt, total_ct
+        return (
+            CodeResult(
+                code=result.code,
+                reasoning=result.reasoning,
+                tool_trace=tool_trace,
+            ),
+            total_pt,
+            total_ct,
+        )
 
     agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
     agent_tool_loop_outcomes_total.labels(
@@ -366,6 +403,7 @@ async def generate_code_with_tool_loop(
             "Dev tool loop stopped after maximum steps without a final CODE block. "
             "Consider raising DEV_TOOL_LOOP_MAX_STEPS or simplifying the task."
         ),
+        tool_trace=tool_trace,
     )
     return result, total_pt, total_ct
 

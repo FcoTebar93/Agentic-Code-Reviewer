@@ -307,6 +307,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
             reasoning=combined_reasoning,
             mode=mode,
             user_locale=getattr(payload, "user_locale", None) or "en",
+            tool_trace=list(code_result.tool_trace),
         )
         step_delay = float(cfg.step_delay)
         if step_delay > 0:

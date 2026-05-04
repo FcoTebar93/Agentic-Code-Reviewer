@@ -17,6 +17,13 @@ from shared.contracts.events import EventType
 logger = logging.getLogger(SERVICE_NAME)
 _MODULE_DEFAULTS = {"tasks_count": 0, "qa_failed_count": 0, "max_severity_hint": "low"}
 _SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+_PIPELINE_TRACE_SKIP_TYPES = frozenset(
+    {
+        EventType.METRICS_TOKENS_USED.value,
+        EventType.MEMORY_STORE.value,
+        EventType.MEMORY_QUERY.value,
+    }
+)
 
 
 async def _fetch_events(
@@ -292,6 +299,121 @@ def _compute_pipeline_health(
     }
 
 
+def _event_sort_key(ev: dict[str, Any]) -> tuple[int, str]:
+    """Sort primarily by created_at (chronological); missing timestamps last."""
+    raw = ev.get("created_at")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return (0, ts.isoformat())
+        except Exception:
+            pass
+    return (1, str(ev.get("event_id", "")))
+
+
+def _sort_events_chronological(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(events or [], key=_event_sort_key)
+
+
+def _pipeline_trace_details(etype: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Small, UI-safe excerpt per event type (no full code blobs)."""
+    out: dict[str, Any] = {}
+    if etype == EventType.PLAN_CREATED.value:
+        tasks = payload.get("tasks") or []
+        out["task_count"] = len(tasks) if isinstance(tasks, list) else 0
+        mode = str(payload.get("mode", "") or "").strip()
+        if mode:
+            out["mode"] = mode
+    elif etype == EventType.TASK_ASSIGNED.value:
+        task = payload.get("task") or {}
+        if isinstance(task, dict):
+            fp = str(task.get("file_path", "") or "").strip()
+            if fp:
+                out["file_path"] = fp
+            desc = str(task.get("description", "") or "").strip()
+            if desc:
+                out["description_preview"] = (
+                    f"{desc[:200]}..." if len(desc) > 200 else desc
+                )
+            qf = str(payload.get("qa_feedback", "") or "").strip()
+            if qf:
+                out["qa_retry"] = True
+    elif etype == EventType.SPEC_GENERATED.value:
+        fp = str(payload.get("file_path", "") or payload.get("target_file", "") or "")
+        if fp.strip():
+            out["file_path"] = fp.strip()
+    elif etype == EventType.CODE_GENERATED.value:
+        fp = str(payload.get("file_path", "") or "").strip()
+        if fp:
+            out["file_path"] = fp
+        out["qa_attempt"] = int(payload.get("qa_attempt", 0) or 0)
+        tt = payload.get("tool_trace") or []
+        if isinstance(tt, list):
+            out["tool_steps_count"] = len(tt)
+    elif etype in (EventType.QA_PASSED.value, EventType.QA_FAILED.value):
+        sev = str(payload.get("severity_hint", "") or "").strip()
+        if sev:
+            out["severity_hint"] = sev
+        issues = payload.get("issues") or []
+        if isinstance(issues, list) and issues:
+            out["issue_count"] = len(issues)
+    elif etype in (EventType.SECURITY_APPROVED.value, EventType.SECURITY_BLOCKED.value):
+        out["approved"] = bool(payload.get("approved", False))
+        viol = payload.get("violations") or []
+        if isinstance(viol, list) and viol:
+            out["violation_count"] = len(viol)
+    elif etype == EventType.PR_REQUESTED.value:
+        bn = str(payload.get("branch_name", "") or "").strip()
+        if bn:
+            out["branch_name"] = bn
+    elif etype == EventType.PR_CREATED.value:
+        url = str(payload.get("pr_url", "") or "").strip()
+        if url:
+            out["pr_url"] = url
+    elif etype == EventType.PIPELINE_CONCLUSION.value:
+        out["approved"] = bool(payload.get("approved", False))
+        files = payload.get("files_changed") or []
+        if isinstance(files, list):
+            out["files_changed_count"] = len(files)
+    elif etype in (
+        EventType.PLAN_REVISION_SUGGESTED.value,
+        EventType.PLAN_REVISION_CONFIRMED.value,
+    ):
+        summ = str(payload.get("summary", "") or "").strip()
+        if summ:
+            out["summary_preview"] = summ[:240] + ("..." if len(summ) > 240 else "")
+        sev = str(payload.get("severity", "") or "").strip()
+        if sev:
+            out["severity"] = sev
+    return out
+
+
+def _build_pipeline_trace(events_chrono: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ordered timeline for dashboard traceability (excludes high-volume metric rows)."""
+    trace: list[dict[str, Any]] = []
+    for ev in events_chrono:
+        etype = str(ev.get("event_type", ""))
+        if etype in _PIPELINE_TRACE_SKIP_TYPES:
+            continue
+        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+        task_id = payload.get("task_id")
+        trace.append(
+            {
+                "event_id": ev.get("event_id"),
+                "created_at": ev.get("created_at"),
+                "event_type": etype,
+                "producer": ev.get("producer", ""),
+                "task_id": str(task_id).strip() if task_id else None,
+                "details": _pipeline_trace_details(etype, payload),
+                "tool_trace": payload.get("tool_trace")
+                if etype == EventType.CODE_GENERATED.value
+                and isinstance(payload.get("tool_trace"), list)
+                else None,
+            }
+        )
+    return trace
+
+
 def _count_replans_for_plan(
     events: list[dict[str, Any]],
     plan_id: str,
@@ -333,15 +455,17 @@ def _build_plan_detail_json(
         elif etype == "code.generated":
             task_id = str(payload.get("task_id", ""))
             if task_id:
-                code_history.setdefault(task_id, []).append(
-                    {
-                        "qa_attempt": int(payload.get("qa_attempt", 0) or 0),
-                        "code": str(payload.get("code", "") or ""),
-                        "reasoning": str(payload.get("reasoning", "") or ""),
-                        "file_path": str(payload.get("file_path", "") or ""),
-                        "language": str(payload.get("language", "") or ""),
-                    }
-                )
+                entry: dict[str, Any] = {
+                    "qa_attempt": int(payload.get("qa_attempt", 0) or 0),
+                    "code": str(payload.get("code", "") or ""),
+                    "reasoning": str(payload.get("reasoning", "") or ""),
+                    "file_path": str(payload.get("file_path", "") or ""),
+                    "language": str(payload.get("language", "") or ""),
+                }
+                tt = payload.get("tool_trace")
+                if isinstance(tt, list):
+                    entry["tool_trace"] = tt
+                code_history.setdefault(task_id, []).append(entry)
         elif etype == "qa.failed":
             qa_outcomes.append(
                 {
@@ -417,8 +541,12 @@ def _build_plan_detail_json(
 
     modules_summary = list(modules_map.values())
 
+    events_list = events if isinstance(events, list) else []
+    events_chrono = _sort_events_chronological(events_list)
+    pipeline_trace = _build_pipeline_trace(events_chrono)
+
     max_events = 80
-    events_sample = events[:max_events] if isinstance(events, list) else []
+    events_sample = list(reversed(events_chrono[-max_events:])) if events_chrono else []
 
     detail: dict[str, Any] = {
         "plan_id": plan_id,
@@ -434,5 +562,6 @@ def _build_plan_detail_json(
         "security_outcome": security_outcome or {},
         "replans": {"items": replans},
         "events": events_sample,
+        "pipeline_trace": pipeline_trace,
     }
     return detail
