@@ -395,7 +395,12 @@ def _build_pipeline_trace(events_chrono: list[dict[str, Any]]) -> list[dict[str,
         etype = str(ev.get("event_type", ""))
         if etype in _PIPELINE_TRACE_SKIP_TYPES:
             continue
-        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+        payload_raw = ev.get("payload")
+        payload: dict[str, Any]
+        if isinstance(payload_raw, dict):
+            payload = payload_raw
+        else:
+            payload = {}
         task_id = payload.get("task_id")
         trace.append(
             {
