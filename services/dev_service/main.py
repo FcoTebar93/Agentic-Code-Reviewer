@@ -28,7 +28,6 @@ from shared.http.client import create_async_http_client
 from shared.llm_adapter import get_llm_provider
 from shared.logging.logger import setup_logging
 from shared.middleware.correlation import install_correlation_middleware
-from shared.observability.tokens import emit_token_usage_event
 from shared.observability.metrics import (
     agent_execution_time,
     tasks_completed,
