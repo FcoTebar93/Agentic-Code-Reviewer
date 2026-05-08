@@ -107,53 +107,51 @@ export function Dashboard(props: DashboardProps) {
         )}
 
         <div className="flex flex-col min-h-0 order-1 min-w-0 flex-1">
-          <div className="flex flex-1 min-h-0 min-w-0 flex-col gap-3 xl:gap-4">
+          <div className="flex flex-1 min-h-0 min-w-0 flex-col gap-4 xl:gap-5">
+            <div className="shrink-0 overflow-x-auto pr-1">
+              <PipelineGraph latestEvent={latestEvent} />
+            </div>
             <MainWorkspaceNav
               active={mainSection}
               onChange={setMainSectionWithHistory}
               panels={{
                 pipeline: (
-                  <div className="flex flex-col flex-1 min-h-0 min-w-0 gap-3 overflow-hidden">
-                    <div className="shrink-0 overflow-x-auto pr-1">
-                      <PipelineGraph latestEvent={latestEvent} />
+                  <div className="flex flex-col flex-1 min-h-0 min-w-0 mt-1 border-t border-neutral-800 pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 mb-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
+                          Registro de ejecución
+                        </span>
+                        <PlanFilterChips
+                          planIds={knownPlanIds}
+                          activePlanId={activePlanId}
+                          onChange={setActivePlanIdWithHistory}
+                        />
+                      </div>
+                      {visibleEvents.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            pushUrlIfChanged({ planId: null });
+                            setVisibleEvents([]);
+                            setActivePlanId(null);
+                            setKnownPlanIds([]);
+                          }}
+                          className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
+                        >
+                          clear logs
+                        </button>
+                      )}
                     </div>
-                    <div className="flex flex-col flex-1 min-h-0 min-w-0 border-t border-neutral-800 pt-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 mb-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
-                            Registro de ejecución
-                          </span>
-                          <PlanFilterChips
-                            planIds={knownPlanIds}
-                            activePlanId={activePlanId}
-                            onChange={setActivePlanIdWithHistory}
-                          />
-                        </div>
-                        {visibleEvents.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              pushUrlIfChanged({ planId: null });
-                              setVisibleEvents([]);
-                              setActivePlanId(null);
-                              setKnownPlanIds([]);
-                            }}
-                            className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
-                          >
-                            clear logs
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-                        <EventFeed events={filteredEvents} />
-                      </div>
+                    <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+                      <EventFeed events={filteredEvents} />
                     </div>
                   </div>
                 ),
               }}
             />
             <aside
-              className="flex flex-col shrink-0 min-h-0 min-w-0 w-full border-t border-neutral-800 pt-3 overflow-y-auto pr-1 max-h-[55dvh] lg:max-h-[calc(100dvh-13rem)]"
+              className="flex flex-col shrink-0 min-h-0 min-w-0 w-full mt-2 border-t border-neutral-800 pt-4 overflow-y-auto pr-1 max-h-[55dvh] lg:max-h-[calc(100dvh-13rem)]"
               aria-label="Lanzar plan y preguntas"
             >
               <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider shrink-0 mb-2">
