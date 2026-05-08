@@ -285,7 +285,6 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
             if _should_fail_open_after_exhaustion(
                 mode=mode,
                 static_issues=static_issues,
-                is_hot_module=is_hot_module,
             ):
                 deps.logger.warning(
                     "QA exhausted retries for task %s with no static findings in normal mode -> fail-open qa.passed",
@@ -867,15 +866,12 @@ def _should_fail_open_after_exhaustion(
     *,
     mode: str,
     static_issues: list[str],
-    is_hot_module: bool,
 ) -> bool:
     """Allow pipeline progress only when QA fail appears LLM-only and low-confidence."""
     normalized_mode = (mode or "normal").strip().lower()
     if normalized_mode not in {"normal"}:
         return False
-    if is_hot_module:
-        return False
-    return len(static_issues) == 0
+    return not _has_severe_static_issues(static_issues)
 
 
 def _infer_module_from_path(file_path: str) -> str:
