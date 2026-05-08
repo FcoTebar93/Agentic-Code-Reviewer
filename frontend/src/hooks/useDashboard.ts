@@ -172,11 +172,56 @@ export function useDashboard(wsUrl: string): DashboardProps {
     }
   }, [events.length]);
 
-  const filteredEvents = sortByTimestampDesc(
+  const revisionContextPlanId =
+    activePlanId ??
+    (() => {
+      const latestWithPlan = sortByTimestampDesc(visibleEvents).find(
+        (e) => extractPlanId(e) !== null,
+      );
+      return latestWithPlan ? extractPlanId(latestWithPlan) : null;
+    })();
+
+  const baseFilteredEvents =
     activePlanId === null
       ? visibleEvents
-      : visibleEvents.filter((e) => extractPlanId(e) === activePlanId),
-  );
+      : visibleEvents.filter((e) => extractPlanId(e) === activePlanId);
+
+  const scopedRevisionEvents = baseFilteredEvents.filter((e) => {
+    if (
+      e.event_type !== "plan.revision_confirmed" &&
+      e.event_type !== "plan.revision_suggested"
+    ) {
+      return true;
+    }
+    if (!revisionContextPlanId) return true;
+    const pid = extractPlanId(e);
+    const newPlanId =
+      typeof e.payload?.new_plan_id === "string"
+        ? (e.payload.new_plan_id as string)
+        : null;
+    return pid === revisionContextPlanId || newPlanId === revisionContextPlanId;
+  });
+
+  const sortedScopedEvents = sortByTimestampDesc(scopedRevisionEvents);
+  const seenRevisionConfirmKeys = new Set<string>();
+  let keptGlobalRevisionConfirm = false;
+  const filteredEvents = sortedScopedEvents.filter((e) => {
+    if (e.event_type !== "plan.revision_confirmed") return true;
+    const pid = extractPlanId(e) ?? "";
+    const newPlanId =
+      typeof e.payload?.new_plan_id === "string"
+        ? (e.payload.new_plan_id as string)
+        : "";
+    const key = `${pid}|${newPlanId}|${e.idempotency_key}`;
+    if (seenRevisionConfirmKeys.has(key)) return false;
+    seenRevisionConfirmKeys.add(key);
+
+    if (activePlanId === null) {
+      if (keptGlobalRevisionConfirm) return false;
+      keptGlobalRevisionConfirm = true;
+    }
+    return true;
+  });
   const latestEvent = filteredEvents[0] ?? null;
 
   const activePlanMode =
