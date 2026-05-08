@@ -65,7 +65,7 @@ export function Dashboard(props: DashboardProps) {
   } = props;
 
   return (
-    <div className="h-dvh max-h-dvh overflow-hidden bg-black text-neutral-50 flex flex-col">
+    <div className="min-h-dvh bg-black text-neutral-50 flex flex-col">
       <HeaderBar
         title="ADMADC"
         subtitle="Autonomous Deterministic Multi-Agent Dev Company"
@@ -96,7 +96,7 @@ export function Dashboard(props: DashboardProps) {
         }
       />
 
-      <main className="relative flex-1 flex flex-col lg:grid lg:grid-cols-[1fr_minmax(280px,380px)] gap-4 p-4 min-h-0 overflow-hidden">
+      <main className="relative flex-1 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] gap-4 px-4 py-4 xl:px-6 min-h-0 overflow-y-auto lg:overflow-hidden">
         {rightDrawerOpen && (
           <div
             role="presentation"
@@ -107,7 +107,7 @@ export function Dashboard(props: DashboardProps) {
         )}
 
         <div className="flex flex-col min-h-0 order-1 min-w-0 flex-1">
-          <div className="flex flex-1 min-h-0 min-w-0 flex-row gap-3">
+          <div className="flex flex-1 min-h-0 min-w-0 flex-col gap-3 xl:gap-4">
             <MainWorkspaceNav
               active={mainSection}
               onChange={setMainSectionWithHistory}
@@ -153,7 +153,7 @@ export function Dashboard(props: DashboardProps) {
               }}
             />
             <aside
-              className="flex flex-col shrink-0 min-h-0 w-[min(200px,36vw)] min-w-[132px] sm:w-[min(220px,34vw)] lg:w-[min(300px,32%)] border-l border-neutral-800 pl-3 overflow-y-auto"
+              className="flex flex-col shrink-0 min-h-0 min-w-0 w-full border-t border-neutral-800 pt-3 overflow-y-auto pr-1 max-h-[55dvh] lg:max-h-[calc(100dvh-13rem)]"
               aria-label="Lanzar plan y preguntas"
             >
               <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider shrink-0 mb-2">
