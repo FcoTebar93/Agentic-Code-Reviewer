@@ -22,7 +22,11 @@ export function LandingNav() {
 
         <nav className="hidden items-center gap-2 md:flex">
           {navItems.map((item) => (
-            <a key={item.href} href={item.href} className="landing-button-ghost">
+            <a
+              key={item.href}
+              href={item.href}
+              className="px-1 text-sm font-medium text-[var(--color-silver-text)]/76 transition-colors hover:text-[var(--color-polar-white)]"
+            >
               {item.label}
             </a>
           ))}
