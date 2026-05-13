@@ -4,6 +4,7 @@ import { ServiceNode } from "./ServiceNode";
 import type { BaseEvent } from "../types/events";
 import { PRODUCER_FOR_EVENT } from "../types/events";
 import { Card, SectionHeader } from "./ui/Card";
+import { APP_META_TEXT } from "./ui/theme";
 
 interface Props {
   latestEvent: BaseEvent | null;
@@ -19,12 +20,12 @@ const SERVICES = [
 ];
 
 const SERVICE_COLORS: Record<string, string> = {
-  meta_planner: "#3b82f6",
-  spec_service: "#22c55e",
-  dev_service: "#f59e0b",
-  qa_service: "#06b6d4",
-  security_service: "#8b5cf6",
-  github_service: "#10b981",
+  meta_planner: "#c084fc",
+  spec_service: "#34d399",
+  dev_service: "#f472b6",
+  qa_service: "#22d3ee",
+  security_service: "#a855f7",
+  github_service: "#fcd34d",
 };
 
 function getServiceColor(serviceId: string): string {
@@ -59,8 +60,12 @@ export function PipelineGraph({ latestEvent }: Props) {
   }, [latestEvent]);
 
   return (
-    <Card className="shadow-lg shadow-black/40">
-      <SectionHeader>{t("dashboard.pipelineGraph")}</SectionHeader>
+    <Card className="shadow-lg shadow-black/30">
+      <SectionHeader
+        right={<span className={APP_META_TEXT}>{t("workspace.pipeline.hint")}</span>}
+      >
+        {t("dashboard.pipelineGraph")}
+      </SectionHeader>
       <svg
         viewBox={`0 0 ${SVG_W} ${SVG_H}`}
         width="100%"

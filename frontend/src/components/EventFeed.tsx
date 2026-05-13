@@ -6,6 +6,12 @@ import { postJson } from "../api/api";
 import { Card, SectionHeader } from "./ui/Card";
 import { CodePanel } from "./ui/CodePanel";
 import {
+  APP_BUTTON_SECONDARY,
+  APP_BUTTON_SUBTLE,
+  APP_EMPTY_STATE,
+  cx,
+} from "./ui/theme";
+import {
   formatLocalizedTime,
   translateEventType,
 } from "../i18n/formatters";
@@ -170,50 +176,58 @@ function EventRow({ evt, isExpanded, onToggle, language }: EventRowProps) {
   }
 
   return (
-    <div className="bg-neutral-900 rounded-lg overflow-hidden text-xs font-mono border border-neutral-800">
+    <div className="app-surface-soft overflow-hidden text-xs font-mono">
       <div
-        className={`flex items-start gap-2 px-3 py-2 ${expandable ? "cursor-pointer select-none hover:bg-neutral-800/80" : ""}`}
+        className={cx(
+          "flex items-start gap-2 px-3 py-2.5 transition-colors",
+          expandable && "cursor-pointer select-none hover:bg-[rgba(40,42,54,0.52)]",
+        )}
         onClick={() => expandable && onToggle()}
       >
-        <span className="text-neutral-500 flex-none w-20 pt-px">
+        <span className="app-meta-text flex-none w-20 pt-px">
           {formatLocalizedTime(evt.timestamp, language)}
         </span>
         <span
-          className="rounded px-1.5 py-0.5 font-semibold flex-none text-white whitespace-nowrap"
-          style={{ backgroundColor: color, opacity: 0.9 }}
+          className="app-badge flex-none whitespace-nowrap border-transparent text-white"
+          style={{
+            backgroundColor: `${color}2a`,
+            boxShadow: `inset 0 0 0 1px ${color}66`,
+          }}
         >
           {label}
         </span>
-        <span className="text-neutral-300 truncate flex-1">
+        <span className="truncate flex-1 text-[var(--color-silver-text)]">
           {evt.producer}
           {inlineFilePath && (
-            <span className="text-emerald-400 ml-2">{inlineFilePath}</span>
+            <span className="ml-2 text-[var(--color-electric-cyan)]">{inlineFilePath}</span>
           )}
-          <span className="text-neutral-600 ml-2">#{shortId(evt.event_id)}</span>
+          <span className="app-muted-text ml-2">#{shortId(evt.event_id)}</span>
         </span>
         {prUrl && !open && (
-          <span className="text-emerald-400 flex-none ml-1">↗</span>
+          <span className="ml-1 flex-none text-[var(--color-electric-cyan)]">↗</span>
         )}
         {expandable && (
-          <span className="text-neutral-600 flex-none ml-1">
+          <span className="app-muted-text ml-1 flex-none">
             {open ? "▾" : "▸"}
           </span>
         )}
       </div>
 
       {expandable && open && (
-        <div className="border-t border-neutral-800 space-y-3 px-3 pt-2 pb-3">
+        <div className="app-divider space-y-3 border-t px-3 pb-3 pt-2">
           {isPlanRevision && (
             <div className="flex items-center justify-between gap-2">
-              <p className="text-neutral-500 text-[10px] uppercase tracking-widest">
+              <p className="app-section-title text-[10px]">
                 {t("eventFeed.replannerSuggestion")}
               </p>
               <button
                 onClick={handleReplanClick}
                 disabled={replanLoading}
-                className={`text-[10px] font-mono px-2 py-0.5 rounded border border-amber-400/60 text-amber-300 transition-colors ${
-                  replanLoading ? "opacity-60 cursor-default" : "hover:bg-amber-400/10"
-                }`}
+                className={cx(
+                  APP_BUTTON_SECONDARY,
+                  "min-h-0 border-amber-500/50 px-2.5 py-1 text-[10px] text-amber-300",
+                  !replanLoading && "hover:bg-amber-500/10",
+                )}
               >
                 {replanLoading
                   ? t("eventFeed.confirming")
@@ -223,14 +237,14 @@ function EventRow({ evt, isExpanded, onToggle, language }: EventRowProps) {
           )}
           {prUrl && (
             <div>
-              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1">
+              <p className="app-section-title mb-1 text-[10px]">
                 {t("eventFeed.pullRequest")}
               </p>
               <a
                 href={prUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-emerald-400 hover:text-emerald-300 underline break-all"
+                className="break-all text-[var(--color-electric-cyan)] underline transition-colors hover:text-[var(--color-polar-white)]"
                 onClick={(e) => e.stopPropagation()}
               >
                 {prUrl}
@@ -240,13 +254,13 @@ function EventRow({ evt, isExpanded, onToggle, language }: EventRowProps) {
 
           {plannedFiles.length > 0 && (
             <div>
-              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
+              <p className="app-section-title mb-1.5 text-[10px]">
                 {t("eventFeed.plannedFiles")} ({plannedFiles.length})
               </p>
               <div className="space-y-0.5">
                 {plannedFiles.map((fp) => (
-                  <div key={fp} className="text-emerald-400 flex items-center gap-1">
-                    <span className="text-neutral-600">→</span> {fp}
+                  <div key={fp} className="flex items-center gap-1 text-[var(--color-electric-cyan)]">
+                    <span className="app-muted-text">→</span> {fp}
                   </div>
                 ))}
               </div>
@@ -255,7 +269,7 @@ function EventRow({ evt, isExpanded, onToggle, language }: EventRowProps) {
 
           {fileList.length > 0 && (
             <div>
-              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
+              <p className="app-section-title mb-1.5 text-[10px]">
                 {isConclusion
                   ? t("eventFeed.filesChanged")
                   : t("eventFeed.filesInPr")}{" "}
@@ -263,8 +277,8 @@ function EventRow({ evt, isExpanded, onToggle, language }: EventRowProps) {
               </p>
               <div className="space-y-0.5">
                 {fileList.map((fp) => (
-                  <div key={fp} className="text-emerald-400 flex items-center gap-1">
-                    <span className="text-neutral-600">+</span> {fp}
+                  <div key={fp} className="flex items-center gap-1 text-[var(--color-electric-cyan)]">
+                    <span className="app-muted-text">+</span> {fp}
                   </div>
                 ))}
               </div>
@@ -273,7 +287,7 @@ function EventRow({ evt, isExpanded, onToggle, language }: EventRowProps) {
 
           {codeInfo && (
             <div>
-              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
+              <p className="app-section-title mb-1.5 text-[10px]">
                 {evt.event_type === "qa.passed"
                   ? t("eventFeed.reviewedCode")
                   : t("eventFeed.generatedCode")}{" "}
@@ -285,12 +299,12 @@ function EventRow({ evt, isExpanded, onToggle, language }: EventRowProps) {
 
           {reasoning && (
             <div>
-              <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
+              <p className="app-section-title mb-1.5 text-[10px]">
                 {isConclusion
                   ? t("eventFeed.conclusion")
                   : t("eventFeed.agentReasoning")}
               </p>
-              <p className="text-neutral-200 leading-relaxed whitespace-pre-wrap">
+              <p className="leading-relaxed whitespace-pre-wrap text-[var(--color-silver-text)]">
                 {reasoning}
               </p>
             </div>
@@ -343,7 +357,7 @@ export function EventFeed({ events }: Props) {
           events.length > 0 && (
             <button
               onClick={handleCollapseExpandAll}
-              className="text-neutral-500 hover:text-neutral-300 text-[10px] font-mono transition-colors"
+              className={cx(APP_BUTTON_SUBTLE, "min-h-0 px-0 py-0 text-[10px]")}
             >
               {collapseAll ? t("eventFeed.expandAll") : t("eventFeed.collapseAll")}
             </button>
@@ -351,12 +365,12 @@ export function EventFeed({ events }: Props) {
         }
       >
         {t("eventFeed.title")}{" "}
-        <span className="text-neutral-600 normal-case">({events.length})</span>
+        <span className="app-muted-text normal-case">({events.length})</span>
       </SectionHeader>
 
       <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
         {events.length === 0 && (
-          <p className="text-neutral-600 text-sm font-mono">
+          <p className={`${APP_EMPTY_STATE} text-sm`}>
             {t("eventFeed.waiting")}
           </p>
         )}
