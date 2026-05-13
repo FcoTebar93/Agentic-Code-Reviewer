@@ -8,12 +8,12 @@ interface StatRowProps {
 
 export function StatRow({ label, value, subtle = false }: StatRowProps) {
   return (
-    <div className="flex justify-between">
+    <div className="flex items-start justify-between gap-4">
       <dt
         className={
           subtle
-            ? "text-neutral-500 text-[10px] font-mono"
-            : "text-neutral-500 text-xs font-mono"
+            ? "app-meta-text text-[10px]"
+            : "app-meta-text text-xs"
         }
       >
         {label}
@@ -21,8 +21,8 @@ export function StatRow({ label, value, subtle = false }: StatRowProps) {
       <dd
         className={
           subtle
-            ? "text-neutral-200 text-[10px] font-mono"
-            : "text-neutral-200 text-xs font-mono"
+            ? "text-[var(--color-polar-white)] text-[10px] font-mono text-right"
+            : "text-[var(--color-polar-white)] text-xs font-mono text-right"
         }
       >
         {value}

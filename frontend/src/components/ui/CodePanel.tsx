@@ -1,4 +1,8 @@
 import { useState, type ReactNode } from "react";
+import {
+  APP_BUTTON_SUBTLE,
+  cx,
+} from "./theme";
 
 interface CodePanelProps {
   code: string;
@@ -23,25 +27,26 @@ export function CodePanel({
   }
 
   return (
-    <div className={`relative ${className ?? ""}`}>
-      <div className="flex items-center justify-between bg-black rounded-t px-3 py-1 border border-neutral-800">
-        <span className="text-neutral-500 text-[10px] uppercase tracking-widest">
+    <div className={cx("app-code-panel", className)}>
+      <div className="app-code-panel-header">
+        <span className="app-code-panel-title">
           {language}
         </span>
         <div className="flex items-center gap-2">
           {headerExtra}
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               copy();
             }}
-            className="text-neutral-500 hover:text-neutral-300 text-[10px] transition-colors"
+            className={cx(APP_BUTTON_SUBTLE, "min-h-0 px-0 py-0 text-[10px]")}
           >
             {copied ? "copied ✓" : "copy"}
           </button>
         </div>
       </div>
-      <pre className="bg-black border border-t-0 border-neutral-800 rounded-b px-3 py-2 overflow-x-auto max-h-64 text-[11px] leading-relaxed text-neutral-200 whitespace-pre">
+      <pre className="app-code-panel-body">
         {code}
       </pre>
     </div>

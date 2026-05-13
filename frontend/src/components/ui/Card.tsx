@@ -1,16 +1,20 @@
 import type { ReactNode } from "react";
+import { cx } from "./theme";
 
 interface CardProps {
   children: ReactNode;
   className?: string;
+  compact?: boolean;
 }
 
-export function Card({ children, className }: CardProps) {
+export function Card({ children, className, compact = false }: CardProps) {
   return (
     <div
-      className={`bg-neutral-900 rounded-xl border border-neutral-800 p-4 ${
-        className ?? ""
-      }`}
+      className={cx(
+        "app-surface",
+        compact ? "p-4" : "p-5 xl:p-6",
+        className,
+      )}
     >
       {children}
     </div>
@@ -25,12 +29,8 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ children, right, className }: SectionHeaderProps) {
   return (
-    <div
-      className={`flex items-center justify-between mb-3 ${
-        className ?? ""
-      }`}
-    >
-      <h2 className="text-neutral-400 text-xs font-mono uppercase tracking-widest">
+    <div className={cx("app-section-header", className)}>
+      <h2 className="app-section-title">
         {children}
       </h2>
       {right && <div className="flex items-center gap-2">{right}</div>}
