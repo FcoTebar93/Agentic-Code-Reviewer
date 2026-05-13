@@ -257,7 +257,8 @@ Para validar cambios antes de abrir PR:
   - `pip install ruff mypy pytest pre-commit`
   - `ruff check .`
   - `mypy shared services`
-  - `pytest -q tests`
+  - `pytest -q tests -m "not e2e"` (E2E con Docker: `ADMADC_E2E=1`; escenarios en `tests/e2e/`)
+  - Integración ligera (`tests/integration/`): scanner estático, agregación `plan_aggregate`, roundtrip de payloads de eventos y parser QA — corre en CI con el comando anterior
 - **Frontend**
   - `cd frontend`
   - `npm install`
