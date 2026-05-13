@@ -1,8 +1,13 @@
-import { useDashboard } from "./hooks/useDashboard";
-import { Dashboard } from "./components/dashboard/Dashboard";
-import { getGatewayWsUrl } from "./lib/gatewayConfig";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { LandingPage } from "./pages/LandingPage";
+import { DashboardPage } from "./pages/DashboardPage";
 
 export default function App() {
-  const dashboard = useDashboard(getGatewayWsUrl());
-  return <Dashboard {...dashboard} />;
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/app" element={<DashboardPage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
