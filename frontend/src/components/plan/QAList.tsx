@@ -1,6 +1,7 @@
 import type { PlanDetail } from "../../types/planDetail";
 import { useTranslation } from "react-i18next";
 import { translateSeverity } from "../../i18n/formatters";
+import { APP_BUTTON_SECONDARY, APP_META_TEXT, cx } from "../ui/theme";
 
 export function QAList({
   qaOutcomes,
@@ -17,17 +18,17 @@ export function QAList({
   const { t } = useTranslation();
   if (!qaOutcomes.length) return null;
   return (
-    <div className="mt-3 border-t border-neutral-800 pt-2">
-      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+    <div className="app-divider mt-3 border-t pt-2">
+      <p className="app-section-title mb-1 text-[10px]">
         {t("qaList.title")}
       </p>
       <div className="space-y-1 max-h-40 overflow-auto pr-1">
         {qaOutcomes.map((o) => (
           <div
             key={o.task_id}
-            className="text-xs border border-neutral-800 rounded px-2 py-1.5"
+            className="app-surface-soft px-3 py-2 text-xs"
           >
-            <div className="flex justify-between text-[10px] text-neutral-500 mb-0.5">
+            <div className={`${APP_META_TEXT} mb-0.5 flex justify-between text-[10px]`}>
               <span>
                 {t("qaList.taskModule", {
                   taskId: o.task_id.slice(0, 8),
@@ -36,9 +37,9 @@ export function QAList({
               </span>
               <span>{t("qaList.attempt", { count: o.qa_attempt })}</span>
             </div>
-            <div className="text-[10px] mb-0.5">
+            <div className="mb-0.5 text-[10px] text-[var(--color-silver-text)]">
               {t("qaList.severity")}:{" "}
-              <span className="font-medium">
+              <span className="font-medium text-[var(--color-danger-red)]">
                 {translateSeverity(t, o.severity_hint)}
               </span>
             </div>
@@ -54,13 +55,16 @@ export function QAList({
                       o.qa_attempt,
                     )
                   }
-                  className="text-[10px] font-mono px-2 py-0.5 rounded border border-amber-500/60 text-amber-300 hover:bg-amber-500/10 transition-colors"
+                  className={cx(
+                    APP_BUTTON_SECONDARY,
+                    "min-h-0 border-amber-500/40 px-2.5 py-1 text-[10px] text-amber-300 hover:bg-amber-500/10",
+                  )}
                 >
                   {t("qaList.replanModule")}
                 </button>
               )}
             </div>
-            <ul className="list-disc ml-4 text-[10px] space-y-0.5">
+            <ul className="ml-4 list-disc space-y-0.5 text-[10px] text-[var(--color-silver-text)]/78">
               {o.issues.slice(0, 3).map((iss, idx) => (
                 <li key={idx}>{iss}</li>
               ))}

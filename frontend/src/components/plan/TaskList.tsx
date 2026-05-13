@@ -4,6 +4,7 @@ import {
   translateGenericStatus,
   translateSeverity,
 } from "../../i18n/formatters";
+import { APP_META_TEXT, cx } from "../ui/theme";
 
 export function TaskList({
   tasks,
@@ -24,8 +25,8 @@ export function TaskList({
   );
 
   return (
-    <div className="mt-3 border-t border-neutral-800 pt-2">
-      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+    <div className="app-divider mt-3 border-t pt-2">
+      <p className="app-section-title mb-1 text-[10px]">
         {translate("taskList.title")}
       </p>
       <div className="space-y-1 max-h-40 overflow-auto pr-1">
@@ -40,22 +41,22 @@ export function TaskList({
             <div
               key={task.task_id}
               onClick={() => onSelectTask(task.task_id)}
-              className={`text-xs border rounded px-2 py-1.5 flex flex-col gap-0.5 cursor-pointer ${
+              className={`app-surface-soft flex cursor-pointer flex-col gap-0.5 px-3 py-2 text-xs transition-colors ${
                 isActive
-                  ? "border-neutral-300 bg-neutral-900/60"
-                  : "border-neutral-800 hover:border-neutral-600"
+                  ? "border-[var(--color-electric-cyan)]/34 bg-[rgba(34,211,238,0.08)]"
+                  : "hover:border-[var(--color-neon-violet)]/28"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate max-w-[160px]">
+                <span className="max-w-[160px] truncate text-[var(--color-polar-white)]">
                   {task.file_path || translate("taskList.noPath")}
                 </span>
-                <span className="text-[10px] text-neutral-500">
+                <span className={cx(APP_META_TEXT, "text-[10px]")}>
                   {translateGenericStatus(translate, task.status || "unknown")}
                 </span>
               </div>
-              <div className="text-[10px] text-neutral-500 flex justify-between gap-2">
-                <span className="truncate max-w-[130px]">
+              <div className={`${APP_META_TEXT} flex justify-between gap-2 text-[10px]`}>
+                <span className="max-w-[130px] truncate">
                   {task.language} ·{" "}
                   {translateGenericStatus(translate, task.group_id || "root")}
                 </span>
@@ -64,7 +65,7 @@ export function TaskList({
                 </span>
               </div>
               {severity && (
-                <div className="text-[10px] text-red-400">
+                <div className="text-[10px] text-[var(--color-danger-red)]">
                   {translate("taskList.qaSeverity", {
                     severity: translateSeverity(translate, severity),
                   })}

@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { PlanDetail } from "../../types/planDetail";
 import { buildLineDiff } from "./lineDiff";
 import { translateGenericStatus } from "../../i18n/formatters";
+import { CodePanel } from "../ui/CodePanel";
+import { APP_META_TEXT, APP_BUTTON_TAB, cx } from "../ui/theme";
 
 export function CodePreview({
   task,
@@ -31,11 +33,11 @@ export function CodePreview({
 
   if (!hasCode) {
     return (
-      <div className="mt-3 border-t border-neutral-800 pt-2">
-        <p className="text-neutral-500 text-[10px] font-mono mb-1">
+      <div className="app-divider mt-3 border-t pt-2">
+        <p className="app-section-title mb-1 text-[10px]">
           {t("codePreview.title")}
         </p>
-        <p className="text-[10px] text-neutral-600 font-mono">
+        <p className="app-empty-state text-[10px]">
           {t("codePreview.missing")}
         </p>
       </div>
@@ -43,20 +45,16 @@ export function CodePreview({
   }
 
   return (
-    <div className="mt-3 border-t border-neutral-800 pt-2">
+    <div className="app-divider mt-3 border-t pt-2">
       <div className="flex items-center justify-between mb-1">
-        <p className="text-neutral-500 text-[10px] font-mono">
+        <p className="app-section-title text-[10px]">
           {t("codePreview.title")} · {task.file_path || t("taskList.noPath")}
         </p>
         <div className="flex gap-1 text-[10px] font-mono">
           <button
             type="button"
             onClick={() => setView("actual")}
-            className={`px-2 py-0.5 rounded border ${
-              view === "actual"
-                ? "border-neutral-300 text-neutral-100"
-                : "border-neutral-700 text-neutral-500 hover:border-neutral-500"
-            }`}
+            className={cx(APP_BUTTON_TAB, "min-h-0 px-2 py-1 text-[10px]", view === "actual" && "app-button-tab-active")}
           >
             {t("codePreview.actual")}
           </button>
@@ -65,22 +63,14 @@ export function CodePreview({
               <button
                 type="button"
                 onClick={() => setView("original")}
-                className={`px-2 py-0.5 rounded border ${
-                  view === "original"
-                    ? "border-neutral-300 text-neutral-100"
-                    : "border-neutral-700 text-neutral-500 hover:border-neutral-500"
-                }`}
+                className={cx(APP_BUTTON_TAB, "min-h-0 px-2 py-1 text-[10px]", view === "original" && "app-button-tab-active")}
               >
                 {t("codePreview.original")}
               </button>
               <button
                 type="button"
                 onClick={() => setView("diff")}
-                className={`px-2 py-0.5 rounded border ${
-                  view === "diff"
-                    ? "border-neutral-300 text-neutral-100"
-                    : "border-neutral-700 text-neutral-500 hover:border-neutral-500"
-                }`}
+                className={cx(APP_BUTTON_TAB, "min-h-0 px-2 py-1 text-[10px]", view === "diff" && "app-button-tab-active")}
               >
                 {t("codePreview.diff")}
               </button>
@@ -88,7 +78,7 @@ export function CodePreview({
           )}
         </div>
       </div>
-      <div className="mb-1 flex justify-between items-center text-[10px] text-neutral-500 font-mono">
+      <div className={`${APP_META_TEXT} mb-1 flex items-center justify-between text-[10px]`}>
         <span>
           {task.language} · {t("codePreview.group", {
             group: translateGenericStatus(t, task.group_id || "root"),
@@ -97,19 +87,16 @@ export function CodePreview({
         <span>{t("codePreview.qaAttempt", { count: task.qa_attempt })}</span>
       </div>
       {view === "actual" && (
-        <pre className="max-h-56 overflow-auto bg-black border border-neutral-800 rounded px-2 py-2 text-[11px] font-mono text-neutral-100 whitespace-pre">
-          {latestCode}
-        </pre>
+        <CodePanel code={latestCode} language={task.language || "text"} />
       )}
       {view === "original" && hasHistoryDiff && (
-        <pre className="max-h-56 overflow-auto bg-black border border-neutral-800 rounded px-2 py-2 text-[11px] font-mono text-neutral-100 whitespace-pre">
-          {originalCode}
-        </pre>
+        <CodePanel code={originalCode} language={task.language || "text"} />
       )}
       {view === "diff" && hasHistoryDiff && (
-        <pre className="max-h-56 overflow-auto bg-black border border-neutral-800 rounded px-2 py-2 text-[11px] font-mono text-neutral-100 whitespace-pre">
-          {buildLineDiff(originalCode, latestCode)}
-        </pre>
+        <CodePanel
+          code={buildLineDiff(originalCode, latestCode)}
+          language="diff"
+        />
       )}
     </div>
   );

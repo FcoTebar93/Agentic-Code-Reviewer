@@ -8,6 +8,7 @@ import {
   translateGenericStatus,
   translateSeverity,
 } from "../../i18n/formatters";
+import { APP_BUTTON_SECONDARY, APP_EMPTY_STATE, APP_META_TEXT, cx } from "../ui/theme";
 
 function detailLine(
   details: Record<string, unknown> | undefined,
@@ -78,11 +79,11 @@ export function PipelineTrace({
 
   if (!safeRows.length) {
     return (
-      <div className="mt-3 border-t border-neutral-800 pt-2">
-        <p className="text-neutral-500 text-[10px] font-mono mb-1">
+      <div className="app-divider mt-3 border-t pt-2">
+        <p className="app-section-title mb-1 text-[10px]">
           {t("pipelineTrace.title")}
         </p>
-        <p className="text-[10px] text-neutral-600 font-mono">
+        <p className={`${APP_EMPTY_STATE} text-[10px]`}>
           {t("pipelineTrace.empty")}
         </p>
       </div>
@@ -90,14 +91,14 @@ export function PipelineTrace({
   }
 
   return (
-    <div className="mt-3 border-t border-neutral-800 pt-2">
-      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+    <div className="app-divider mt-3 border-t pt-2">
+      <p className="app-section-title mb-1 text-[10px]">
         {t("pipelineTrace.title")} ({t("pipelineTrace.steps", { count: safeRows.length })})
       </p>
-      <p className="text-[10px] text-neutral-600 font-mono mb-2">
+      <p className={`${APP_META_TEXT} mb-2 text-[10px]`}>
         {t("pipelineTrace.helper")}
       </p>
-      <div className="space-y-1 max-h-56 overflow-auto pr-1 border border-neutral-800 rounded-md p-1.5 bg-neutral-950/40">
+      <div className="app-surface-soft max-h-56 space-y-1 overflow-auto p-1.5 pr-1">
         {safeRows.map((row, idx) => {
           const rowTask = row.task_id ?? null;
           const highlight =
@@ -120,18 +121,18 @@ export function PipelineTrace({
           return (
             <div
               key={key}
-              className={`text-[10px] font-mono rounded border px-2 py-1.5 transition-opacity ${
+              className={`rounded px-3 py-2 text-[10px] font-mono transition-opacity ${
                 highlight
-                  ? "border-sky-500/50 bg-sky-950/30"
-                  : "border-neutral-800 bg-neutral-900/30"
+                  ? "border border-[var(--color-electric-cyan)]/34 bg-[rgba(34,211,238,0.08)]"
+                  : "app-surface-soft"
               } ${dim ? "opacity-45" : ""}`}
             >
               <div className="flex justify-between gap-2 items-start">
                 <div className="min-w-0 flex-1">
-                  <div className="text-neutral-300 truncate">
+                  <div className="truncate text-[var(--color-polar-white)]">
                     {translateEventType(t, row.event_type)}
                   </div>
-                  <div className="text-neutral-500 truncate mt-0.5">
+                  <div className={`${APP_META_TEXT} mt-0.5 truncate`}>
                     {row.created_at
                       ? formatLocalizedDateTime(
                           row.created_at,
@@ -148,14 +149,14 @@ export function PipelineTrace({
                     {row.producer ? ` · ${row.producer}` : ""}
                   </div>
                   {rowTask && (
-                    <div className="text-neutral-600 truncate mt-0.5">
+                    <div className="app-muted-text mt-0.5 truncate">
                       {t("pipelineTrace.taskLabel", {
                         taskId: rowTask.slice(0, 8),
                       })}
                     </div>
                   )}
                   {extras ? (
-                    <div className="text-neutral-500 mt-1 break-words whitespace-pre-wrap">
+                    <div className={`${APP_META_TEXT} mt-1 break-words whitespace-pre-wrap`}>
                       {extras}
                     </div>
                   ) : null}
@@ -164,25 +165,30 @@ export function PipelineTrace({
                   <button
                     type="button"
                     onClick={() => toggle(key)}
-                    className="shrink-0 text-sky-400 hover:text-sky-300 text-[10px]"
+                    className={cx(
+                      APP_BUTTON_SECONDARY,
+                      "min-h-0 shrink-0 px-2.5 py-1 text-[10px] text-[var(--color-electric-cyan)]",
+                    )}
                   >
                     {open ? t("pipelineTrace.hideTools") : t("pipelineTrace.showTools")}
                   </button>
                 )}
               </div>
               {hasTools && open && (
-                <ul className="mt-2 space-y-1 border-t border-neutral-800 pt-2 text-neutral-400">
+                <ul className="app-divider mt-2 space-y-1 border-t pt-2 text-[var(--color-silver-text)]/78">
                   {tools!.map((step, i) => (
                     <li key={`${key}-tool-${i}`} className="break-words">
                       <span
                         className={
-                          step.ok === false ? "text-red-400" : "text-emerald-400/90"
+                          step.ok === false
+                            ? "text-[var(--color-danger-red)]"
+                            : "text-[var(--color-electric-cyan)]"
                         }
                       >
                         {step.tool ?? "?"}
                       </span>
                       {step.llm_round != null ? (
-                        <span className="text-neutral-600">
+                        <span className="app-muted-text">
                           {" "}
                           ({t("pipelineTrace.llmRound", {
                             count: step.llm_round,
@@ -190,12 +196,12 @@ export function PipelineTrace({
                         </span>
                       ) : null}
                       {step.args_preview ? (
-                        <pre className="mt-0.5 text-[9px] text-neutral-500 whitespace-pre-wrap max-h-24 overflow-auto">
+                        <pre className="app-surface-soft mt-1 max-h-24 overflow-auto whitespace-pre-wrap px-2 py-1 text-[9px] text-[var(--color-silver-text)]/78">
                           {t("pipelineTrace.args", { value: step.args_preview })}
                         </pre>
                       ) : null}
                       {step.result_preview ? (
-                        <pre className="mt-0.5 text-[9px] text-neutral-500 whitespace-pre-wrap max-h-28 overflow-auto">
+                        <pre className="app-surface-soft mt-1 max-h-28 overflow-auto whitespace-pre-wrap px-2 py-1 text-[9px] text-[var(--color-silver-text)]/78">
                           {step.result_preview}
                         </pre>
                       ) : null}

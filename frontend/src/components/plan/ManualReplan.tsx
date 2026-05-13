@@ -4,6 +4,13 @@ import { postJson } from "../../api/api";
 import type { PlanDetail } from "../../types/planDetail";
 import type { ReplanPrefill } from "./replanPrefill";
 import { translateSeverity } from "../../i18n/formatters";
+import {
+  APP_BUTTON_PRIMARY,
+  APP_LABEL,
+  APP_SELECT,
+  APP_TEXTAREA,
+  cx,
+} from "../ui/theme";
 
 export function ManualReplan({
   plan,
@@ -96,19 +103,19 @@ export function ManualReplan({
   }
 
   return (
-    <div className="mt-3 border-t border-neutral-800 pt-2">
-      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+    <div className="app-divider mt-3 border-t pt-2">
+      <p className="app-section-title mb-1 text-[10px]">
         {t("manualReplan.title")}
       </p>
       <form onSubmit={handleSubmit} className="space-y-2 text-xs">
         <div className="flex gap-2 items-center">
-          <label className="text-[10px] text-neutral-500 font-mono">
+          <label className={cx(APP_LABEL, "mb-0 min-w-[78px]")}>
             {t("manualReplan.severity")}
           </label>
           <select
             value={severity}
             onChange={(e) => setSeverity(e.target.value)}
-            className="bg-black border border-neutral-700 rounded px-2 py-1 text-[11px] font-mono text-neutral-100 flex-1"
+            className={cx(APP_SELECT, "flex-1")}
           >
             <option value="low">{translateSeverity(t, "low")}</option>
             <option value="medium">{translateSeverity(t, "medium")}</option>
@@ -117,7 +124,7 @@ export function ManualReplan({
           </select>
         </div>
         <div>
-          <p className="text-[10px] text-neutral-500 font-mono mb-1">
+          <p className="app-section-title mb-1 text-[10px]">
             {t("manualReplan.targetGroups")}
           </p>
           <div className="flex flex-wrap gap-1">
@@ -128,11 +135,10 @@ export function ManualReplan({
                   key={g}
                   type="button"
                   onClick={() => toggleGroup(g)}
-                  className={`text-[10px] px-2 py-0.5 rounded-full border font-mono ${
-                    active
-                      ? "bg-neutral-100 text-black border-neutral-100"
-                      : "bg-black text-neutral-300 border-neutral-700 hover:border-neutral-500"
-                  }`}
+                  className={cx(
+                    "app-chip px-2.5 py-1",
+                    active && "app-chip-active",
+                  )}
                 >
                   {g}
                 </button>
@@ -141,38 +147,38 @@ export function ManualReplan({
           </div>
         </div>
         <div>
-          <label className="block text-[10px] text-neutral-500 font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("manualReplan.reason")} ({t("values.optional")})
           </label>
           <textarea
             rows={2}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="w-full bg-black border border-neutral-700 rounded px-2 py-1 text-xs font-mono text-neutral-100 placeholder:text-neutral-600 resize-none"
+            className={`${APP_TEXTAREA} resize-none text-xs`}
             placeholder={t("manualReplan.reasonPlaceholder")}
           />
         </div>
         <div>
-          <label className="block text-[10px] text-neutral-500 font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("manualReplan.suggestions")} ({t("values.optional")})
           </label>
           <textarea
             rows={2}
             value={suggestions}
             onChange={(e) => setSuggestions(e.target.value)}
-            className="w-full bg-black border border-neutral-700 rounded px-2 py-1 text-xs font-mono text-neutral-100 placeholder:text-neutral-600 resize-none"
+            className={`${APP_TEXTAREA} resize-none text-xs`}
             placeholder={t("manualReplan.suggestionsPlaceholder")}
           />
         </div>
         <button
           type="submit"
           disabled={submitting}
-          className="w-full bg-neutral-100 hover:bg-neutral-300 disabled:bg-neutral-800 disabled:text-neutral-500 text-black font-mono text-[11px] font-medium rounded px-3 py-1.5 transition-colors"
+          className={`${APP_BUTTON_PRIMARY} w-full text-[11px]`}
         >
           {submitting ? t("manualReplan.requesting") : t("manualReplan.request")}
         </button>
         {message && (
-          <p className="text-[10px] font-mono mt-1 text-neutral-400">
+          <p className="app-meta-text mt-1 text-[10px]">
             {message}
           </p>
         )}

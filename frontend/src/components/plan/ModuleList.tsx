@@ -1,6 +1,7 @@
 import type { PlanDetail } from "../../types/planDetail";
 import { useTranslation } from "react-i18next";
 import { translateSeverity } from "../../i18n/formatters";
+import { cx } from "../ui/theme";
 
 type Modules = NonNullable<PlanDetail["modules"]>;
 
@@ -19,26 +20,25 @@ export function ModuleList({
   const maxQa = Math.max(...modules.map((m) => m.qa_failed_count || 0), 0);
 
   function severityColor(sev: string): string {
-    if (sev === "critical") return "text-red-400";
-    if (sev === "high") return "text-amber-300";
-    if (sev === "medium") return "text-neutral-300";
-    return "text-neutral-500";
+    if (sev === "critical") return "text-[var(--color-danger-red)]";
+    if (sev === "high") return "text-[var(--color-warning-yellow)]";
+    if (sev === "medium") return "text-[var(--color-electric-cyan)]";
+    return "app-muted-text";
   }
 
   return (
-    <div className="mt-3 border-t border-neutral-800 pt-2">
-      <p className="text-neutral-500 text-[10px] font-mono mb-1">
+    <div className="app-divider mt-3 border-t pt-2">
+      <p className="app-section-title mb-1 text-[10px]">
         {t("moduleList.title")}
       </p>
       <div className="flex flex-wrap gap-1">
         <button
           type="button"
           onClick={() => onSelectModule(null)}
-          className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-            selectedModuleId === null
-              ? "bg-neutral-100 text-black border-neutral-100"
-              : "bg-black text-neutral-300 border-neutral-700 hover:border-neutral-500"
-          }`}
+          className={cx(
+            "app-chip px-2.5 py-1",
+            selectedModuleId === null && "app-chip-active",
+          )}
         >
           {t("moduleList.all")}
         </button>
@@ -54,24 +54,24 @@ export function ModuleList({
             maxQa > 0 ? Math.min(1, m.qa_failed_count / maxQa) : 0;
           const bgHot =
             intensity > 0
-              ? "bg-red-500/10 border-red-500/40"
-              : "bg-neutral-900/40 border-neutral-700";
+              ? "border-[var(--color-danger-red)]/34 bg-[var(--color-danger-red)]/10"
+              : "";
 
           return (
             <button
               key={m.group_id}
               type="button"
               onClick={() => onSelectModule(m.group_id)}
-              className={`text-[10px] font-mono px-2 py-1 rounded-full border flex items-center gap-1 ${
-                active
-                  ? "bg-neutral-100 text-black border-neutral-100"
-                  : bgHot + " text-neutral-200 hover:border-neutral-400"
-              }`}
+              className={cx(
+                "app-chip flex items-center gap-1 px-2.5 py-1",
+                bgHot,
+                active && "app-chip-active",
+              )}
             >
               <span className="truncate max-w-[120px]">
                 {m.group_id || "root"}
               </span>
-              <span className="text-[9px] text-neutral-400">
+              <span className="text-[9px] text-[var(--color-silver-text)]/62">
                 {m.tasks_count}t · {qaBadge}
               </span>
               <span className={`text-[9px] ${sevClass}`}>
