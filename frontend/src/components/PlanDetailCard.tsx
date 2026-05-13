@@ -12,16 +12,23 @@ import { SecuritySummary } from "./plan/SecuritySummary";
 import { ManualReplan } from "./plan/ManualReplan";
 import { PipelineTrace } from "./plan/PipelineTrace";
 import type { ReplanPrefill } from "./plan/replanPrefill";
+import { useTranslation } from "react-i18next";
+import {
+  translateGenericStatus,
+  translatePipelineStatus,
+  translateSeverity,
+} from "../i18n/formatters";
 
 export function PlanDetailCard({ planId }: { planId: string | null }) {
+  const { t } = useTranslation();
   const { data, loading, error } = usePlanDetail(planId);
 
   if (!planId) {
     return (
       <Card>
-        <SectionHeader>Plan Detail</SectionHeader>
+        <SectionHeader>{t("planDetail.title")}</SectionHeader>
         <p className="text-neutral-500 text-xs font-mono">
-          Selecciona un plan en el feed para ver más detalles.
+          {t("planDetail.empty")}
         </p>
       </Card>
     );
@@ -30,8 +37,8 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
   if (loading) {
     return (
       <Card>
-        <SectionHeader>Plan Detail</SectionHeader>
-        <p className="text-neutral-500 text-xs font-mono">Cargando…</p>
+        <SectionHeader>{t("planDetail.title")}</SectionHeader>
+        <p className="text-neutral-500 text-xs font-mono">{t("planDetail.loading")}</p>
       </Card>
     );
   }
@@ -39,9 +46,9 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
   if (error || !data) {
     return (
       <Card>
-        <SectionHeader>Plan Detail</SectionHeader>
+        <SectionHeader>{t("planDetail.title")}</SectionHeader>
         <p className="text-amber-400 text-xs font-mono">
-          {error ?? "No se pudo cargar el detalle del plan."}
+          {error ?? t("planDetail.loadingError")}
         </p>
       </Card>
     );
@@ -57,6 +64,7 @@ function parseSecurityOutcome(
 }
 
 function PlanDetailLoaded({ data }: { data: PlanDetail }) {
+  const { t } = useTranslation();
   const pipelineStatus = data.metrics.pipeline_status ?? "unknown";
   const qaHighSeverityCount = data.qa_outcomes.filter(
     (o) => o.severity_hint === "high" || o.severity_hint === "critical",
@@ -97,7 +105,7 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
 
   return (
     <Card>
-      <SectionHeader>Plan Detail</SectionHeader>
+      <SectionHeader>{t("planDetail.title")}</SectionHeader>
       <div className="flex items-center gap-2 mb-2">
         <p
           className="text-neutral-500 text-xs font-mono truncate flex-1 min-w-0"
@@ -110,22 +118,24 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
           className="shrink-0 text-[10px] font-mono text-sky-400 hover:text-sky-300"
           onClick={() => void navigator.clipboard.writeText(data.plan_id)}
         >
-          Copiar id
+          {t("planDetail.copyId")}
         </button>
       </div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-neutral-500 text-xs font-mono">Pipeline</span>
+        <span className="text-neutral-500 text-xs font-mono">
+          {t("planDetail.pipeline")}
+        </span>
         <Badge className={statusBadgeClass}>
-          {pipelineStatus.replace(/_/g, " ")}
+          {translatePipelineStatus(t, pipelineStatus)}
         </Badge>
       </div>
       <dl className="space-y-2 mb-3">
         <StatRow
-          label="Tareas"
+          label={t("planDetail.tasks")}
           value={data.tasks.length}
         />
         <StatRow
-          label="QA issues (high+)"
+          label={t("planDetail.qaIssuesHigh")}
           value={
             <span
               className={
@@ -138,26 +148,29 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
           subtle
         />
         <StatRow
-          label="Último resultado seguridad"
+          label={t("planDetail.lastSecurityResult")}
           value={
             securityOutcome
               ? securityOutcome.approved
-                ? "approved"
-                : "blocked"
+                ? translateGenericStatus(t, "approved")
+                : translateGenericStatus(t, "blocked")
               : "—"
           }
           subtle
         />
         {securityOutcome && (
           <StatRow
-            label="Severidad seguridad"
-            value={securityOutcome.severity_hint || "medium"}
+            label={t("planDetail.securitySeverity")}
+            value={translateSeverity(
+              t,
+              securityOutcome.severity_hint || "medium",
+            )}
             subtle
           />
         )}
         {data.replans.items.length > 0 && (
           <StatRow
-            label="Replans sugeridos"
+            label={t("planDetail.replansSuggested")}
             value={data.replans.items.length}
             subtle
           />
@@ -192,11 +205,15 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
           const cleanModule = module || "unknown";
           const reasonLines: string[] = [];
           reasonLines.push(
-            `Fallos de QA repetidos en módulo ${cleanModule} (intento ${qaAttempt}, severidad ${sev}).`,
+            t("planDetail.qaReplanReason", {
+              module: cleanModule,
+              attempt: qaAttempt,
+              severity: translateSeverity(t, sev),
+            }),
           );
           if (issues.length) {
             reasonLines.push(
-              `Ejemplos de issues detectados:\n${issues
+              `${t("planDetail.detectedIssues")}:\n${issues
                 .slice(0, 3)
                 .map((i) => `- ${i}`)
                 .join("\n")}`,
@@ -205,7 +222,7 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
           const reason = reasonLines.join("\n\n");
           const suggestions = issues
             .slice(0, 5)
-            .map((i) => `Revisar y cubrir en tests: ${i}`);
+            .map((i) => t("planDetail.reviewAndCover", { issue: i }));
 
           setReplanPrefill({
             severity: sev,

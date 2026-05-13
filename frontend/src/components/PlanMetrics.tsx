@@ -4,8 +4,15 @@ import type { PlanMetrics as PlanMetricsPayload, PlanMetricsByService } from "..
 import { Card, SectionHeader } from "./ui/Card";
 import { StatRow } from "./ui/StatRow";
 import { Badge } from "./ui/Badge";
+import { useTranslation } from "react-i18next";
+import {
+  formatLocalizedDateTime,
+  translatePipelineStatus,
+} from "../i18n/formatters";
 
 export function PlanMetrics({ planId }: { planId: string | null }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || "es";
   const [metrics, setMetrics] = useState<PlanMetricsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +57,7 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
 
   const formatDuration = (seconds?: number) => {
     if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) {
-      return "—";
+      return t("planMetrics.noValue");
     }
     if (seconds < 60) return `${seconds}s`;
     const mins = Math.floor(seconds / 60);
@@ -76,9 +83,9 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
   if (!planId) {
     return (
       <Card>
-        <SectionHeader>Plan Metrics</SectionHeader>
+        <SectionHeader>{t("planMetrics.title")}</SectionHeader>
         <p className="text-neutral-500 text-xs font-mono">
-          Run a plan or select a plan in the feed to see token usage and pipeline state.
+          {t("planMetrics.empty")}
         </p>
       </Card>
     );
@@ -86,12 +93,12 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
 
   return (
     <Card>
-      <SectionHeader>Plan Metrics</SectionHeader>
+      <SectionHeader>{t("planMetrics.title")}</SectionHeader>
       <p className="text-neutral-500 text-xs font-mono truncate mb-2" title={planId}>
         plan_id: {planId.slice(0, 8)}…
       </p>
       {loading && (
-        <p className="text-neutral-500 text-xs font-mono">Loading…</p>
+        <p className="text-neutral-500 text-xs font-mono">{t("planMetrics.loading")}</p>
       )}
       {error && (
         <p className="text-amber-400 text-xs font-mono">{error}</p>
@@ -99,38 +106,40 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
       {!loading && !error && metrics && (
         <dl className="space-y-2">
           <div className="flex items-center justify-between pt-0 pb-1 border-b border-neutral-800">
-            <dt className="text-neutral-500 text-xs font-mono">Pipeline</dt>
+            <dt className="text-neutral-500 text-xs font-mono">
+              {t("planMetrics.pipeline")}
+            </dt>
             <dd>
               <Badge className={statusBadgeClass}>
-                {pipelineStatus.replace(/_/g, " ")}
+                {translatePipelineStatus(t, pipelineStatus)}
               </Badge>
             </dd>
           </div>
           <StatRow
-            label="Total tokens"
-            value={metrics.total_tokens.toLocaleString()}
+            label={t("planMetrics.totalTokens")}
+            value={metrics.total_tokens.toLocaleString(locale)}
           />
           <StatRow
-            label="Prompt"
-            value={metrics.total_prompt_tokens.toLocaleString()}
+            label={t("planMetrics.prompt")}
+            value={metrics.total_prompt_tokens.toLocaleString(locale)}
           />
           <StatRow
-            label="Completion"
-            value={metrics.total_completion_tokens.toLocaleString()}
+            label={t("planMetrics.completion")}
+            value={metrics.total_completion_tokens.toLocaleString(locale)}
           />
           <div className="pt-1 border-t border-neutral-800 mt-1">
             <StatRow
-              label="Duration"
+              label={t("planMetrics.duration")}
               value={formatDuration(metrics.duration_seconds)}
             />
           </div>
           <StatRow
-            label="Retries (QA)"
+            label={t("planMetrics.qaRetries")}
             value={metrics.qa_retry_count ?? 0}
             subtle
           />
           <StatRow
-            label="QA failed"
+            label={t("planMetrics.qaFailed")}
             value={
               <span
                 className={`${
@@ -145,7 +154,7 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
             subtle
           />
           <StatRow
-            label="Security blocked"
+            label={t("planMetrics.securityBlocked")}
             value={
               <span
                 className={`${
@@ -160,15 +169,17 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
             subtle
           />
           <StatRow
-            label="Replans"
+            label={t("planMetrics.replans")}
             value={
               <>
                 {metrics.replan_suggestions_count ?? 0}
-                    {typeof metrics.replan_confirmed_count === "number" &&
+                {typeof metrics.replan_confirmed_count === "number" &&
                   metrics.replan_confirmed_count > 0 && (
                     <span className="text-neutral-500">
                       {" "}
-                      (confirmed {metrics.replan_confirmed_count})
+                      ({t("planMetrics.confirmed", {
+                        count: metrics.replan_confirmed_count,
+                      })})
                     </span>
                   )}
               </>
@@ -179,34 +190,38 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
             <>
               <div className="pt-1 border-t border-neutral-800">
                 <StatRow
-                  label="First event"
+                  label={t("planMetrics.firstEvent")}
                   value={
                     <span className="text-neutral-400 truncate max-w-[140px] inline-block">
                       {metrics.first_event_at
-                        ? new Date(
-                            metrics.first_event_at
-                          ).toLocaleString(undefined, {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })
-                        : "—"}
+                        ? formatLocalizedDateTime(
+                            metrics.first_event_at,
+                            locale,
+                            {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            },
+                          )
+                        : t("planMetrics.noValue")}
                     </span>
                   }
                   subtle
                 />
               </div>
               <StatRow
-                label="Last event"
+                label={t("planMetrics.lastEvent")}
                 value={
                   <span className="text-neutral-400 truncate max-w-[140px] inline-block">
                     {metrics.last_event_at
-                      ? new Date(
-                          metrics.last_event_at
-                        ).toLocaleString(undefined, {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })
-                      : "—"}
+                      ? formatLocalizedDateTime(
+                          metrics.last_event_at,
+                          locale,
+                          {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          },
+                        )
+                      : t("planMetrics.noValue")}
                   </span>
                 }
                 subtle
@@ -218,12 +233,12 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
               <>
                 <div className="pt-1 border-t border-neutral-800 mt-1">
                   <StatRow
-                    label="Estimated cost (USD)"
+                    label={t("planMetrics.estimatedCost")}
                     value={formatUsd(metrics.estimated_cost_total_usd)}
                   />
                 </div>
                 <StatRow
-                  label="Prompt / Completion"
+                  label={t("planMetrics.promptCompletion")}
                   value={
                     <>
                       {formatUsd(metrics.estimated_cost_prompt_usd)} /{" "}
@@ -236,7 +251,9 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
             )}
           {metrics.by_service.length > 0 && (
             <div className="pt-2 border-t border-neutral-800">
-              <dt className="text-neutral-500 text-xs font-mono mb-1.5">By service</dt>
+              <dt className="text-neutral-500 text-xs font-mono mb-1.5">
+                {t("planMetrics.byService")}
+              </dt>
               <dd className="space-y-1">
                 {metrics.by_service.map((s: PlanMetricsByService) => (
                   <div
@@ -249,7 +266,7 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
                     <span className="text-neutral-300 text-right">
                       {(s.total_tokens ??
                         s.prompt_tokens + s.completion_tokens
-                      ).toLocaleString()}
+                      ).toLocaleString(locale)}
                       {typeof s.estimated_cost_total_usd === "number" &&
                         s.estimated_cost_total_usd > 0 && (
                           <span className="block text-[10px] text-neutral-500">

@@ -1,7 +1,9 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { getDashboardHref } from "../hooks/useDashboardUrlSync";
 import type { MainWorkspaceSectionId } from "./ui/MainWorkspaceNav";
 import type { RightPanelTabId } from "./ui/RightPanelTabs";
+import { translateGenericStatus } from "../i18n/formatters";
 
 type Props = {
   planId: string | null;
@@ -18,12 +20,13 @@ export function ActivePlanBar({
   mainSection,
   onClear,
 }: Props) {
+  const { t } = useTranslation();
   const [copied, setCopied] = React.useState<"id" | "link" | null>(null);
 
   if (!planId) {
     return (
       <div className="rounded-lg border border-neutral-800 bg-neutral-950/80 px-3 py-2 text-[11px] text-neutral-500 font-mono">
-        Ningún plan seleccionado. Lanza un plan o elige uno en el feed.
+        {t("activePlan.empty")}
       </div>
     );
   }
@@ -58,7 +61,7 @@ export function ActivePlanBar({
   return (
     <div className="rounded-lg border border-neutral-700 bg-neutral-900/60 px-3 py-2 flex flex-wrap items-center gap-2 text-[11px]">
       <span className="text-neutral-500 font-mono uppercase tracking-wider">
-        Plan activo
+        {t("activePlan.active")}
       </span>
       <span
         className="font-mono text-neutral-100 truncate max-w-[200px]"
@@ -67,21 +70,27 @@ export function ActivePlanBar({
         {short}
       </span>
       <span className="text-neutral-600">·</span>
-      <span className="text-neutral-400 font-mono">modo {displayMode}</span>
+      <span className="text-neutral-400 font-mono">
+        {t("activePlan.mode", {
+          mode: translateGenericStatus(t, displayMode),
+        })}
+      </span>
       <div className="flex flex-wrap gap-1.5 ml-auto">
         <button
           type="button"
           onClick={copyId}
           className="px-2 py-0.5 rounded border border-neutral-600 text-neutral-300 hover:bg-neutral-800 font-mono text-[10px]"
         >
-          {copied === "id" ? "Copiado" : "Copiar ID"}
+          {copied === "id" ? t("activePlan.copied") : t("activePlan.copyId")}
         </button>
         <button
           type="button"
           onClick={copyLink}
           className="px-2 py-0.5 rounded border border-neutral-600 text-neutral-300 hover:bg-neutral-800 font-mono text-[10px]"
         >
-          {copied === "link" ? "Enlace copiado" : "Copiar enlace"}
+          {copied === "link"
+            ? t("activePlan.linkCopied")
+            : t("activePlan.copyLink")}
         </button>
         {onClear && (
           <button
@@ -89,7 +98,7 @@ export function ActivePlanBar({
             onClick={onClear}
             className="px-2 py-0.5 rounded border border-neutral-700 text-neutral-500 hover:text-neutral-300 font-mono text-[10px]"
           >
-            Quitar filtro
+            {t("activePlan.clearFilter")}
           </button>
         )}
       </div>

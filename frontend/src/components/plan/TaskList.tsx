@@ -1,4 +1,9 @@
 import type { PlanDetail } from "../../types/planDetail";
+import { useTranslation } from "react-i18next";
+import {
+  translateGenericStatus,
+  translateSeverity,
+} from "../../i18n/formatters";
 
 export function TaskList({
   tasks,
@@ -11,6 +16,7 @@ export function TaskList({
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
 }) {
+  const { t: translate } = useTranslation();
   if (!tasks.length) return null;
 
   const qaByTask = new Map(
@@ -20,20 +26,20 @@ export function TaskList({
   return (
     <div className="mt-3 border-t border-neutral-800 pt-2">
       <p className="text-neutral-500 text-[10px] font-mono mb-1">
-        Tareas por archivo
+        {translate("taskList.title")}
       </p>
       <div className="space-y-1 max-h-40 overflow-auto pr-1">
-        {tasks.map((t) => {
-          const qa = qaByTask.get(t.task_id);
+        {tasks.map((task) => {
+          const qa = qaByTask.get(task.task_id);
           const severity =
             qa?.severity_hint && qa.severity_hint !== "medium"
               ? qa.severity_hint
               : null;
-          const isActive = selectedTaskId === t.task_id;
+          const isActive = selectedTaskId === task.task_id;
           return (
             <div
-              key={t.task_id}
-              onClick={() => onSelectTask(t.task_id)}
+              key={task.task_id}
+              onClick={() => onSelectTask(task.task_id)}
               className={`text-xs border rounded px-2 py-1.5 flex flex-col gap-0.5 cursor-pointer ${
                 isActive
                   ? "border-neutral-300 bg-neutral-900/60"
@@ -42,21 +48,26 @@ export function TaskList({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate max-w-[160px]">
-                  {t.file_path || "(sin ruta)"}
+                  {task.file_path || translate("taskList.noPath")}
                 </span>
                 <span className="text-[10px] text-neutral-500">
-                  {t.status || "unknown"}
+                  {translateGenericStatus(translate, task.status || "unknown")}
                 </span>
               </div>
               <div className="text-[10px] text-neutral-500 flex justify-between gap-2">
                 <span className="truncate max-w-[130px]">
-                  {t.language} · {t.group_id || "root"}
+                  {task.language} ·{" "}
+                  {translateGenericStatus(translate, task.group_id || "root")}
                 </span>
-                <span>qa_attempt: {t.qa_attempt}</span>
+                <span>
+                  {translate("taskList.qaAttempt", { count: task.qa_attempt })}
+                </span>
               </div>
               {severity && (
                 <div className="text-[10px] text-red-400">
-                  QA severidad: {severity}
+                  {translate("taskList.qaSeverity", {
+                    severity: translateSeverity(translate, severity),
+                  })}
                 </div>
               )}
             </div>

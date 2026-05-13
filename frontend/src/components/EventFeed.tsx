@@ -1,31 +1,32 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import type { BaseEvent } from "../types/events";
-import { EVENT_COLORS, EVENT_LABELS } from "../types/events";
+import { EVENT_COLORS } from "../types/events";
 import { postJson } from "../api/api";
 import { Card, SectionHeader } from "./ui/Card";
 import { CodePanel } from "./ui/CodePanel";
+import {
+  formatLocalizedTime,
+  translateEventType,
+} from "../i18n/formatters";
 
 interface Props {
   events: BaseEvent[];
-}
-
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
-function extractReasoning(payload: Record<string, unknown>, eventType?: string): string {
+function extractReasoning(
+  payload: Record<string, unknown>,
+  eventType: string | undefined,
+  labels: {
+    suggestedChanges: string;
+    spec: string;
+    tests: string;
+  },
+): string {
   if (eventType === "pipeline.conclusion") {
     const c = payload["conclusion_text"];
     if (typeof c === "string" && c.trim().length > 0) return c.trim();
@@ -44,7 +45,9 @@ function extractReasoning(payload: Record<string, unknown>, eventType?: string):
         .map((s) => `- ${s.trim()}`)
         .join("\n");
       if (suggLines) {
-        text = text ? `${text}\n\nSuggested changes:\n${suggLines}` : suggLines;
+        text = text
+          ? `${text}\n\n${labels.suggestedChanges}:\n${suggLines}`
+          : suggLines;
       }
     }
     if (text) return text;
@@ -55,10 +58,10 @@ function extractReasoning(payload: Record<string, unknown>, eventType?: string):
     const tests = payload["test_suggestions"];
     let text = "";
     if (typeof spec === "string" && spec.trim().length > 0) {
-      text += "SPEC:\n" + spec.trim();
+      text += `${labels.spec}:\n${spec.trim()}`;
     }
     if (typeof tests === "string" && tests.trim().length > 0) {
-      text += (text ? "\n\n" : "") + "TESTS:\n" + tests.trim();
+      text += (text ? "\n\n" : "") + `${labels.tests}:\n${tests.trim()}`;
     }
     if (text) return text;
   }
@@ -122,10 +125,16 @@ interface EventRowProps {
   evt: BaseEvent;
   isExpanded: boolean;
   onToggle: () => void;
+  language: string;
 }
 
-function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
-  const reasoning = extractReasoning(evt.payload, evt.event_type);
+function EventRow({ evt, isExpanded, onToggle, language }: EventRowProps) {
+  const { t } = useTranslation();
+  const reasoning = extractReasoning(evt.payload, evt.event_type, {
+    suggestedChanges: t("eventFeed.suggestedChanges"),
+    spec: t("eventFeed.spec"),
+    tests: t("eventFeed.tests"),
+  });
   const prUrl = extractPrUrl(evt.event_type, evt.payload);
   const codeInfo = extractCode(evt.event_type, evt.payload);
   const fileList = extractFiles(evt.event_type, evt.payload);
@@ -135,7 +144,7 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
   const expandable = !!(reasoning || prUrl || codeInfo || fileList.length || plannedFiles.length || isConclusion || isPlanRevision);
 
   const color = EVENT_COLORS[evt.event_type] ?? "#6b7280";
-  const label = EVENT_LABELS[evt.event_type] ?? evt.event_type;
+  const label = translateEventType(t, evt.event_type);
 
   const inlineFilePath =
     (evt.event_type === "code.generated" || evt.event_type === "qa.passed") &&
@@ -167,7 +176,7 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
         onClick={() => expandable && onToggle()}
       >
         <span className="text-neutral-500 flex-none w-20 pt-px">
-          {formatTime(evt.timestamp)}
+          {formatLocalizedTime(evt.timestamp, language)}
         </span>
         <span
           className="rounded px-1.5 py-0.5 font-semibold flex-none text-white whitespace-nowrap"
@@ -197,7 +206,7 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
           {isPlanRevision && (
             <div className="flex items-center justify-between gap-2">
               <p className="text-neutral-500 text-[10px] uppercase tracking-widest">
-                Replanner suggestion
+                {t("eventFeed.replannerSuggestion")}
               </p>
               <button
                 onClick={handleReplanClick}
@@ -206,14 +215,16 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
                   replanLoading ? "opacity-60 cursor-default" : "hover:bg-amber-400/10"
                 }`}
               >
-                {replanLoading ? "confirming..." : "confirm replan"}
+                {replanLoading
+                  ? t("eventFeed.confirming")
+                  : t("eventFeed.confirmReplan")}
               </button>
             </div>
           )}
           {prUrl && (
             <div>
               <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1">
-                Pull Request
+                {t("eventFeed.pullRequest")}
               </p>
               <a
                 href={prUrl}
@@ -230,7 +241,7 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
           {plannedFiles.length > 0 && (
             <div>
               <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
-                Planned files ({plannedFiles.length})
+                {t("eventFeed.plannedFiles")} ({plannedFiles.length})
               </p>
               <div className="space-y-0.5">
                 {plannedFiles.map((fp) => (
@@ -245,7 +256,10 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
           {fileList.length > 0 && (
             <div>
               <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
-                {isConclusion ? "Files changed" : "Files in PR"} ({fileList.length})
+                {isConclusion
+                  ? t("eventFeed.filesChanged")
+                  : t("eventFeed.filesInPr")}{" "}
+                ({fileList.length})
               </p>
               <div className="space-y-0.5">
                 {fileList.map((fp) => (
@@ -260,7 +274,10 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
           {codeInfo && (
             <div>
               <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
-                {evt.event_type === "qa.passed" ? "Reviewed code" : "Generated code"} — {codeInfo.filePath}
+                {evt.event_type === "qa.passed"
+                  ? t("eventFeed.reviewedCode")
+                  : t("eventFeed.generatedCode")}{" "}
+                — {codeInfo.filePath}
               </p>
               <CodePanel code={codeInfo.code} language={codeInfo.language} />
             </div>
@@ -269,7 +286,9 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
           {reasoning && (
             <div>
               <p className="text-neutral-500 text-[10px] uppercase tracking-widest mb-1.5">
-                {isConclusion ? "Conclusion" : "Agent reasoning"}
+                {isConclusion
+                  ? t("eventFeed.conclusion")
+                  : t("eventFeed.agentReasoning")}
               </p>
               <p className="text-neutral-200 leading-relaxed whitespace-pre-wrap">
                 {reasoning}
@@ -283,6 +302,7 @@ function EventRow({ evt, isExpanded, onToggle }: EventRowProps) {
 }
 
 export function EventFeed({ events }: Props) {
+  const { t, i18n } = useTranslation();
   const [collapseAll, setCollapseAll] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
@@ -325,18 +345,20 @@ export function EventFeed({ events }: Props) {
               onClick={handleCollapseExpandAll}
               className="text-neutral-500 hover:text-neutral-300 text-[10px] font-mono transition-colors"
             >
-              {collapseAll ? "expand all" : "collapse all"}
+              {collapseAll ? t("eventFeed.expandAll") : t("eventFeed.collapseAll")}
             </button>
           )
         }
       >
-        Eventos del pipeline{" "}
+        {t("eventFeed.title")}{" "}
         <span className="text-neutral-600 normal-case">({events.length})</span>
       </SectionHeader>
 
       <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
         {events.length === 0 && (
-          <p className="text-neutral-600 text-sm font-mono">Waiting for events...</p>
+          <p className="text-neutral-600 text-sm font-mono">
+            {t("eventFeed.waiting")}
+          </p>
         )}
         {events.map((evt) => (
           <EventRow
@@ -344,6 +366,7 @@ export function EventFeed({ events }: Props) {
             evt={evt}
             isExpanded={isExpanded(evt.event_id)}
             onToggle={() => handleToggle(evt.event_id)}
+            language={i18n.resolvedLanguage || i18n.language || "es"}
           />
         ))}
       </div>

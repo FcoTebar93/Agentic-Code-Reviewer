@@ -1,32 +1,5 @@
 import { LandingSection } from "./LandingSection";
-
-const stages = [
-  {
-    title: "1. Entrada unificada",
-    description:
-      "El gateway recibe prompts, expone el WebSocket y concentra la interacción entre frontend y microservicios.",
-  },
-  {
-    title: "2. Descomposición del trabajo",
-    description:
-      "El planner publica planes y tareas para que cada servicio especializado ejecute su parte con contexto compartido.",
-  },
-  {
-    title: "3. Producción de cambios",
-    description:
-      "Spec y Dev generan especificación, código y metadatos, actualizando el estado del plan en memoria.",
-  },
-  {
-    title: "4. Validación y replanning",
-    description:
-      "QA y Security aceptan, rechazan o fuerzan nuevas iteraciones cuando aparecen fallos o riesgos de seguridad.",
-  },
-  {
-    title: "5. Aprobación y PR",
-    description:
-      "Cuando el cambio supera todas las puertas, el humano aprueba desde la UI y GitHub Service materializa el resultado.",
-  },
-];
+import { useTranslation } from "react-i18next";
 
 const events = [
   "plan.created",
@@ -40,12 +13,17 @@ const events = [
 ];
 
 export function PipelineSection() {
+  const { t } = useTranslation();
+  const stages = t("landing.pipeline.stages", {
+    returnObjects: true,
+  }) as Array<{ title: string; description: string }>;
+
   return (
     <LandingSection
       id="pipeline"
-      eyebrow="Arquitectura"
-      title="Pipeline observable, modular y listo para intervención humana."
-      description="ADMADC no es una sola UI bonita: por debajo hay una línea de ensamblaje basada en eventos, con servicios desacoplados y un gateway que unifica estado, aprobaciones y telemetría."
+      eyebrow={t("landing.pipeline.eyebrow")}
+      title={t("landing.pipeline.title")}
+      description={t("landing.pipeline.description")}
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
         <div className="grid gap-4 md:grid-cols-2">
@@ -64,10 +42,10 @@ export function PipelineSection() {
         <div className="landing-card flex flex-col gap-5">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-ash-text)]">
-              Flujo de eventos
+              {t("landing.pipeline.eventsLabel")}
             </p>
             <h3 className="mt-3 text-2xl font-bold text-[var(--color-polar-white)]">
-              Cada transición deja rastro.
+              {t("landing.pipeline.eventsTitle")}
             </h3>
           </div>
 
@@ -89,7 +67,7 @@ export function PipelineSection() {
 
           <div className="rounded-[var(--radius-default)] border border-[var(--color-slate-border)] bg-[var(--color-midnight-core)] p-4">
             <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-cyber-pink)]">
-              Deep links intactos
+              {t("landing.pipeline.deepLinks")}
             </p>
             <p className="mt-3 font-[var(--font-jetbrains-mono)] text-sm leading-7 text-[var(--color-silver-text)]/78">
               /app?plan=plan-42&amp;tab=metrics&amp;main=pipeline

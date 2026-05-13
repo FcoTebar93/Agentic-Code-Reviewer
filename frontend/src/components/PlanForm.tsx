@@ -1,5 +1,7 @@
 import { useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { postJson } from "../api/api";
+import { getAgentLocaleOptions, resolveAgentLocale } from "../i18n/locale";
 import { Card, SectionHeader } from "./ui/Card";
 
 interface PlanResult {
@@ -8,36 +10,9 @@ interface PlanResult {
   tasks: Array<{ task_id: string; description: string; file_path: string }>;
 }
 
-const LOCALE_OPTIONS = [
-  { value: "auto", label: "Auto (browser language)" },
-  { value: "en", label: "English" },
-  { value: "es", label: "Español" },
-  { value: "fr", label: "Français" },
-  { value: "de", label: "Deutsch" },
-  { value: "pt", label: "Português" },
-  { value: "it", label: "Italiano" },
-] as const;
-
-const SUPPORTED_PRIMARY = new Set([
-  "en",
-  "es",
-  "fr",
-  "de",
-  "pt",
-  "it",
-  "ja",
-  "zh",
-  "ko",
-]);
-
-function effectiveUserLocale(choice: string): string {
-  if (choice !== "auto") return choice;
-  if (typeof navigator === "undefined") return "en";
-  const primary = (navigator.language || "en").split("-")[0].toLowerCase();
-  return SUPPORTED_PRIMARY.has(primary) ? primary : "en";
-}
-
 export function PlanForm() {
+  const { t, i18n } = useTranslation();
+  const localeOptions = getAgentLocaleOptions(t);
   const [prompt, setPrompt] = useState("");
   const [projectName, setProjectName] = useState("my-project");
   const [repoUrl, setRepoUrl] = useState("");
@@ -63,7 +38,10 @@ export function PlanForm() {
       const body: Record<string, string> = {
         prompt: prompt.trim(),
         project_name: projectName,
-        user_locale: effectiveUserLocale(userLocaleChoice),
+        user_locale: resolveAgentLocale(
+          userLocaleChoice,
+          i18n.resolvedLanguage || i18n.language,
+        ),
       };
       if (repoUrl.trim()) {
         body.repo_url = repoUrl.trim();
@@ -86,12 +64,12 @@ export function PlanForm() {
 
   return (
     <Card>
-      <SectionHeader>Launch Plan</SectionHeader>
+      <SectionHeader>{t("planForm.title")}</SectionHeader>
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
           <label className="block text-neutral-500 text-xs font-mono mb-1">
-            Project name
+            {t("planForm.projectName")}
           </label>
           <input
             type="text"
@@ -104,28 +82,28 @@ export function PlanForm() {
 
         <div>
           <label className="block text-neutral-500 text-xs font-mono mb-1">
-            Mode
+            {t("planForm.mode")}
           </label>
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as "normal" | "save")}
             className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
           >
-            <option value="normal">normal (more context, more tokens)</option>
-            <option value="save">save (reduced context, fewer tokens)</option>
+            <option value="normal">{t("planForm.modeNormal")}</option>
+            <option value="save">{t("planForm.modeSave")}</option>
           </select>
         </div>
 
         <div>
           <label className="block text-neutral-500 text-xs font-mono mb-1">
-            Agent response language
+            {t("planForm.responseLanguage")}
           </label>
           <select
             value={userLocaleChoice}
             onChange={(e) => setUserLocaleChoice(e.target.value)}
             className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
           >
-            {LOCALE_OPTIONS.map((o) => (
+            {localeOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -136,7 +114,7 @@ export function PlanForm() {
         <div className="grid grid-cols-1 2xl:grid-cols-2 gap-2">
           <div>
             <label className="block text-neutral-500 text-xs font-mono mb-1">
-              Replanner aggressiveness
+              {t("planForm.replannerAggressiveness")}
             </label>
             <select
               value={replannerAggressiveness}
@@ -145,62 +123,64 @@ export function PlanForm() {
               }
               className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
             >
-              <option value="0">0 — off (no auto-replan)</option>
-              <option value="1">1 — normal (current behaviour)</option>
-              <option value="2">2 — more aggressive (prioritise replans)</option>
+              <option value="0">{t("planForm.replanner0")}</option>
+              <option value="1">{t("planForm.replanner1")}</option>
+              <option value="2">{t("planForm.replanner2")}</option>
             </select>
           </div>
 
           <div>
             <label className="block text-neutral-500 text-xs font-mono mb-1">
-              Planner LLM provider
+              {t("planForm.plannerProvider")}
             </label>
             <select
               value={plannerProvider}
               onChange={(e) => setPlannerProvider(e.target.value)}
               className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
             >
-              <option value="default">auto (from backend)</option>
+              <option value="default">{t("planForm.plannerAuto")}</option>
               <option value="groq">Groq (llama-3.3-70b)</option>
               <option value="gemini">Gemini</option>
               <option value="openai">OpenAI</option>
-              <option value="local">Local (Ollama / LM Studio)</option>
+              <option value="local">{t("planForm.plannerLocal")}</option>
             </select>
           </div>
         </div>
 
         <div>
           <label className="block text-neutral-500 text-xs font-mono mb-1">
-            Prompt
+            {t("planForm.prompt")}
           </label>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             rows={3}
             className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 resize-none transition-colors"
-            placeholder="Create a Python REST API with FastAPI..."
+            placeholder={t("planForm.promptPlaceholder")}
           />
         </div>
 
         <div>
           <label className="block text-neutral-500 text-xs font-mono mb-1">
-            GitHub repo URL{" "}
-            <span className="text-neutral-600">(optional — required for real PR)</span>
+            {t("planForm.repoUrl")}{" "}
+            <span className="text-neutral-600">
+              ({t("planForm.repoUrlHelp")})
+            </span>
           </label>
           <input
             type="url"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors"
-            placeholder="https://github.com/your-org/your-repo"
+            placeholder={t("planForm.repoPlaceholder")}
           />
           {repoUrl.trim() ? (
             <p className="text-emerald-400 text-xs font-mono mt-1">
-              ✓ PR will be created on GitHub after human approval
+              {t("planForm.repoUrlPresent")}
             </p>
           ) : (
             <p className="text-neutral-600 text-xs font-mono mt-1">
-              Without a repo URL, files are written locally in the container
+              {t("planForm.repoUrlMissing")}
             </p>
           )}
         </div>
@@ -210,7 +190,7 @@ export function PlanForm() {
           disabled={loading || !prompt.trim()}
           className="w-full bg-white hover:bg-neutral-200 disabled:bg-neutral-800 disabled:text-neutral-500 text-black font-mono text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
         >
-          {loading ? "Launching..." : "Launch Pipeline"}
+          {loading ? t("planForm.launching") : t("planForm.launchPipeline")}
         </button>
       </form>
 
@@ -223,8 +203,7 @@ export function PlanForm() {
       {result && (
         <div className="mt-3 bg-black border border-neutral-800 rounded-lg px-3 py-2 space-y-1">
           <p className="text-emerald-400 text-xs font-mono">
-            Plan created — {result.task_count} task
-            {result.task_count !== 1 ? "s" : ""}
+            {t("planForm.planCreated", { count: result.task_count })}
           </p>
           <p className="text-neutral-500 text-xs font-mono break-all">
             plan_id: {result.plan_id}

@@ -1,4 +1,6 @@
 import type { PlanDetail } from "../../types/planDetail";
+import { useTranslation } from "react-i18next";
+import { translateSeverity } from "../../i18n/formatters";
 
 export function QAList({
   qaOutcomes,
@@ -12,11 +14,12 @@ export function QAList({
     qaAttempt: number,
   ) => void;
 }) {
+  const { t } = useTranslation();
   if (!qaOutcomes.length) return null;
   return (
     <div className="mt-3 border-t border-neutral-800 pt-2">
       <p className="text-neutral-500 text-[10px] font-mono mb-1">
-        QA outcomes
+        {t("qaList.title")}
       </p>
       <div className="space-y-1 max-h-40 overflow-auto pr-1">
         {qaOutcomes.map((o) => (
@@ -26,13 +29,18 @@ export function QAList({
           >
             <div className="flex justify-between text-[10px] text-neutral-500 mb-0.5">
               <span>
-                task {o.task_id.slice(0, 8)} · módulo {o.module || "unknown"}
+                {t("qaList.taskModule", {
+                  taskId: o.task_id.slice(0, 8),
+                  module: o.module || t("values.unknown"),
+                })}
               </span>
-              <span>intento {o.qa_attempt}</span>
+              <span>{t("qaList.attempt", { count: o.qa_attempt })}</span>
             </div>
             <div className="text-[10px] mb-0.5">
-              severidad:{" "}
-              <span className="font-medium">{o.severity_hint}</span>
+              {t("qaList.severity")}:{" "}
+              <span className="font-medium">
+                {translateSeverity(t, o.severity_hint)}
+              </span>
             </div>
             <div className="flex justify-end mb-1">
               {o.module && (
@@ -48,7 +56,7 @@ export function QAList({
                   }
                   className="text-[10px] font-mono px-2 py-0.5 rounded border border-amber-500/60 text-amber-300 hover:bg-amber-500/10 transition-colors"
                 >
-                  Replan módulo
+                  {t("qaList.replanModule")}
                 </button>
               )}
             </div>
@@ -57,7 +65,7 @@ export function QAList({
                 <li key={idx}>{iss}</li>
               ))}
               {o.issues.length > 3 && (
-                <li>… {o.issues.length - 3} issues más.</li>
+                <li>{t("qaList.moreIssues", { count: o.issues.length - 3 })}</li>
               )}
             </ul>
           </div>

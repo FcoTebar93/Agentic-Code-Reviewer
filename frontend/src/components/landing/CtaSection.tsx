@@ -1,6 +1,9 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 export function CtaSection() {
+  const { t } = useTranslation();
+
   return (
     <section className="pb-24 pt-6">
       <div className="mx-auto max-w-[1280px] px-6 lg:px-8">
@@ -8,24 +11,22 @@ export function CtaSection() {
           <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl space-y-4">
               <span className="landing-badge-secondary">
-                Acceso inmediato al sistema
+                {t("landing.cta.badge")}
               </span>
               <h2 className="text-3xl font-extrabold leading-tight text-[var(--color-polar-white)] md:text-5xl">
-                Entra directo al sistema agéntico y empieza a operar el pipeline.
+                {t("landing.cta.title")}
               </h2>
               <p className="text-base leading-7 text-[var(--color-silver-text)]/78 md:text-lg">
-                Sin pantalla de login, sin pasos intermedios y sin romper la
-                navegación profunda del dashboard. La landing vive en la raíz y
-                la operación real empieza en <span className="font-[var(--font-jetbrains-mono)] text-[var(--color-faded-rose)]">/app</span>.
+                {t("landing.cta.description")}
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
               <Link to="/app" className="landing-button-primary">
-                Entrar al sistema
+                {t("landing.nav.enterSystem")}
               </Link>
               <a href="#top" className="landing-button-ghost">
-                Volver arriba
+                {t("landing.cta.backToTop")}
               </a>
             </div>
           </div>

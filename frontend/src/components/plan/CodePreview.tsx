@@ -1,12 +1,15 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { PlanDetail } from "../../types/planDetail";
 import { buildLineDiff } from "./lineDiff";
+import { translateGenericStatus } from "../../i18n/formatters";
 
 export function CodePreview({
   task,
 }: {
   task: PlanDetail["tasks"][number] | null;
 }) {
+  const { t } = useTranslation();
   const [view, setView] = useState<"actual" | "original" | "diff">("actual");
 
   if (!task) return null;
@@ -30,11 +33,10 @@ export function CodePreview({
     return (
       <div className="mt-3 border-t border-neutral-800 pt-2">
         <p className="text-neutral-500 text-[10px] font-mono mb-1">
-          Code preview
+          {t("codePreview.title")}
         </p>
         <p className="text-[10px] text-neutral-600 font-mono">
-          No hay snapshot de código almacenado para esta tarea (puede que sea
-          anterior a esta versión del gateway).
+          {t("codePreview.missing")}
         </p>
       </div>
     );
@@ -44,7 +46,7 @@ export function CodePreview({
     <div className="mt-3 border-t border-neutral-800 pt-2">
       <div className="flex items-center justify-between mb-1">
         <p className="text-neutral-500 text-[10px] font-mono">
-          Code preview · {task.file_path || "(sin ruta)"}
+          {t("codePreview.title")} · {task.file_path || t("taskList.noPath")}
         </p>
         <div className="flex gap-1 text-[10px] font-mono">
           <button
@@ -56,7 +58,7 @@ export function CodePreview({
                 : "border-neutral-700 text-neutral-500 hover:border-neutral-500"
             }`}
           >
-            Actual
+            {t("codePreview.actual")}
           </button>
           {hasHistoryDiff && (
             <>
@@ -69,7 +71,7 @@ export function CodePreview({
                     : "border-neutral-700 text-neutral-500 hover:border-neutral-500"
                 }`}
               >
-                Original
+                {t("codePreview.original")}
               </button>
               <button
                 type="button"
@@ -80,7 +82,7 @@ export function CodePreview({
                     : "border-neutral-700 text-neutral-500 hover:border-neutral-500"
                 }`}
               >
-                Diff
+                {t("codePreview.diff")}
               </button>
             </>
           )}
@@ -88,9 +90,11 @@ export function CodePreview({
       </div>
       <div className="mb-1 flex justify-between items-center text-[10px] text-neutral-500 font-mono">
         <span>
-          {task.language} · group {task.group_id || "root"}
+          {task.language} · {t("codePreview.group", {
+            group: translateGenericStatus(t, task.group_id || "root"),
+          })}
         </span>
-        <span>qa_attempt: {task.qa_attempt}</span>
+        <span>{t("codePreview.qaAttempt", { count: task.qa_attempt })}</span>
       </div>
       {view === "actual" && (
         <pre className="max-h-56 overflow-auto bg-black border border-neutral-800 rounded px-2 py-2 text-[11px] font-mono text-neutral-100 whitespace-pre">
