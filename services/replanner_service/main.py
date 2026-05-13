@@ -228,6 +228,7 @@ async def _analyse_and_emit_revision(
         suggestions=result.suggestions,
         severity=result.severity,
         target_group_ids=target_group_ids,
+        user_locale=user_locale,
     )
     event = plan_revision_suggested(SERVICE_NAME, revision_payload)
     await event_bus.publish(event)

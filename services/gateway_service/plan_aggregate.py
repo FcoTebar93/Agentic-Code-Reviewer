@@ -49,7 +49,10 @@ async def _fetch_events(
 
 
 async def aggregate_plan_metrics(
-    runtime: GatewayRuntime, plan_id: str,
+    runtime: GatewayRuntime,
+    plan_id: str,
+    *,
+    locale: str = "es",
 ) -> dict[str, Any] | JSONResponse:
     cfg = runtime.cfg
     try:
@@ -60,9 +63,11 @@ async def aggregate_plan_metrics(
             limit=500,
         )
         if not token_ok:
-            return JSONResponse(
-                content={"error": "Failed to fetch events", "status": 502},
+            return error_response(
+                "Failed to fetch events",
                 status_code=502,
+                code="failed_to_fetch_events",
+                locale=locale,
             )
 
         prompt_price = cfg.llm_prompt_price_per_1k if cfg else 0.0
@@ -110,14 +115,24 @@ async def aggregate_plan_metrics(
         }
     except Exception as exc:
         logger.exception("Failed to get plan_metrics for %s", plan_id[:8])
-        return error_response(str(exc), status_code=502)
+        return error_response(
+            str(exc),
+            status_code=502,
+            code="gateway_proxy_failed",
+            locale=locale,
+        )
 
 
 async def build_plan_detail_json_response(
-    runtime: GatewayRuntime, plan_id: str,
+    runtime: GatewayRuntime,
+    plan_id: str,
+    *,
+    locale: str = "es",
 ) -> JSONResponse:
     try:
-        metrics_data = _extract_metrics_data(await aggregate_plan_metrics(runtime, plan_id))
+        metrics_data = _extract_metrics_data(
+            await aggregate_plan_metrics(runtime, plan_id, locale=locale)
+        )
         tasks_data = await _safe_fetch_tasks(runtime, plan_id)
         events_data = await _safe_fetch_plan_events(runtime, plan_id)
 
@@ -125,7 +140,12 @@ async def build_plan_detail_json_response(
         return JSONResponse(content=detail, status_code=200)
     except Exception as exc:
         logger.exception("Failed to build plan_detail for %s", plan_id[:8])
-        return error_response(str(exc), status_code=502)
+        return error_response(
+            str(exc),
+            status_code=502,
+            code="gateway_proxy_failed",
+            locale=locale,
+        )
 
 
 async def _safe_replan_count(

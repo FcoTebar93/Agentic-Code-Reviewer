@@ -207,6 +207,7 @@ async def _handle_task(payload: TaskAssignedPayload) -> None:
         language=task.language,
         spec_text=spec_result["spec"],
         test_suggestions=spec_result["tests"],
+        user_locale=user_locale,
     )
     event = spec_generated(SERVICE_NAME, spec_payload)
     await event_bus.publish(event)

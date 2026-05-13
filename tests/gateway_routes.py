@@ -6,8 +6,6 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
-from fastapi import HTTPException
-
 from services.gateway_service.http_helpers import parse_json_response
 from services.gateway_service.routes.approvals import (
     approvals_audit_summary,
@@ -102,10 +100,11 @@ def test_approve_pr_publishes_event_and_removes_pending_approval() -> None:
 def test_reject_pr_returns_404_for_unknown_approval() -> None:
     async def _run() -> None:
         rt = _build_runtime()
-        response = await reject_pr("unknown", rt)
+        response = await reject_pr("unknown", rt, accept_language="en")
         assert response.status_code == 404
         body = json.loads(response.body.decode("utf-8"))
-        assert "not found" in body["error"]
+        assert body["code"] == "approval_not_found_or_decided"
+        assert "does not exist" in body["error"]
 
     asyncio.run(_run())
 
@@ -122,11 +121,11 @@ def test_parse_json_response_handles_empty_and_invalid_payloads() -> None:
                 raise ValueError("bad json")
             return self._parsed
 
-    empty = parse_json_response(_Resp("", 502))
+    empty = parse_json_response(_Resp("", 502), locale="es")
     assert empty["status"] == 502
 
-    invalid = parse_json_response(_Resp("{bad", 200, "raise"))
-    assert "Invalid upstream response" in invalid["error"]
+    invalid = parse_json_response(_Resp("{bad", 200, "raise"), locale="en")
+    assert invalid["code"] == "invalid_upstream_response"
 
 
 def test_list_approvals_requires_token_when_auth_enabled() -> None:
@@ -134,11 +133,14 @@ def test_list_approvals_requires_token_when_auth_enabled() -> None:
         rt = _build_runtime()
         rt.cfg.approvals_auth_enabled = True
         rt.cfg.approvals_auth_token = "secret-approval-token"
-        try:
-            await list_approvals(rt, x_approval_token="wrong-token")
-            raise AssertionError("Expected HTTPException 403")
-        except HTTPException as exc:
-            assert exc.status_code == 403
+        response = await list_approvals(
+            rt,
+            x_approval_token="wrong-token",
+            accept_language="es",
+        )
+        assert response.status_code == 403
+        body = json.loads(response.body.decode("utf-8"))
+        assert body["code"] == "forbidden"
 
     asyncio.run(_run())
 
@@ -153,11 +155,10 @@ def test_approve_pr_rate_limited_when_enabled() -> None:
         first = await approve_pr("approval-1", rt)
         assert first["status"] == "approved"
 
-        try:
-            await approve_pr("approval-1", rt)
-            raise AssertionError("Expected HTTPException 429")
-        except HTTPException as exc:
-            assert exc.status_code == 429
+        second = await approve_pr("approval-1", rt)
+        assert second.status_code == 429
+        body = json.loads(second.body.decode("utf-8"))
+        assert body["code"] == "approval_rate_limited"
 
     asyncio.run(_run())
 
@@ -165,11 +166,10 @@ def test_approve_pr_rate_limited_when_enabled() -> None:
 def test_approvals_audit_summary_returns_404_when_disabled() -> None:
     async def _run() -> None:
         rt = _build_runtime()
-        try:
-            await approvals_audit_summary(rt)
-            raise AssertionError("Expected HTTPException 404")
-        except HTTPException as exc:
-            assert exc.status_code == 404
+        response = await approvals_audit_summary(rt, accept_language="es")
+        assert response.status_code == 404
+        body = json.loads(response.body.decode("utf-8"))
+        assert body["code"] == "not_found"
 
     asyncio.run(_run())
 
