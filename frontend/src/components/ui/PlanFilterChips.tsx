@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 interface PlanFilterChipsProps {
   planIds: string[];
   activePlanId: string | null;
@@ -9,6 +11,8 @@ export function PlanFilterChips({
   activePlanId,
   onChange,
 }: PlanFilterChipsProps) {
+  const { t } = useTranslation();
+
   if (planIds.length === 0) return null;
 
   return (
@@ -22,7 +26,7 @@ export function PlanFilterChips({
             : "bg-neutral-900 text-neutral-400 border-neutral-700 hover:bg-neutral-800 hover:text-neutral-200"
         }`}
       >
-        All
+        {t("planFilter.all")}
       </button>
       {planIds.map((pid) => (
         <button

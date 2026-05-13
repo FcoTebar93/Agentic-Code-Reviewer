@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { postJson } from "../../api/api";
 import type { PlanDetail } from "../../types/planDetail";
 import type { ReplanPrefill } from "./replanPrefill";
+import { translateSeverity } from "../../i18n/formatters";
 
 export function ManualReplan({
   plan,
@@ -10,6 +12,7 @@ export function ManualReplan({
   plan: PlanDetail;
   prefill?: ReplanPrefill;
 }) {
+  const { t, i18n } = useTranslation();
   const [severity, setSeverity] = useState<string>("medium");
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [reason, setReason] = useState<string>("");
@@ -26,13 +29,14 @@ export function ManualReplan({
     setReason(prefill.reason || "");
     setSuggestions(prefill.suggestions || "");
     setMessage(
-      "Formulario de replan pre-rellenado desde QA (revisa y confirma si tiene sentido).",
+      t("manualReplan.prefilled"),
     );
   }, [
     prefill?.severity,
     prefill?.reason,
     prefill?.suggestions,
     prefill?.targetGroupIds,
+    t,
   ]);
 
   const uniqueGroups = Array.from(
@@ -57,13 +61,13 @@ export function ManualReplan({
       const body = {
         original_plan_id: plan.plan_id,
         severity,
+        user_locale: i18n.resolvedLanguage || i18n.language || "es",
         reason:
           reason.trim() ||
-          "Manual replan triggered from UI based on QA/Security outcomes.",
-        summary: `Manual replanning requested for plan ${plan.plan_id.slice(
-          0,
-          8,
-        )}`,
+          t("manualReplan.defaultReason"),
+        summary: t("manualReplan.defaultSummary", {
+          planId: plan.plan_id.slice(0, 8),
+        }),
         suggestions: suggestions
           .split("\n")
           .map((s) => s.trim())
@@ -71,12 +75,12 @@ export function ManualReplan({
         target_group_ids: selectedGroups.length ? selectedGroups : uniqueGroups,
       };
       await postJson("/api/replan", body);
-      setMessage("Replan solicitado correctamente (esperando nuevo plan).");
+      setMessage(t("manualReplan.requestSuccess"));
       setReason("");
       setSuggestions("");
     } catch (err) {
       setMessage(
-        err instanceof Error ? err.message : "Error al solicitar replan.",
+        err instanceof Error ? err.message : t("manualReplan.requestError"),
       );
     } finally {
       setSubmitting(false);
@@ -94,27 +98,27 @@ export function ManualReplan({
   return (
     <div className="mt-3 border-t border-neutral-800 pt-2">
       <p className="text-neutral-500 text-[10px] font-mono mb-1">
-        Manual replan
+        {t("manualReplan.title")}
       </p>
       <form onSubmit={handleSubmit} className="space-y-2 text-xs">
         <div className="flex gap-2 items-center">
           <label className="text-[10px] text-neutral-500 font-mono">
-            Severidad
+            {t("manualReplan.severity")}
           </label>
           <select
             value={severity}
             onChange={(e) => setSeverity(e.target.value)}
             className="bg-black border border-neutral-700 rounded px-2 py-1 text-[11px] font-mono text-neutral-100 flex-1"
           >
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-            <option value="critical">critical</option>
+            <option value="low">{translateSeverity(t, "low")}</option>
+            <option value="medium">{translateSeverity(t, "medium")}</option>
+            <option value="high">{translateSeverity(t, "high")}</option>
+            <option value="critical">{translateSeverity(t, "critical")}</option>
           </select>
         </div>
         <div>
           <p className="text-[10px] text-neutral-500 font-mono mb-1">
-            Grupos objetivo (módulos)
+            {t("manualReplan.targetGroups")}
           </p>
           <div className="flex flex-wrap gap-1">
             {uniqueGroups.map((g) => {
@@ -138,26 +142,26 @@ export function ManualReplan({
         </div>
         <div>
           <label className="block text-[10px] text-neutral-500 font-mono mb-1">
-            Motivo (opcional)
+            {t("manualReplan.reason")} ({t("values.optional")})
           </label>
           <textarea
             rows={2}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             className="w-full bg-black border border-neutral-700 rounded px-2 py-1 text-xs font-mono text-neutral-100 placeholder:text-neutral-600 resize-none"
-            placeholder="Ej: Fallos repetidos de QA en estos módulos, necesito reforzar tests y validación..."
+            placeholder={t("manualReplan.reasonPlaceholder")}
           />
         </div>
         <div>
           <label className="block text-[10px] text-neutral-500 font-mono mb-1">
-            Sugerencias (una por línea, opcional)
+            {t("manualReplan.suggestions")} ({t("values.optional")})
           </label>
           <textarea
             rows={2}
             value={suggestions}
             onChange={(e) => setSuggestions(e.target.value)}
             className="w-full bg-black border border-neutral-700 rounded px-2 py-1 text-xs font-mono text-neutral-100 placeholder:text-neutral-600 resize-none"
-            placeholder="- Añadir tests de validación de formularios&#10;- Endurecer controles de acceso en endpoints sensibles"
+            placeholder={t("manualReplan.suggestionsPlaceholder")}
           />
         </div>
         <button
@@ -165,7 +169,7 @@ export function ManualReplan({
           disabled={submitting}
           className="w-full bg-neutral-100 hover:bg-neutral-300 disabled:bg-neutral-800 disabled:text-neutral-500 text-black font-mono text-[11px] font-medium rounded px-3 py-1.5 transition-colors"
         >
-          {submitting ? "Solicitando replan..." : "Solicitar replan para este plan"}
+          {submitting ? t("manualReplan.requesting") : t("manualReplan.request")}
         </button>
         {message && (
           <p className="text-[10px] font-mono mt-1 text-neutral-400">

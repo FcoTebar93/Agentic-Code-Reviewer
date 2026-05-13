@@ -60,6 +60,7 @@ def test_qa_passed() -> None:
     assert e.producer == "qa_service"
     r = QAResultPayload.model_validate(e.payload)
     assert r.plan_id == p.plan_id and r.passed and r.severity_hint == "medium"
+    assert r.content_locale == "en"
 
 
 def test_qa_failed() -> None:
@@ -76,6 +77,7 @@ def test_security_ok() -> None:
     assert e.event_type == EventType.SECURITY_APPROVED
     r = SecurityResultPayload.model_validate(e.payload)
     assert r.approved and r.violations == []
+    assert r.content_locale == "es"
 
 
 def test_security_blocked() -> None:

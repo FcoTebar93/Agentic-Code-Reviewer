@@ -20,7 +20,7 @@ describe("PlanFilterChips", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByRole("button", { name: "Todos" }));
     fireEvent.click(screen.getByRole("button", { name: "12345678…" }));
 
     expect(onChange).toHaveBeenNthCalledWith(1, null);

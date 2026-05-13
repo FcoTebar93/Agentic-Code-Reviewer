@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ServiceNode } from "./ServiceNode";
 import type { BaseEvent } from "../types/events";
 import { PRODUCER_FOR_EVENT } from "../types/events";
@@ -45,6 +46,7 @@ const NODE_POSITIONS = SERVICES.map((s, i) => ({
 const ACTIVE_MS = 1200;
 
 export function PipelineGraph({ latestEvent }: Props) {
+  const { t } = useTranslation();
   const [activeService, setActiveService] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,7 +60,7 @@ export function PipelineGraph({ latestEvent }: Props) {
 
   return (
     <Card className="shadow-lg shadow-black/40">
-      <SectionHeader>Agent Pipeline</SectionHeader>
+      <SectionHeader>{t("dashboard.pipelineGraph")}</SectionHeader>
       <svg
         viewBox={`0 0 ${SVG_W} ${SVG_H}`}
         width="100%"

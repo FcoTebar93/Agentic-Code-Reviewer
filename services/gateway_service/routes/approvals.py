@@ -4,12 +4,13 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, status
 from fastapi.responses import JSONResponse
 
 from services.gateway_service.constants import SERVICE_NAME
 from services.gateway_service.deps import get_gateway_runtime
 from services.gateway_service.http_helpers import error_response
+from services.gateway_service.i18n import resolve_request_locale
 from services.gateway_service.runtime import GatewayRuntime
 from shared.contracts.events import pr_human_approved, pr_human_rejected
 from shared.observability.metrics import approvals_access_denied
@@ -23,9 +24,10 @@ def _require_approvals_auth(
     provided_token: str | None,
     *,
     action: str,
-) -> None:
+    locale: str,
+) -> JSONResponse | None:
     if not rt.cfg.approvals_auth_enabled:
-        return
+        return None
     expected = (rt.cfg.approvals_auth_token or "").strip()
     if not expected:
         logger.warning(
@@ -37,9 +39,11 @@ def _require_approvals_auth(
             reason="auth_misconfigured",
             action=action,
         ).inc()
-        raise HTTPException(
+        return error_response(
+            "Approvals auth enabled but token is not configured",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Approvals auth enabled but token is not configured",
+            code="approval_auth_token_missing",
+            locale=locale,
         )
     if provided_token != expected:
         logger.warning("Forbidden approvals access action=%s", action)
@@ -48,10 +52,13 @@ def _require_approvals_auth(
             reason="auth_forbidden",
             action=action,
         ).inc()
-        raise HTTPException(
+        return error_response(
+            "Forbidden",
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden",
+            code="forbidden",
+            locale=locale,
         )
+    return None
 
 
 def _enforce_approvals_rate_limit(
@@ -59,9 +66,10 @@ def _enforce_approvals_rate_limit(
     key: str,
     *,
     action: str,
-) -> None:
+    locale: str,
+) -> JSONResponse | None:
     if not rt.cfg.approvals_rate_limit_enabled:
-        return
+        return None
     now = time.monotonic()
     window = float(rt.cfg.approvals_rate_limit_window_seconds)
     max_requests = rt.cfg.approvals_rate_limit_max_requests
@@ -80,12 +88,15 @@ def _enforce_approvals_rate_limit(
             reason="rate_limited",
             action=action,
         ).inc()
-        raise HTTPException(
+        return error_response(
+            "Too many approval requests",
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many approval requests",
+            code="approval_rate_limited",
+            locale=locale,
         )
     bucket.append(now)
     rt.approvals_rate_limit_counters[key] = bucket
+    return None
 
 
 def _approvals_rate_limit_snapshot(rt: GatewayRuntime) -> dict:
@@ -121,13 +132,23 @@ async def _decide_approval(
     *,
     action: str,
     decision: str,
+    locale: str,
 ) -> dict | JSONResponse:
-    _enforce_approvals_rate_limit(rt, f"{action}:{approval_id}", action=action)
+    rate_limited = _enforce_approvals_rate_limit(
+        rt,
+        f"{action}:{approval_id}",
+        action=action,
+        locale=locale,
+    )
+    if rate_limited is not None:
+        return rate_limited
     approval = rt.pending_approvals.get(approval_id)
     if not approval:
         return error_response(
             f"Approval {approval_id} not found or already decided",
             status_code=404,
+            code="approval_not_found_or_decided",
+            locale=locale,
         )
 
     approval.decision = decision
@@ -155,10 +176,24 @@ async def _decide_approval(
 async def approvals_audit_summary(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
     x_approval_token: str | None = Header(default=None),
+    accept_language: str | None = Header(default=None),
 ):
+    locale = resolve_request_locale(accept_language)
     if not rt.cfg.approvals_audit_summary_enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    _require_approvals_auth(rt, x_approval_token, action="audit_summary")
+        return error_response(
+            "Not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="not_found",
+            locale=locale,
+        )
+    auth_error = _require_approvals_auth(
+        rt,
+        x_approval_token,
+        action="audit_summary",
+        locale=locale,
+    )
+    if auth_error is not None:
+        return auth_error
     snap = _approvals_rate_limit_snapshot(rt)
     return {
         "service": SERVICE_NAME,
@@ -176,8 +211,16 @@ async def approvals_audit_summary(
 async def list_approvals(
     rt: GatewayRuntime = Depends(get_gateway_runtime),
     x_approval_token: str | None = Header(default=None),
+    accept_language: str | None = Header(default=None),
 ):
-    _require_approvals_auth(rt, x_approval_token, action="list")
+    auth_error = _require_approvals_auth(
+        rt,
+        x_approval_token,
+        action="list",
+        locale=resolve_request_locale(accept_language),
+    )
+    if auth_error is not None:
+        return auth_error
     return {
         "pending": [a.model_dump() for a in rt.pending_approvals.values()],
         "count": len(rt.pending_approvals),
@@ -189,13 +232,23 @@ async def approve_pr(
     approval_id: str,
     rt: GatewayRuntime = Depends(get_gateway_runtime),
     x_approval_token: str | None = Header(default=None),
+    accept_language: str | None = Header(default=None),
 ):
-    _require_approvals_auth(rt, x_approval_token, action="approve")
+    locale = resolve_request_locale(accept_language)
+    auth_error = _require_approvals_auth(
+        rt,
+        x_approval_token,
+        action="approve",
+        locale=locale,
+    )
+    if auth_error is not None:
+        return auth_error
     return await _decide_approval(
         approval_id,
         rt,
         action="approve",
         decision="approved",
+        locale=locale,
     )
 
 
@@ -204,11 +257,21 @@ async def reject_pr(
     approval_id: str,
     rt: GatewayRuntime = Depends(get_gateway_runtime),
     x_approval_token: str | None = Header(default=None),
+    accept_language: str | None = Header(default=None),
 ):
-    _require_approvals_auth(rt, x_approval_token, action="reject")
+    locale = resolve_request_locale(accept_language)
+    auth_error = _require_approvals_auth(
+        rt,
+        x_approval_token,
+        action="reject",
+        locale=locale,
+    )
+    if auth_error is not None:
+        return auth_error
     return await _decide_approval(
         approval_id,
         rt,
         action="reject",
         decision="rejected",
+        locale=locale,
     )

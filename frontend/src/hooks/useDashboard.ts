@@ -11,6 +11,7 @@ import type { RightPanelTabId } from "../components/ui/RightPanelTabs";
 import type { BaseEvent, PrApproval } from "../types/events";
 import { postWithoutBody } from "../api/api";
 import { extractPlanId, sortByTimestampDesc } from "../lib/dashboardUtils";
+import { useTranslation } from "react-i18next";
 
 export interface DashboardProps {
   status: ReturnType<typeof useWebSocket>["status"];
@@ -49,6 +50,7 @@ export interface DashboardProps {
 }
 
 export function useDashboard(wsUrl: string): DashboardProps {
+  const { t } = useTranslation();
   const { events, pendingApprovals, status } = useWebSocket(wsUrl);
   const [visibleEvents, setVisibleEvents] = useState<BaseEvent[]>(events);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
@@ -271,7 +273,7 @@ export function useDashboard(wsUrl: string): DashboardProps {
     !isNarrowDrawer
       ? ({
           role: "complementary" as const,
-          "aria-label": "Plan, métricas y herramientas",
+          "aria-label": t("dashboard.ariaTools"),
         } as const)
       : rightDrawerOpen
         ? ({

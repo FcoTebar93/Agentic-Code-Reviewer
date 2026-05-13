@@ -10,6 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from shared.prompt_locale import normalize_user_locale
+
 
 class EventType(str, Enum):
     PLAN_REQUESTED = "plan.requested"
@@ -52,6 +54,13 @@ class BaseEvent(BaseModel):
             raw = f"{self.event_type.value}:{_stable_hash(self.payload)}"
             self.idempotency_key = hashlib.sha256(raw.encode()).hexdigest()
 
+
+def _localized_content_locale(
+    content_locale: str | None,
+    user_locale: str | None,
+) -> str:
+    return normalize_user_locale(content_locale or user_locale or "en")
+
 class PlanRequestedPayload(BaseModel):
     user_prompt: str
     project_name: str
@@ -80,6 +89,13 @@ class PlanCreatedPayload(BaseModel):
     reasoning: str = ""
     mode: str = "normal"
     user_locale: str = "en"
+    content_locale: str = ""
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class TaskAssignedPayload(BaseModel):
@@ -90,6 +106,13 @@ class TaskAssignedPayload(BaseModel):
     plan_reasoning: str = ""
     mode: str = "normal"
     user_locale: str = "en"
+    content_locale: str = ""
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class CodeGeneratedPayload(BaseModel):
@@ -102,10 +125,17 @@ class CodeGeneratedPayload(BaseModel):
     reasoning: str = ""
     mode: str = "normal"
     user_locale: str = "en"
+    content_locale: str = ""
     tool_trace: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Dev agent tool loop steps for user-facing traceability (UI).",
     )
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class PRRequestedPayload(BaseModel):
@@ -147,6 +177,13 @@ class QAResultPayload(BaseModel):
         description="Severidad heurística del resultado QA (low|medium|high|critical) basada en issues estáticos y contexto.",
     )
     user_locale: str = "en"
+    content_locale: str = ""
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class SpecGeneratedPayload(BaseModel):
@@ -158,6 +195,14 @@ class SpecGeneratedPayload(BaseModel):
     language: str = "python"
     spec_text: str = ""
     test_suggestions: str = ""
+    user_locale: str = "en"
+    content_locale: str = ""
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class SecurityResultPayload(BaseModel):
@@ -175,6 +220,13 @@ class SecurityResultPayload(BaseModel):
         description="Severidad heurística del resultado de seguridad (low|medium|high|critical) basada en violaciones.",
     )
     user_locale: str = "en"
+    content_locale: str = ""
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class PrApprovalPayload(BaseModel):
@@ -188,6 +240,14 @@ class PrApprovalPayload(BaseModel):
     pr_context: dict[str, Any] = Field(default_factory=dict)
     decision: str = ""
     reviewer: str = "human"
+    user_locale: str = "en"
+    content_locale: str = ""
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class PipelineConclusionPayload(BaseModel):
@@ -198,6 +258,8 @@ class PipelineConclusionPayload(BaseModel):
     conclusion_text: str = ""
     files_changed: list[str] = Field(default_factory=list)
     approved: bool = True
+    user_locale: str = "en"
+    content_locale: str = ""
     services: dict[str, Any] = Field(
         default_factory=dict,
         description=(
@@ -205,6 +267,12 @@ class PipelineConclusionPayload(BaseModel):
             "contadores de QA/security, etc.). No se usa para lógica crítica."
         ),
     )
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class PlanRevisionPayload(BaseModel):
@@ -217,6 +285,14 @@ class PlanRevisionPayload(BaseModel):
     suggestions: list[str] = Field(default_factory=list)
     severity: str = "medium"
     target_group_ids: list[str] = Field(default_factory=list)
+    user_locale: str = "en"
+    content_locale: str = ""
+
+    def model_post_init(self, __context: Any) -> None:
+        self.content_locale = _localized_content_locale(
+            self.content_locale,
+            self.user_locale,
+        )
 
 
 class TokensUsedPayload(BaseModel):

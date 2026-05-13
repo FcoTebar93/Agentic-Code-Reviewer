@@ -1,4 +1,6 @@
 import type { PlanDetail, SecurityOutcome } from "../../types/planDetail";
+import { useTranslation } from "react-i18next";
+import { translateSeverity } from "../../i18n/formatters";
 
 function isSecurityOutcome(
   security: PlanDetail["security_outcome"],
@@ -11,25 +13,26 @@ export function SecuritySummary({
 }: {
   security: PlanDetail["security_outcome"];
 }) {
+  const { t } = useTranslation();
   if (!isSecurityOutcome(security)) return null;
   return (
     <div className="mt-3 border-t border-neutral-800 pt-2">
       <p className="text-neutral-500 text-[10px] font-mono mb-1">
-        Seguridad
+        {t("securitySummary.title")}
       </p>
       <div className="text-xs space-y-0.5">
         <div>
-          Aprobado:{" "}
+          {t("securitySummary.approved")}:{" "}
           <span className="font-medium">
-            {security.approved ? "sí" : "no"}
+            {security.approved ? t("values.yes") : t("values.no")}
           </span>{" "}
-          · severidad:{" "}
+          · {t("securitySummary.severity")}:{" "}
           <span className="font-medium">
-            {security.severity_hint || "medium"}
+            {translateSeverity(t, security.severity_hint || "medium")}
           </span>
         </div>
         <div>
-          Files escaneados: <span>{security.files_scanned}</span>
+          {t("securitySummary.filesScanned")}: <span>{security.files_scanned}</span>
         </div>
         {security.violations && security.violations.length > 0 && (
           <ul className="list-disc ml-4 text-[10px] space-y-0.5">
@@ -37,7 +40,11 @@ export function SecuritySummary({
               <li key={idx}>{v}</li>
             ))}
             {security.violations.length > 4 && (
-              <li>… {security.violations.length - 4} violaciones más.</li>
+              <li>
+                {t("securitySummary.moreViolations", {
+                  count: security.violations.length - 4,
+                })}
+              </li>
             )}
           </ul>
         )}

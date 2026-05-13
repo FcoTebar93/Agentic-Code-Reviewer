@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { PrApproval } from "../types/events";
 import { Card, SectionHeader } from "./ui/Card";
 
@@ -17,6 +18,7 @@ function ApprovalCard({
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState<"approve" | "reject" | null>(null);
   const [reasoningOpen, setReasoningOpen] = useState(false);
 
@@ -35,20 +37,20 @@ function ApprovalCard({
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-0.5">
           <p className="text-amber-300 text-xs font-mono font-semibold uppercase tracking-widest">
-            Awaiting Human Review
+            {t("approvalQueue.awaitingReview")}
           </p>
           <p className="text-neutral-100 text-sm font-mono">
-            Plan{" "}
+            {t("approvalQueue.plan")}{" "}
             <span className="text-amber-400">{approval.plan_id.slice(0, 8)}</span>
           </p>
         </div>
         <span className="bg-amber-500/20 text-amber-300 text-xs font-mono px-2 py-0.5 rounded-full border border-amber-600/40 whitespace-nowrap">
-          {approval.files_count} file{approval.files_count !== 1 ? "s" : ""}
+          {t("approvalQueue.files", { count: approval.files_count })}
         </span>
       </div>
 
       <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
-        <span className="text-neutral-600">branch</span>
+        <span className="text-neutral-600">{t("approvalQueue.branch")}</span>
         <span className="text-neutral-200">{approval.branch_name}</span>
       </div>
 
@@ -64,7 +66,7 @@ function ApprovalCard({
             >
               ▶
             </span>
-            Security reasoning
+            {t("approvalQueue.securityReasoning")}
           </button>
           {reasoningOpen && (
             <p className="mt-2 text-neutral-300 leading-relaxed pl-4 border-l border-neutral-800">
@@ -80,14 +82,18 @@ function ApprovalCard({
           disabled={loading !== null}
           className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:bg-neutral-800 disabled:text-neutral-500 text-black text-xs font-mono rounded-lg px-3 py-2 transition-colors"
         >
-          {loading === "approve" ? "Approving…" : "✓ Approve & Merge"}
+          {loading === "approve"
+            ? t("approvalQueue.approving")
+            : t("approvalQueue.approveMerge")}
         </button>
         <button
           onClick={() => handle("reject")}
           disabled={loading !== null}
           className="flex-1 bg-red-900/60 hover:bg-red-800/80 disabled:bg-neutral-800 disabled:text-neutral-500 text-red-300 text-xs font-mono rounded-lg px-3 py-2 transition-colors border border-red-700/50"
         >
-          {loading === "reject" ? "Rejecting…" : "✗ Reject"}
+          {loading === "reject"
+            ? t("approvalQueue.rejecting")
+            : t("approvalQueue.reject")}
         </button>
       </div>
     </div>
@@ -99,6 +105,7 @@ export function ApprovalQueue({
   onApprove,
   onReject,
 }: ApprovalQueueProps) {
+  const { t } = useTranslation();
   return (
     <Card className="space-y-3">
       <SectionHeader
@@ -110,12 +117,12 @@ export function ApprovalQueue({
           )
         }
       >
-        Human Approval Queue
+        {t("approvalQueue.title")}
       </SectionHeader>
 
       {approvals.length === 0 ? (
         <p className="text-neutral-600 text-xs font-mono text-center py-4">
-          No pending approvals
+          {t("approvalQueue.empty")}
         </p>
       ) : (
         <div className="space-y-3">

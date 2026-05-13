@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { postJson } from "../api/api";
+import { getAgentLocaleOptions, resolveAgentLocale } from "../i18n/locale";
 import { Card, SectionHeader } from "./ui/Card";
 
 export interface AgentAskResult {
@@ -11,41 +13,14 @@ export interface AgentAskResult {
   error?: string;
 }
 
-const LOCALE_OPTIONS = [
-  { value: "auto", label: "Auto (browser)" },
-  { value: "en", label: "English" },
-  { value: "es", label: "Español" },
-  { value: "fr", label: "Français" },
-  { value: "de", label: "Deutsch" },
-  { value: "pt", label: "Português" },
-  { value: "it", label: "Italiano" },
-] as const;
-
-const SUPPORTED_PRIMARY = new Set([
-  "en",
-  "es",
-  "fr",
-  "de",
-  "pt",
-  "it",
-  "ja",
-  "zh",
-  "ko",
-]);
-
-function effectiveUserLocale(choice: string): string {
-  if (choice !== "auto") return choice;
-  if (typeof navigator === "undefined") return "en";
-  const primary = (navigator.language || "en").split("-")[0].toLowerCase();
-  return SUPPORTED_PRIMARY.has(primary) ? primary : "en";
-}
-
 type Props = {
   /** Pre-filled from dashboard filter; user can clear to query global memory only */
   defaultPlanId: string | null;
 };
 
 export function AgentAskCard({ defaultPlanId }: Props) {
+  const { t, i18n } = useTranslation();
+  const localeOptions = getAgentLocaleOptions(t);
   const [question, setQuestion] = useState("");
   const [planId, setPlanId] = useState("");
   const [localeChoice, setLocaleChoice] = useState<string>("auto");
@@ -66,7 +41,10 @@ export function AgentAskCard({ defaultPlanId }: Props) {
     try {
       const body: Record<string, string> = {
         question: question.trim(),
-        user_locale: effectiveUserLocale(localeChoice),
+        user_locale: resolveAgentLocale(
+          localeChoice,
+          i18n.resolvedLanguage || i18n.language,
+        ),
       };
       const pid = planId.trim();
       if (pid) body.plan_id = pid;
@@ -81,46 +59,48 @@ export function AgentAskCard({ defaultPlanId }: Props) {
 
   return (
     <Card>
-      <SectionHeader>Ask the agents</SectionHeader>
+      <SectionHeader>{t("agentAsk.title")}</SectionHeader>
       <p className="text-[10px] font-mono text-neutral-500 mb-3 leading-relaxed">
-        Read-only answers from semantic memory (indexed pipeline events). Optional{" "}
-        <span className="text-neutral-400">plan_id</span> adds recent events for that plan.
+        {t("agentAsk.description")}
       </p>
       <form onSubmit={handleSubmit} className="space-y-2">
         <div>
           <label className="block text-neutral-500 text-[10px] font-mono mb-1">
-            Question
+            {t("agentAsk.question")}
           </label>
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             rows={2}
             className="w-full bg-black border border-neutral-700 rounded-lg px-2 py-1.5 text-neutral-100 text-xs font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 resize-none"
-            placeholder="What failed last time in QA for this repo?"
+            placeholder={t("agentAsk.questionPlaceholder")}
           />
         </div>
         <div>
           <label className="block text-neutral-500 text-[10px] font-mono mb-1">
-            Plan ID <span className="text-neutral-600">(optional)</span>
+            {t("agentAsk.planId")}{" "}
+            <span className="text-neutral-600">
+              ({t("agentAsk.planIdOptional")})
+            </span>
           </label>
           <input
             type="text"
             value={planId}
             onChange={(e) => setPlanId(e.target.value)}
             className="w-full bg-black border border-neutral-700 rounded-lg px-2 py-1.5 text-neutral-100 text-[10px] font-mono focus:outline-none focus:border-neutral-500"
-            placeholder="UUID — uses active filter when set in dashboard"
+            placeholder={t("agentAsk.planPlaceholder")}
           />
         </div>
         <div>
           <label className="block text-neutral-500 text-[10px] font-mono mb-1">
-            Response language
+            {t("agentAsk.responseLanguage")}
           </label>
           <select
             value={localeChoice}
             onChange={(e) => setLocaleChoice(e.target.value)}
             className="w-full bg-black border border-neutral-700 rounded-lg px-2 py-1.5 text-neutral-100 text-[10px] font-mono focus:outline-none focus:border-neutral-500"
           >
-            {LOCALE_OPTIONS.map((o) => (
+            {localeOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -132,7 +112,7 @@ export function AgentAskCard({ defaultPlanId }: Props) {
           disabled={loading || !question.trim()}
           className="w-full bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600 text-neutral-100 font-mono text-[11px] rounded-lg px-3 py-2 transition-colors border border-neutral-600"
         >
-          {loading ? "Asking…" : "Ask"}
+          {loading ? t("agentAsk.asking") : t("agentAsk.ask")}
         </button>
       </form>
       {error && (
@@ -148,7 +128,7 @@ export function AgentAskCard({ defaultPlanId }: Props) {
           {result.sources && result.sources.length > 0 && (
             <details className="text-neutral-500">
               <summary className="cursor-pointer text-neutral-400 hover:text-neutral-300">
-                Sources ({result.sources.length})
+                {t("agentAsk.sources", { count: result.sources.length })}
               </summary>
               <ul className="mt-1 space-y-1 pl-2 max-h-32 overflow-y-auto">
                 {result.sources.map((s, i) => (
@@ -162,7 +142,10 @@ export function AgentAskCard({ defaultPlanId }: Props) {
           )}
           {(result.prompt_tokens || result.completion_tokens) ? (
             <p className="text-neutral-600">
-              tokens: {result.prompt_tokens ?? 0} + {result.completion_tokens ?? 0}
+              {t("agentAsk.tokens", {
+                prompt: result.prompt_tokens ?? 0,
+                completion: result.completion_tokens ?? 0,
+              })}
             </p>
           ) : null}
         </div>

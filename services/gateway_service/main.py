@@ -94,7 +94,7 @@ app.add_middleware(
     ),
     allow_headers=_parse_csv_env(
         "GATEWAY_CORS_ALLOW_HEADERS",
-        "Authorization,Content-Type,X-Requested-With",
+        "Authorization,Content-Type,X-Requested-With,Accept-Language",
     ),
 )
 install_correlation_middleware(app)

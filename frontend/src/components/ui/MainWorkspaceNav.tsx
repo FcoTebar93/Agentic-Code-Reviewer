@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 /** Single workspace: pipeline graph + execution log share one view. */
 export type MainWorkspaceSectionId = "pipeline";
@@ -17,14 +18,6 @@ export function isMainWorkspaceSectionId(s: string): s is MainWorkspaceSectionId
   return s === "pipeline";
 }
 
-const SECTIONS: { id: MainWorkspaceSectionId; label: string; hint: string }[] = [
-  {
-    id: "pipeline",
-    label: "Plan y ejecución",
-    hint: "Agentes activos arriba, registro del plan abajo",
-  },
-];
-
 type Props = {
   active: MainWorkspaceSectionId;
   onChange: (id: MainWorkspaceSectionId) => void;
@@ -32,8 +25,17 @@ type Props = {
 };
 
 export function MainWorkspaceNav({ active, onChange, panels }: Props) {
-  if (SECTIONS.length === 1) {
-    const only = SECTIONS[0].id;
+  const { t } = useTranslation();
+  const sections: { id: MainWorkspaceSectionId; label: string; hint: string }[] = [
+    {
+      id: "pipeline",
+      label: t("workspace.pipeline.label"),
+      hint: t("workspace.pipeline.hint"),
+    },
+  ];
+
+  if (sections.length === 1) {
+    const only = sections[0].id;
     return (
       <div className="flex flex-col min-h-0 flex-1 min-w-0 basis-0">
         {panels[only]}
@@ -45,16 +47,16 @@ export function MainWorkspaceNav({ active, onChange, panels }: Props) {
     <div className="flex flex-col min-h-0 flex-1 gap-2 lg:gap-3 lg:flex-row">
       <nav
         className="flex flex-row lg:flex-col gap-1 shrink-0 border-b border-neutral-800 pb-2 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-3 lg:w-[8.5rem]"
-        aria-label="Vista principal"
+        aria-label={t("workspace.ariaLabel")}
       >
         <span className="hidden lg:block text-[9px] font-mono text-neutral-600 uppercase tracking-widest mb-1 px-1">
-          Vista
+          {t("workspace.label")}
         </span>
         <div
           className="flex flex-row lg:flex-col gap-1 flex-1 lg:flex-none"
           role="tablist"
         >
-          {SECTIONS.map(({ id, label, hint }, index) => {
+          {sections.map(({ id, label, hint }, index) => {
             const isOn = active === id;
             const k = index + 1;
             return (
@@ -85,7 +87,7 @@ export function MainWorkspaceNav({ active, onChange, panels }: Props) {
       </nav>
 
       <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
-        {SECTIONS.map(({ id }) => (
+        {sections.map(({ id }) => (
           <div
             key={id}
             role="tabpanel"

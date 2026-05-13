@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export type RightPanelTabId = "metrics" | "detail" | "approvals" | "more";
 
@@ -22,13 +23,6 @@ export function normalizeRightPanelTabFromUrl(raw: string | null): RightPanelTab
   return null;
 }
 
-const TABS: { id: RightPanelTabId; label: string }[] = [
-  { id: "metrics", label: "Métricas" },
-  { id: "detail", label: "Detalle" },
-  { id: "approvals", label: "Aprobaciones" },
-  { id: "more", label: "Más" },
-];
-
 type Props = {
   active: RightPanelTabId;
   onChange: (id: RightPanelTabId) => void;
@@ -36,6 +30,13 @@ type Props = {
 };
 
 export function RightPanelTabs({ active, onChange, panels }: Props) {
+  const { t } = useTranslation();
+  const tabs: { id: RightPanelTabId; label: string }[] = [
+    { id: "metrics", label: t("rightTabs.metrics") },
+    { id: "detail", label: t("rightTabs.detail") },
+    { id: "approvals", label: t("rightTabs.approvals") },
+    { id: "more", label: t("rightTabs.more") },
+  ];
   const [visited, setVisited] = useState<Set<RightPanelTabId>>(
     () => new Set([active]),
   );
@@ -49,9 +50,9 @@ export function RightPanelTabs({ active, onChange, panels }: Props) {
       <div
         className="flex flex-wrap gap-1 border-b border-neutral-800 pb-2 -mb-px"
         role="tablist"
-        aria-label="Panel lateral"
+        aria-label={t("rightTabs.ariaLabel")}
       >
-        {TABS.map(({ id, label }, index) => {
+        {tabs.map(({ id, label }, index) => {
           const isActive = active === id;
           const k = index + 3;
           return (
@@ -77,7 +78,7 @@ export function RightPanelTabs({ active, onChange, panels }: Props) {
         })}
       </div>
       <div className="flex-1 min-h-0 min-w-0 relative">
-        {TABS.map(({ id }) => {
+        {tabs.map(({ id }) => {
           const mounted = visited.has(id) || id === active;
           return (
             <div

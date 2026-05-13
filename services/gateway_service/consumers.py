@@ -62,6 +62,7 @@ async def consume_security_approved(runtime: GatewayRuntime, logger: logging.Log
             conclusion_text=sec.reasoning,
             files_changed=files_changed,
             approved=sec.approved,
+            user_locale=sec.user_locale,
         )
         conclusion_event = pipeline_conclusion(SERVICE_NAME, conclusion_payload)
         await runtime.event_bus.publish(conclusion_event)
@@ -82,6 +83,7 @@ async def consume_security_approved(runtime: GatewayRuntime, logger: logging.Log
             files_count=sec.files_scanned,
             security_reasoning=sec.reasoning,
             pr_context=sec.pr_context,
+            user_locale=sec.user_locale,
         )
         runtime.pending_approvals[approval.approval_id] = approval
 

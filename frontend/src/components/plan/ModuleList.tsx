@@ -1,4 +1,6 @@
 import type { PlanDetail } from "../../types/planDetail";
+import { useTranslation } from "react-i18next";
+import { translateSeverity } from "../../i18n/formatters";
 
 type Modules = NonNullable<PlanDetail["modules"]>;
 
@@ -11,6 +13,7 @@ export function ModuleList({
   selectedModuleId: string | null;
   onSelectModule: (groupId: string | null) => void;
 }) {
+  const { t } = useTranslation();
   if (!modules.length) return null;
 
   const maxQa = Math.max(...modules.map((m) => m.qa_failed_count || 0), 0);
@@ -25,7 +28,7 @@ export function ModuleList({
   return (
     <div className="mt-3 border-t border-neutral-800 pt-2">
       <p className="text-neutral-500 text-[10px] font-mono mb-1">
-        Módulos del plan
+        {t("moduleList.title")}
       </p>
       <div className="flex flex-wrap gap-1">
         <button
@@ -37,14 +40,14 @@ export function ModuleList({
               : "bg-black text-neutral-300 border-neutral-700 hover:border-neutral-500"
           }`}
         >
-          Todos
+          {t("moduleList.all")}
         </button>
         {modules.map((m) => {
           const active = selectedModuleId === m.group_id;
           const qaBadge =
             m.qa_failed_count > 0
-              ? `${m.qa_failed_count} QA fail${m.qa_failed_count > 1 ? "s" : ""}`
-              : "0 QA fails";
+              ? t("moduleList.qaFails", { count: m.qa_failed_count })
+              : t("moduleList.zeroQaFails");
           const sevClass = severityColor(m.max_severity_hint || "low");
 
           const intensity =
@@ -72,7 +75,7 @@ export function ModuleList({
                 {m.tasks_count}t · {qaBadge}
               </span>
               <span className={`text-[9px] ${sevClass}`}>
-                {m.max_severity_hint}
+                {translateSeverity(t, m.max_severity_hint)}
               </span>
             </button>
           );

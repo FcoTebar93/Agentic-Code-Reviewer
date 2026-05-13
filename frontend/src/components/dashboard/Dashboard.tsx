@@ -9,6 +9,9 @@ import { PanelTabFallback } from "../ui/PanelTabFallback";
 import { MainWorkspaceNav } from "../ui/MainWorkspaceNav";
 import { RightPanelTabs } from "../ui/RightPanelTabs";
 import { STATUS_DOT } from "../../lib/dashboardUtils";
+import { LanguageSwitcher } from "../ui/LanguageSwitcher";
+import { useTranslation } from "react-i18next";
+import { translateConnectionStatus } from "../../i18n/formatters";
 
 const LazyPlanForm = lazy(() =>
   import("../PlanForm").then((m) => ({ default: m.PlanForm })),
@@ -36,6 +39,7 @@ const LazyRightPanelMoreTab = lazy(() =>
 );
 
 export function Dashboard(props: DashboardProps) {
+  const { t } = useTranslation();
   const {
     status,
     pendingApprovals,
@@ -68,10 +72,11 @@ export function Dashboard(props: DashboardProps) {
     <div className="min-h-dvh bg-black text-neutral-50 flex flex-col">
       <HeaderBar
         title="ADMADC"
-        subtitle="Autonomous Deterministic Multi-Agent Dev Company"
-        shortcutsHint="Atajos: Alt+1–2 vista plan · Alt+3–6 panel (Métricas…Más)"
+        subtitle={t("dashboard.subtitle")}
+        shortcutsHint={t("dashboard.shortcutsHint")}
         right={
           <>
+            <LanguageSwitcher />
             <button
               ref={panelToggleRef}
               type="button"
@@ -80,17 +85,22 @@ export function Dashboard(props: DashboardProps) {
               aria-controls="right-panel-drawer"
               onClick={() => setRightDrawerOpen((o) => !o)}
             >
-              {rightDrawerOpen ? "Cerrar insights" : "Abrir insights"}
+              {rightDrawerOpen
+                ? t("dashboard.closeInsights")
+                : t("dashboard.openInsights")}
             </button>
             {pendingApprovals.length > 0 && (
               <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-xs font-mono rounded-full px-2.5 py-0.5 animate-pulse">
-                {pendingApprovals.length} approval
-                {pendingApprovals.length !== 1 ? "s" : ""} pending
+                {t("dashboard.pendingApprovals", {
+                  count: pendingApprovals.length,
+                })}
               </span>
             )}
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${STATUS_DOT[status]}`} />
-              <span className="text-xs font-mono text-neutral-500">{status}</span>
+              <span className="text-xs font-mono text-neutral-500">
+                {translateConnectionStatus(t, status)}
+              </span>
             </div>
           </>
         }
@@ -121,7 +131,7 @@ export function Dashboard(props: DashboardProps) {
                       <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 mb-2">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
-                            Registro de ejecución
+                            {t("dashboard.executionLog")}
                           </span>
                           <PlanFilterChips
                             planIds={knownPlanIds}
@@ -140,7 +150,7 @@ export function Dashboard(props: DashboardProps) {
                             }}
                             className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
                           >
-                            clear logs
+                            {t("dashboard.clearLogs")}
                           </button>
                         )}
                       </div>
@@ -158,7 +168,7 @@ export function Dashboard(props: DashboardProps) {
         <aside className="flex flex-col gap-3 min-h-0 order-2 lg:order-2 min-w-0 flex-1 lg:flex-none lg:max-h-full overflow-hidden">
           <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-y-auto">
             <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider shrink-0 mb-2">
-              Lanzar
+              {t("dashboard.launch")}
             </span>
             <div className="min-h-0 flex-1 flex flex-col gap-4 pr-1">
               <Suspense fallback={<PanelTabFallback />}>
@@ -189,14 +199,14 @@ export function Dashboard(props: DashboardProps) {
               id="right-drawer-title"
               className="text-[10px] font-mono uppercase tracking-wider text-neutral-500"
             >
-              Insights
+              {t("dashboard.insights")}
             </span>
             <button
               type="button"
               className="text-[10px] font-mono text-neutral-400 hover:text-white px-2 py-1 rounded border border-neutral-700"
               onClick={closeRightDrawer}
             >
-              Cerrar
+              {t("dashboard.close")}
             </button>
           </div>
           <div className="flex flex-col min-h-0 h-[calc(100dvh-3.75rem)]">

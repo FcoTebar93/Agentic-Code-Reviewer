@@ -1,6 +1,8 @@
 import { Card, SectionHeader } from "./ui/Card";
 import { StatRow } from "./ui/StatRow";
 import type { BaseEvent } from "../types/events";
+import { useTranslation } from "react-i18next";
+import { translateEventType, translateGenericStatus } from "../i18n/formatters";
 
 type Props = {
   visibleEventsCount: number;
@@ -10,31 +12,31 @@ type Props = {
 };
 
 export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, activePlanMode, latestEvent }: Props) {
+  const { t } = useTranslation();
+
   return (
     <>
       <Card>
-        <SectionHeader>Atajos de teclado</SectionHeader>
+        <SectionHeader>{t("moreTab.shortcuts")}</SectionHeader>
         <ul className="text-[11px] font-mono text-neutral-400 space-y-1.5 leading-relaxed">
           <li>
-            <span className="text-neutral-500">Alt+1 / Alt+2</span> — Pipeline /
-            Eventos
+            {t("moreTab.shortcutLine1")}
           </li>
           <li>
-            <span className="text-neutral-500">Alt+3 … Alt+6</span> — Métricas,
-            Detalle, Aprobaciones, Más (Lanzar está en la vista Eventos)
+            {t("moreTab.shortcutLine2")}
           </li>
           <li className="text-neutral-600 text-[10px] pt-1">
-            En móvil, Alt+3–6 abre el panel; Opción = Alt (macOS).
+            {t("moreTab.shortcutHint")}
           </li>
         </ul>
       </Card>
 
       <Card>
-        <SectionHeader>Stats</SectionHeader>
+        <SectionHeader>{t("moreTab.stats")}</SectionHeader>
         <dl className="space-y-2">
-          <StatRow label="Total events" value={visibleEventsCount} />
+          <StatRow label={t("moreTab.totalEvents")} value={visibleEventsCount} />
           <StatRow
-            label="Pending approvals"
+            label={t("moreTab.pendingApprovals")}
             value={
               <span
                 className={
@@ -49,7 +51,7 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
           />
           {activePlanMode && (
             <StatRow
-              label="Active plan mode"
+              label={t("moreTab.activePlanMode")}
               value={
                 <span
                   className={
@@ -58,36 +60,44 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
                       : "text-neutral-300"
                   }
                 >
-                  {activePlanMode === "ahorro" ? "save" : activePlanMode}
+                  {translateGenericStatus(
+                    t,
+                    activePlanMode === "ahorro" ? "save" : activePlanMode,
+                  )}
                 </span>
               }
             />
           )}
           <StatRow
-            label="Last event"
+            label={t("moreTab.lastEvent")}
             value={
               <span className="text-neutral-200 truncate max-w-[180px] inline-block">
-                {latestEvent?.event_type ?? "—"}
+                {latestEvent
+                  ? translateEventType(t, latestEvent.event_type)
+                  : "—"}
               </span>
             }
           />
-          <StatRow label="Producer" value={latestEvent?.producer ?? "—"} />
+          <StatRow
+            label={t("moreTab.producer")}
+            value={latestEvent?.producer ?? "—"}
+          />
         </dl>
       </Card>
 
       <Card>
-        <SectionHeader>Quick Links</SectionHeader>
+        <SectionHeader>{t("moreTab.quickLinks")}</SectionHeader>
         <div className="space-y-1.5">
           {[
             { label: "Grafana", url: "http://localhost:3000" },
-            { label: "Grafana · SLIs", url: "http://localhost:3000/d/admadc-slis" },
+            { label: t("moreTab.grafanaSlis"), url: "http://localhost:3000/d/admadc-slis" },
             { label: "Prometheus", url: "http://localhost:9090" },
             { label: "Alertmanager", url: "http://localhost:9093" },
             { label: "Loki", url: "http://localhost:3100/ready" },
-            { label: "RabbitMQ UI", url: "http://localhost:15672" },
-            { label: "Gateway API", url: "http://localhost:8080/docs" },
+            { label: t("moreTab.rabbitMqUi"), url: "http://localhost:15672" },
+            { label: t("moreTab.gatewayApi"), url: "http://localhost:8080/docs" },
             {
-              label: "Pending Approvals API",
+              label: t("moreTab.pendingApprovalsApi"),
               url: "http://localhost:8080/api/approvals",
             },
           ].map(({ label, url }) => (
