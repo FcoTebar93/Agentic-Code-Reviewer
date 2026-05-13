@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { cx } from "./theme";
 
 interface PlanFilterChipsProps {
   planIds: string[];
@@ -20,11 +21,10 @@ export function PlanFilterChips({
       <button
         type="button"
         onClick={() => onChange(null)}
-        className={`px-2 py-0.5 rounded-md text-[10px] font-mono border transition-colors ${
-          activePlanId === null
-            ? "bg-white text-black border-neutral-600"
-            : "bg-neutral-900 text-neutral-400 border-neutral-700 hover:bg-neutral-800 hover:text-neutral-200"
-        }`}
+        className={cx(
+          "app-chip px-2.5 py-1",
+          activePlanId === null && "app-chip-active",
+        )}
       >
         {t("planFilter.all")}
       </button>
@@ -33,11 +33,10 @@ export function PlanFilterChips({
           key={pid}
           type="button"
           onClick={() => onChange(pid)}
-          className={`px-2 py-0.5 rounded-md text-[10px] font-mono border truncate max-w-[80px] transition-colors ${
-            activePlanId === pid
-              ? "bg-white text-black border-neutral-600"
-              : "bg-neutral-900 text-neutral-400 border-neutral-700 hover:bg-neutral-800 hover:text-neutral-200"
-          }`}
+          className={cx(
+            "app-chip max-w-[88px] truncate px-2.5 py-1",
+            activePlanId === pid && "app-chip-active",
+          )}
           title={pid}
         >
           {pid.slice(0, 8)}…

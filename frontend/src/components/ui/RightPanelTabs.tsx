@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { APP_BUTTON_TAB, cx } from "./theme";
 
 export type RightPanelTabId = "metrics" | "detail" | "approvals" | "more";
 
@@ -48,7 +49,7 @@ export function RightPanelTabs({ active, onChange, panels }: Props) {
   return (
     <div className="flex flex-col min-h-0 flex-1 gap-2 overflow-hidden">
       <div
-        className="flex flex-wrap gap-1 border-b border-neutral-800 pb-2 -mb-px"
+        className="app-divider -mb-px flex flex-wrap gap-1 border-b pb-2"
         role="tablist"
         aria-label={t("rightTabs.ariaLabel")}
       >
@@ -66,11 +67,7 @@ export function RightPanelTabs({ active, onChange, panels }: Props) {
               aria-keyshortcuts={`Alt+${k}`}
               title={`${label} · Alt+${k}`}
               onClick={() => onChange(id)}
-              className={`text-[11px] font-mono px-2.5 py-1.5 rounded-t border-b-2 transition-colors ${
-                isActive
-                  ? "border-neutral-100 text-neutral-100 bg-neutral-900/80"
-                  : "border-transparent text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/40"
-              }`}
+              className={cx(APP_BUTTON_TAB, isActive && "app-button-tab-active")}
             >
               {label}
             </button>

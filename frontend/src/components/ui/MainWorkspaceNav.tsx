@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { APP_BUTTON_TAB, cx } from "./theme";
 
 /** Single workspace: pipeline graph + execution log share one view. */
 export type MainWorkspaceSectionId = "pipeline";
@@ -46,10 +47,10 @@ export function MainWorkspaceNav({ active, onChange, panels }: Props) {
   return (
     <div className="flex flex-col min-h-0 flex-1 gap-2 lg:gap-3 lg:flex-row">
       <nav
-        className="flex flex-row lg:flex-col gap-1 shrink-0 border-b border-neutral-800 pb-2 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-3 lg:w-[8.5rem]"
+        className="app-divider flex shrink-0 flex-row gap-1 border-b pb-2 lg:w-[9rem] lg:flex-col lg:border-b-0 lg:border-r lg:pb-0 lg:pr-3"
         aria-label={t("workspace.ariaLabel")}
       >
-        <span className="hidden lg:block text-[9px] font-mono text-neutral-600 uppercase tracking-widest mb-1 px-1">
+        <span className="app-section-title mb-1 hidden px-1 text-[9px] lg:block">
           {t("workspace.label")}
         </span>
         <div
@@ -70,14 +71,14 @@ export function MainWorkspaceNav({ active, onChange, panels }: Props) {
                 aria-keyshortcuts={`Alt+${k}`}
                 title={`${hint} · Alt+${k}`}
                 onClick={() => onChange(id)}
-                className={`text-left text-[11px] font-mono px-2.5 py-2 rounded-lg border transition-colors lg:w-full ${
-                  isOn
-                    ? "border-neutral-500 bg-neutral-800/80 text-neutral-100"
-                    : "border-transparent text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/60"
-                }`}
+                className={cx(
+                  APP_BUTTON_TAB,
+                  "text-left lg:w-full lg:justify-start",
+                  isOn && "app-button-tab-active",
+                )}
               >
                 <span className="block font-semibold">{label}</span>
-                <span className="hidden lg:block text-[9px] text-neutral-600 mt-0.5 leading-tight">
+                <span className="app-muted-text mt-0.5 hidden text-[9px] leading-tight lg:block">
                   {hint}
                 </span>
               </button>

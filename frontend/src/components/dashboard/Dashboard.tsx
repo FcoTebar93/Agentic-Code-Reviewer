@@ -12,6 +12,7 @@ import { STATUS_DOT } from "../../lib/dashboardUtils";
 import { LanguageSwitcher } from "../ui/LanguageSwitcher";
 import { useTranslation } from "react-i18next";
 import { translateConnectionStatus } from "../../i18n/formatters";
+import { APP_BUTTON_SECONDARY, cx } from "../ui/theme";
 
 const LazyPlanForm = lazy(() =>
   import("../PlanForm").then((m) => ({ default: m.PlanForm })),
@@ -69,7 +70,8 @@ export function Dashboard(props: DashboardProps) {
   } = props;
 
   return (
-    <div className="min-h-dvh bg-black text-neutral-50 flex flex-col">
+    <div className="app-shell flex min-h-dvh flex-col text-neutral-50">
+      <div className="app-shell-glow" aria-hidden />
       <HeaderBar
         title="ADMADC"
         subtitle={t("dashboard.subtitle")}
@@ -80,7 +82,7 @@ export function Dashboard(props: DashboardProps) {
             <button
               ref={panelToggleRef}
               type="button"
-              className="shrink-0 rounded-lg border border-neutral-600 bg-neutral-900 px-2.5 py-1.5 text-[11px] font-mono text-neutral-200 hover:bg-neutral-800"
+              className={cx(APP_BUTTON_SECONDARY, "shrink-0 px-3 py-2 text-[11px]")}
               aria-expanded={rightDrawerOpen}
               aria-controls="right-panel-drawer"
               onClick={() => setRightDrawerOpen((o) => !o)}
@@ -90,7 +92,7 @@ export function Dashboard(props: DashboardProps) {
                 : t("dashboard.openInsights")}
             </button>
             {pendingApprovals.length > 0 && (
-              <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-xs font-mono rounded-full px-2.5 py-0.5 animate-pulse">
+              <span className="app-badge animate-pulse border-amber-500/40 bg-amber-500/16 text-amber-300">
                 {t("dashboard.pendingApprovals", {
                   count: pendingApprovals.length,
                 })}
@@ -98,7 +100,7 @@ export function Dashboard(props: DashboardProps) {
             )}
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${STATUS_DOT[status]}`} />
-              <span className="text-xs font-mono text-neutral-500">
+              <span className="app-meta-text text-xs">
                 {translateConnectionStatus(t, status)}
               </span>
             </div>
@@ -106,11 +108,11 @@ export function Dashboard(props: DashboardProps) {
         }
       />
 
-      <main className="relative flex-1 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] 2xl:grid-cols-[minmax(560px,1.15fr)_minmax(420px,1fr)] gap-4 px-4 py-4 xl:px-6 min-h-0 overflow-y-auto lg:overflow-hidden">
+      <main className="relative z-10 mx-auto flex min-h-0 w-full max-w-[1680px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] lg:overflow-hidden 2xl:grid-cols-[minmax(560px,1.15fr)_minmax(420px,1fr)] xl:px-6">
         {rightDrawerOpen && (
           <div
             role="presentation"
-            className="fixed inset-0 z-40 bg-black/65"
+            className="fixed inset-0 z-40 bg-[rgba(13,14,17,0.72)] backdrop-blur-sm"
             aria-hidden
             onClick={closeRightDrawer}
           />
@@ -121,7 +123,7 @@ export function Dashboard(props: DashboardProps) {
             <div className="shrink-0 overflow-x-auto pr-1">
               <PipelineGraph latestEvent={latestEvent} />
             </div>
-            <div className="flex flex-1 min-h-0 min-w-0 mt-1 border-t border-neutral-800 pt-4">
+            <div className="app-divider mt-1 flex min-h-0 min-w-0 flex-1 border-t pt-4">
               <MainWorkspaceNav
                 active={mainSection}
                 onChange={setMainSectionWithHistory}
@@ -130,7 +132,7 @@ export function Dashboard(props: DashboardProps) {
                     <div className="flex flex-col flex-1 min-h-0 min-w-0">
                       <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 mb-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-wider">
+                          <span className="app-section-title text-[10px]">
                             {t("dashboard.executionLog")}
                           </span>
                           <PlanFilterChips
@@ -148,7 +150,7 @@ export function Dashboard(props: DashboardProps) {
                               setActivePlanId(null);
                               setKnownPlanIds([]);
                             }}
-                            className="text-[10px] font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
+                            className="app-button app-button-subtle"
                           >
                             {t("dashboard.clearLogs")}
                           </button>
@@ -188,7 +190,7 @@ export function Dashboard(props: DashboardProps) {
           ref={rightPanelDrawerRef}
           tabIndex={-1}
           {...rightPanelAriaProps}
-          className={`fixed top-0 right-0 bottom-0 z-50 w-[min(100vw,520px)] max-w-full border-l border-neutral-800 bg-neutral-950 p-4 shadow-2xl transition-transform duration-200 ease-out motion-reduce:transition-none ${
+          className={`fixed right-0 top-0 bottom-0 z-50 w-[min(100vw,520px)] max-w-full border-l border-[rgba(58,58,63,0.92)] bg-[linear-gradient(180deg,rgba(244,114,182,0.06),rgba(20,21,26,0.98)),rgba(13,14,17,0.96)] p-4 shadow-2xl transition-transform duration-200 ease-out motion-reduce:transition-none ${
             rightDrawerOpen
               ? "translate-x-0 pointer-events-auto"
               : "translate-x-full pointer-events-none"
@@ -197,13 +199,13 @@ export function Dashboard(props: DashboardProps) {
           <div className="flex items-center justify-between gap-2 shrink-0 mb-3">
             <span
               id="right-drawer-title"
-              className="text-[10px] font-mono uppercase tracking-wider text-neutral-500"
+              className="app-section-title text-[10px]"
             >
               {t("dashboard.insights")}
             </span>
             <button
               type="button"
-              className="text-[10px] font-mono text-neutral-400 hover:text-white px-2 py-1 rounded border border-neutral-700"
+              className={cx(APP_BUTTON_SECONDARY, "min-h-0 px-2.5 py-1 text-[10px]")}
               onClick={closeRightDrawer}
             >
               {t("dashboard.close")}

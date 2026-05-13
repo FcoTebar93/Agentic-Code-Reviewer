@@ -4,6 +4,12 @@ import { getDashboardHref } from "../hooks/useDashboardUrlSync";
 import type { MainWorkspaceSectionId } from "./ui/MainWorkspaceNav";
 import type { RightPanelTabId } from "./ui/RightPanelTabs";
 import { translateGenericStatus } from "../i18n/formatters";
+import {
+  APP_BUTTON_SECONDARY,
+  APP_BUTTON_SUBTLE,
+  APP_EMPTY_STATE,
+  cx,
+} from "./ui/theme";
 
 type Props = {
   planId: string | null;
@@ -25,7 +31,7 @@ export function ActivePlanBar({
 
   if (!planId) {
     return (
-      <div className="rounded-lg border border-neutral-800 bg-neutral-950/80 px-3 py-2 text-[11px] text-neutral-500 font-mono">
+      <div className={`${APP_EMPTY_STATE} px-3 py-2 text-[11px] text-left`}>
         {t("activePlan.empty")}
       </div>
     );
@@ -59,18 +65,18 @@ export function ActivePlanBar({
   }
 
   return (
-    <div className="rounded-lg border border-neutral-700 bg-neutral-900/60 px-3 py-2 flex flex-wrap items-center gap-2 text-[11px]">
-      <span className="text-neutral-500 font-mono uppercase tracking-wider">
+    <div className="app-surface-soft flex flex-wrap items-center gap-2 px-3 py-2 text-[11px]">
+      <span className="app-section-title text-[10px]">
         {t("activePlan.active")}
       </span>
       <span
-        className="font-mono text-neutral-100 truncate max-w-[200px]"
+        className="max-w-[200px] truncate font-mono text-[var(--color-polar-white)]"
         title={id}
       >
         {short}
       </span>
-      <span className="text-neutral-600">·</span>
-      <span className="text-neutral-400 font-mono">
+      <span className="app-muted-text">·</span>
+      <span className="app-meta-text">
         {t("activePlan.mode", {
           mode: translateGenericStatus(t, displayMode),
         })}
@@ -79,14 +85,14 @@ export function ActivePlanBar({
         <button
           type="button"
           onClick={copyId}
-          className="px-2 py-0.5 rounded border border-neutral-600 text-neutral-300 hover:bg-neutral-800 font-mono text-[10px]"
+          className={cx(APP_BUTTON_SECONDARY, "min-h-0 px-2.5 py-1 text-[10px]")}
         >
           {copied === "id" ? t("activePlan.copied") : t("activePlan.copyId")}
         </button>
         <button
           type="button"
           onClick={copyLink}
-          className="px-2 py-0.5 rounded border border-neutral-600 text-neutral-300 hover:bg-neutral-800 font-mono text-[10px]"
+          className={cx(APP_BUTTON_SECONDARY, "min-h-0 px-2.5 py-1 text-[10px]")}
         >
           {copied === "link"
             ? t("activePlan.linkCopied")
@@ -96,7 +102,7 @@ export function ActivePlanBar({
           <button
             type="button"
             onClick={onClear}
-            className="px-2 py-0.5 rounded border border-neutral-700 text-neutral-500 hover:text-neutral-300 font-mono text-[10px]"
+            className={cx(APP_BUTTON_SUBTLE, "min-h-0 px-2.5 py-1 text-[10px]")}
           >
             {t("activePlan.clearFilter")}
           </button>
