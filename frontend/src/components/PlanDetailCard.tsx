@@ -18,6 +18,7 @@ import {
   translatePipelineStatus,
   translateSeverity,
 } from "../i18n/formatters";
+import { APP_BUTTON_SECONDARY, APP_EMPTY_STATE, APP_META_TEXT, cx } from "./ui/theme";
 
 export function PlanDetailCard({ planId }: { planId: string | null }) {
   const { t } = useTranslation();
@@ -27,7 +28,7 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
     return (
       <Card>
         <SectionHeader>{t("planDetail.title")}</SectionHeader>
-        <p className="text-neutral-500 text-xs font-mono">
+        <p className={APP_EMPTY_STATE}>
           {t("planDetail.empty")}
         </p>
       </Card>
@@ -38,7 +39,7 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
     return (
       <Card>
         <SectionHeader>{t("planDetail.title")}</SectionHeader>
-        <p className="text-neutral-500 text-xs font-mono">{t("planDetail.loading")}</p>
+        <p className={APP_META_TEXT}>{t("planDetail.loading")}</p>
       </Card>
     );
   }
@@ -47,7 +48,7 @@ export function PlanDetailCard({ planId }: { planId: string | null }) {
     return (
       <Card>
         <SectionHeader>{t("planDetail.title")}</SectionHeader>
-        <p className="text-amber-400 text-xs font-mono">
+        <p className="app-surface-soft border-amber-500/30 px-3 py-2 text-xs font-mono text-amber-300">
           {error ?? t("planDetail.loadingError")}
         </p>
       </Card>
@@ -94,35 +95,35 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
 
   const statusBadgeClass =
     pipelineStatus === "approved"
-      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
+      ? "border-[var(--color-system-green)]/40 bg-[var(--color-system-green)]/14 text-[var(--color-system-green)]"
       : pipelineStatus === "qa_failed"
-        ? "bg-red-500/15 text-red-400 border-red-500/40"
+        ? "border-[var(--color-danger-red)]/40 bg-[var(--color-danger-red)]/14 text-[var(--color-danger-red)]"
         : pipelineStatus === "security_blocked"
-          ? "bg-amber-500/15 text-amber-400 border-amber-500/40"
+          ? "border-[var(--color-warning-yellow)]/40 bg-[var(--color-warning-yellow)]/14 text-[var(--color-warning-yellow)]"
           : pipelineStatus === "in_progress"
-            ? "bg-neutral-500/20 text-neutral-300 border-neutral-500/40"
-            : "bg-neutral-500/15 text-neutral-400 border-neutral-600";
+            ? "border-[var(--color-neon-violet)]/34 bg-[var(--color-neon-violet)]/12 text-[var(--color-faded-rose)]"
+            : "border-[var(--color-slate-border)] bg-[rgba(40,42,54,0.42)] text-[var(--color-silver-text)]/70";
 
   return (
     <Card>
       <SectionHeader>{t("planDetail.title")}</SectionHeader>
       <div className="flex items-center gap-2 mb-2">
         <p
-          className="text-neutral-500 text-xs font-mono truncate flex-1 min-w-0"
+          className={cx(APP_META_TEXT, "flex-1 min-w-0 truncate")}
           title={data.plan_id}
         >
           plan_id: {data.plan_id.slice(0, 8)}…
         </p>
         <button
           type="button"
-          className="shrink-0 text-[10px] font-mono text-sky-400 hover:text-sky-300"
+          className={cx(APP_BUTTON_SECONDARY, "min-h-0 shrink-0 px-2.5 py-1 text-[10px]")}
           onClick={() => void navigator.clipboard.writeText(data.plan_id)}
         >
           {t("planDetail.copyId")}
         </button>
       </div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-neutral-500 text-xs font-mono">
+        <span className={APP_META_TEXT}>
           {t("planDetail.pipeline")}
         </span>
         <Badge className={statusBadgeClass}>
@@ -139,7 +140,9 @@ function PlanDetailLoaded({ data }: { data: PlanDetail }) {
           value={
             <span
               className={
-                qaHighSeverityCount > 0 ? "text-red-400" : "text-neutral-200"
+                qaHighSeverityCount > 0
+                  ? "text-[var(--color-danger-red)]"
+                  : "text-[var(--color-polar-white)]"
               }
             >
               {qaHighSeverityCount}

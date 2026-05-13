@@ -2,6 +2,12 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PrApproval } from "../types/events";
 import { Card, SectionHeader } from "./ui/Card";
+import {
+  APP_BUTTON_DANGER,
+  APP_BUTTON_PRIMARY,
+  APP_EMPTY_STATE,
+  cx,
+} from "./ui/theme";
 
 interface ApprovalQueueProps {
   approvals: PrApproval[];
@@ -33,32 +39,33 @@ function ApprovalCard({
   }
 
   return (
-    <div className="border border-amber-600/50 bg-amber-950/30 rounded-xl p-4 space-y-3">
+    <div className="app-surface-soft space-y-3 border-amber-500/30 bg-[linear-gradient(180deg,rgba(252,211,77,0.08),rgba(20,21,26,0.72))] p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-0.5">
-          <p className="text-amber-300 text-xs font-mono font-semibold uppercase tracking-widest">
+          <p className="app-section-title text-[10px] text-amber-300">
             {t("approvalQueue.awaitingReview")}
           </p>
-          <p className="text-neutral-100 text-sm font-mono">
+          <p className="text-sm font-mono text-[var(--color-polar-white)]">
             {t("approvalQueue.plan")}{" "}
-            <span className="text-amber-400">{approval.plan_id.slice(0, 8)}</span>
+            <span className="text-amber-300">{approval.plan_id.slice(0, 8)}</span>
           </p>
         </div>
-        <span className="bg-amber-500/20 text-amber-300 text-xs font-mono px-2 py-0.5 rounded-full border border-amber-600/40 whitespace-nowrap">
+        <span className="app-badge whitespace-nowrap border-amber-500/40 bg-amber-500/16 text-amber-300">
           {t("approvalQueue.files", { count: approval.files_count })}
         </span>
       </div>
 
-      <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
-        <span className="text-neutral-600">{t("approvalQueue.branch")}</span>
-        <span className="text-neutral-200">{approval.branch_name}</span>
+      <div className="flex items-center gap-2 text-xs font-mono">
+        <span className="app-meta-text">{t("approvalQueue.branch")}</span>
+        <span className="text-[var(--color-silver-text)]">{approval.branch_name}</span>
       </div>
 
       {approval.security_reasoning && (
         <div className="text-xs font-mono">
           <button
+            type="button"
             onClick={() => setReasoningOpen((v) => !v)}
-            className="flex items-center gap-1.5 text-neutral-400 hover:text-neutral-200 transition-colors"
+            className="flex items-center gap-1.5 text-[var(--color-silver-text)]/78 transition-colors hover:text-[var(--color-polar-white)]"
           >
             <span
               className="inline-block transition-transform duration-200"
@@ -69,7 +76,7 @@ function ApprovalCard({
             {t("approvalQueue.securityReasoning")}
           </button>
           {reasoningOpen && (
-            <p className="mt-2 text-neutral-300 leading-relaxed pl-4 border-l border-neutral-800">
+            <p className="mt-2 border-l border-[var(--color-warning-yellow)]/24 pl-4 leading-relaxed text-[var(--color-silver-text)]">
               {approval.security_reasoning}
             </p>
           )}
@@ -78,18 +85,20 @@ function ApprovalCard({
 
       <div className="flex gap-2 pt-1">
         <button
+          type="button"
           onClick={() => handle("approve")}
           disabled={loading !== null}
-          className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:bg-neutral-800 disabled:text-neutral-500 text-black text-xs font-mono rounded-lg px-3 py-2 transition-colors"
+          className={cx(APP_BUTTON_PRIMARY, "flex-1 text-xs")}
         >
           {loading === "approve"
             ? t("approvalQueue.approving")
             : t("approvalQueue.approveMerge")}
         </button>
         <button
+          type="button"
           onClick={() => handle("reject")}
           disabled={loading !== null}
-          className="flex-1 bg-red-900/60 hover:bg-red-800/80 disabled:bg-neutral-800 disabled:text-neutral-500 text-red-300 text-xs font-mono rounded-lg px-3 py-2 transition-colors border border-red-700/50"
+          className={cx(APP_BUTTON_DANGER, "flex-1 text-xs")}
         >
           {loading === "reject"
             ? t("approvalQueue.rejecting")
@@ -111,7 +120,7 @@ export function ApprovalQueue({
       <SectionHeader
         right={
           approvals.length > 0 && (
-            <span className="bg-amber-500 text-black text-xs font-mono rounded-full px-2 py-0.5 leading-none">
+            <span className="app-badge border-amber-500/40 bg-amber-500/16 text-amber-300">
               {approvals.length}
             </span>
           )
@@ -121,7 +130,7 @@ export function ApprovalQueue({
       </SectionHeader>
 
       {approvals.length === 0 ? (
-        <p className="text-neutral-600 text-xs font-mono text-center py-4">
+        <p className={`${APP_EMPTY_STATE} py-4`}>
           {t("approvalQueue.empty")}
         </p>
       ) : (

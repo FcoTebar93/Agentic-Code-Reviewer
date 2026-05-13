@@ -3,6 +3,14 @@ import { useTranslation } from "react-i18next";
 import { postJson } from "../api/api";
 import { getAgentLocaleOptions, resolveAgentLocale } from "../i18n/locale";
 import { Card, SectionHeader } from "./ui/Card";
+import {
+  APP_BUTTON_PRIMARY,
+  APP_INPUT,
+  APP_LABEL,
+  APP_META_TEXT,
+  APP_SELECT,
+  APP_TEXTAREA,
+} from "./ui/theme";
 
 export interface AgentAskResult {
   answer: string;
@@ -60,26 +68,26 @@ export function AgentAskCard({ defaultPlanId }: Props) {
   return (
     <Card>
       <SectionHeader>{t("agentAsk.title")}</SectionHeader>
-      <p className="text-[10px] font-mono text-neutral-500 mb-3 leading-relaxed">
+      <p className={`${APP_META_TEXT} mb-3 text-[11px] leading-relaxed`}>
         {t("agentAsk.description")}
       </p>
       <form onSubmit={handleSubmit} className="space-y-2">
         <div>
-          <label className="block text-neutral-500 text-[10px] font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("agentAsk.question")}
           </label>
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             rows={2}
-            className="w-full bg-black border border-neutral-700 rounded-lg px-2 py-1.5 text-neutral-100 text-xs font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 resize-none"
+            className={`${APP_TEXTAREA} min-h-[88px] resize-none text-xs`}
             placeholder={t("agentAsk.questionPlaceholder")}
           />
         </div>
         <div>
-          <label className="block text-neutral-500 text-[10px] font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("agentAsk.planId")}{" "}
-            <span className="text-neutral-600">
+            <span className="app-muted-text normal-case">
               ({t("agentAsk.planIdOptional")})
             </span>
           </label>
@@ -87,18 +95,18 @@ export function AgentAskCard({ defaultPlanId }: Props) {
             type="text"
             value={planId}
             onChange={(e) => setPlanId(e.target.value)}
-            className="w-full bg-black border border-neutral-700 rounded-lg px-2 py-1.5 text-neutral-100 text-[10px] font-mono focus:outline-none focus:border-neutral-500"
+            className={`${APP_INPUT} text-[11px]`}
             placeholder={t("agentAsk.planPlaceholder")}
           />
         </div>
         <div>
-          <label className="block text-neutral-500 text-[10px] font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("agentAsk.responseLanguage")}
           </label>
           <select
             value={localeChoice}
             onChange={(e) => setLocaleChoice(e.target.value)}
-            className="w-full bg-black border border-neutral-700 rounded-lg px-2 py-1.5 text-neutral-100 text-[10px] font-mono focus:outline-none focus:border-neutral-500"
+            className={APP_SELECT}
           >
             {localeOptions.map((o) => (
               <option key={o.value} value={o.value}>
@@ -110,24 +118,24 @@ export function AgentAskCard({ defaultPlanId }: Props) {
         <button
           type="submit"
           disabled={loading || !question.trim()}
-          className="w-full bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600 text-neutral-100 font-mono text-[11px] rounded-lg px-3 py-2 transition-colors border border-neutral-600"
+          className={`${APP_BUTTON_PRIMARY} w-full text-[11px]`}
         >
           {loading ? t("agentAsk.asking") : t("agentAsk.ask")}
         </button>
       </form>
       {error && (
-        <div className="mt-2 text-red-300 text-[10px] font-mono border border-red-900/50 rounded-lg px-2 py-1.5 bg-red-950/30">
+        <div className="app-surface-soft mt-2 border-red-500/30 bg-red-950/30 px-3 py-2 text-[10px] font-mono text-red-300">
           {error}
         </div>
       )}
       {result && (
-        <div className="mt-3 space-y-2 text-[10px] font-mono">
-          <div className="text-neutral-300 whitespace-pre-wrap leading-relaxed border-l border-emerald-800/60 pl-2">
+        <div className="app-surface-soft mt-3 space-y-2 px-3 py-3 text-[10px] font-mono">
+          <div className="whitespace-pre-wrap border-l border-[var(--color-electric-cyan)]/50 pl-3 leading-relaxed text-[var(--color-silver-text)]">
             {result.answer}
           </div>
           {result.sources && result.sources.length > 0 && (
-            <details className="text-neutral-500">
-              <summary className="cursor-pointer text-neutral-400 hover:text-neutral-300">
+            <details className={APP_META_TEXT}>
+              <summary className="cursor-pointer text-[var(--color-silver-text)]/78 hover:text-[var(--color-polar-white)]">
                 {t("agentAsk.sources", { count: result.sources.length })}
               </summary>
               <ul className="mt-1 space-y-1 pl-2 max-h-32 overflow-y-auto">
@@ -141,7 +149,7 @@ export function AgentAskCard({ defaultPlanId }: Props) {
             </details>
           )}
           {(result.prompt_tokens || result.completion_tokens) ? (
-            <p className="text-neutral-600">
+            <p className={APP_META_TEXT}>
               {t("agentAsk.tokens", {
                 prompt: result.prompt_tokens ?? 0,
                 completion: result.completion_tokens ?? 0,

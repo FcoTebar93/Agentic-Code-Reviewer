@@ -3,6 +3,14 @@ import { useTranslation } from "react-i18next";
 import { postJson } from "../api/api";
 import { getAgentLocaleOptions, resolveAgentLocale } from "../i18n/locale";
 import { Card, SectionHeader } from "./ui/Card";
+import {
+  APP_BUTTON_PRIMARY,
+  APP_INPUT,
+  APP_LABEL,
+  APP_META_TEXT,
+  APP_SELECT,
+  APP_TEXTAREA,
+} from "./ui/theme";
 
 interface PlanResult {
   plan_id: string;
@@ -68,26 +76,26 @@ export function PlanForm() {
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-neutral-500 text-xs font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("planForm.projectName")}
           </label>
           <input
             type="text"
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
-            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors"
+            className={APP_INPUT}
             placeholder="my-project"
           />
         </div>
 
         <div>
-          <label className="block text-neutral-500 text-xs font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("planForm.mode")}
           </label>
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as "normal" | "save")}
-            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
+            className={APP_SELECT}
           >
             <option value="normal">{t("planForm.modeNormal")}</option>
             <option value="save">{t("planForm.modeSave")}</option>
@@ -95,13 +103,13 @@ export function PlanForm() {
         </div>
 
         <div>
-          <label className="block text-neutral-500 text-xs font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("planForm.responseLanguage")}
           </label>
           <select
             value={userLocaleChoice}
             onChange={(e) => setUserLocaleChoice(e.target.value)}
-            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
+            className={APP_SELECT}
           >
             {localeOptions.map((o) => (
               <option key={o.value} value={o.value}>
@@ -113,7 +121,7 @@ export function PlanForm() {
 
         <div className="grid grid-cols-1 2xl:grid-cols-2 gap-2">
           <div>
-            <label className="block text-neutral-500 text-xs font-mono mb-1">
+            <label className={APP_LABEL}>
               {t("planForm.replannerAggressiveness")}
             </label>
             <select
@@ -121,7 +129,7 @@ export function PlanForm() {
               onChange={(e) =>
                 setReplannerAggressiveness(e.target.value as "0" | "1" | "2")
               }
-              className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
+              className={APP_SELECT}
             >
               <option value="0">{t("planForm.replanner0")}</option>
               <option value="1">{t("planForm.replanner1")}</option>
@@ -130,13 +138,13 @@ export function PlanForm() {
           </div>
 
           <div>
-            <label className="block text-neutral-500 text-xs font-mono mb-1">
+            <label className={APP_LABEL}>
               {t("planForm.plannerProvider")}
             </label>
             <select
               value={plannerProvider}
               onChange={(e) => setPlannerProvider(e.target.value)}
-              className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-xs font-mono focus:outline-none focus:border-neutral-500 transition-colors"
+              className={APP_SELECT}
             >
               <option value="default">{t("planForm.plannerAuto")}</option>
               <option value="groq">Groq (llama-3.3-70b)</option>
@@ -148,22 +156,22 @@ export function PlanForm() {
         </div>
 
         <div>
-          <label className="block text-neutral-500 text-xs font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("planForm.prompt")}
           </label>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             rows={3}
-            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 resize-none transition-colors"
+            className={`${APP_TEXTAREA} min-h-[96px] resize-none`}
             placeholder={t("planForm.promptPlaceholder")}
           />
         </div>
 
         <div>
-          <label className="block text-neutral-500 text-xs font-mono mb-1">
+          <label className={APP_LABEL}>
             {t("planForm.repoUrl")}{" "}
-            <span className="text-neutral-600">
+            <span className="app-muted-text normal-case">
               ({t("planForm.repoUrlHelp")})
             </span>
           </label>
@@ -171,15 +179,15 @@ export function PlanForm() {
             type="url"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
-            className="w-full bg-black border border-neutral-700 rounded-lg px-3 py-2 text-neutral-100 text-sm font-mono placeholder:text-neutral-600 focus:outline-none focus:border-neutral-500 transition-colors"
+            className={APP_INPUT}
             placeholder={t("planForm.repoPlaceholder")}
           />
           {repoUrl.trim() ? (
-            <p className="text-emerald-400 text-xs font-mono mt-1">
+            <p className="mt-1 text-xs font-mono text-[var(--color-electric-cyan)]">
               {t("planForm.repoUrlPresent")}
             </p>
           ) : (
-            <p className="text-neutral-600 text-xs font-mono mt-1">
+            <p className={`${APP_META_TEXT} mt-1`}>
               {t("planForm.repoUrlMissing")}
             </p>
           )}
@@ -188,28 +196,28 @@ export function PlanForm() {
         <button
           type="submit"
           disabled={loading || !prompt.trim()}
-          className="w-full bg-white hover:bg-neutral-200 disabled:bg-neutral-800 disabled:text-neutral-500 text-black font-mono text-sm font-medium rounded-lg px-4 py-2.5 transition-colors"
+          className={`${APP_BUTTON_PRIMARY} w-full text-sm`}
         >
           {loading ? t("planForm.launching") : t("planForm.launchPipeline")}
         </button>
       </form>
 
       {error && (
-        <div className="mt-3 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2 text-red-300 text-xs font-mono">
+        <div className="app-surface-soft mt-3 border-red-500/30 bg-red-950/30 px-3 py-2 text-xs font-mono text-red-300">
           {error}
         </div>
       )}
 
       {result && (
-        <div className="mt-3 bg-black border border-neutral-800 rounded-lg px-3 py-2 space-y-1">
-          <p className="text-emerald-400 text-xs font-mono">
+        <div className="app-surface-soft mt-3 space-y-1 px-3 py-3">
+          <p className="text-xs font-mono text-[var(--color-electric-cyan)]">
             {t("planForm.planCreated", { count: result.task_count })}
           </p>
-          <p className="text-neutral-500 text-xs font-mono break-all">
+          <p className={`${APP_META_TEXT} break-all`}>
             plan_id: {result.plan_id}
           </p>
           {result.tasks?.map((t) => (
-            <p key={t.task_id} className="text-neutral-400 text-xs font-mono truncate">
+            <p key={t.task_id} className="truncate text-xs font-mono text-[var(--color-silver-text)]/78">
               → {t.file_path}
             </p>
           ))}

@@ -3,6 +3,7 @@ import { StatRow } from "./ui/StatRow";
 import type { BaseEvent } from "../types/events";
 import { useTranslation } from "react-i18next";
 import { translateEventType, translateGenericStatus } from "../i18n/formatters";
+import { APP_META_TEXT } from "./ui/theme";
 
 type Props = {
   visibleEventsCount: number;
@@ -18,14 +19,14 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
     <>
       <Card>
         <SectionHeader>{t("moreTab.shortcuts")}</SectionHeader>
-        <ul className="text-[11px] font-mono text-neutral-400 space-y-1.5 leading-relaxed">
+        <ul className="space-y-1.5 text-[11px] font-mono leading-relaxed text-[var(--color-silver-text)]/78">
           <li>
             {t("moreTab.shortcutLine1")}
           </li>
           <li>
             {t("moreTab.shortcutLine2")}
           </li>
-          <li className="text-neutral-600 text-[10px] pt-1">
+          <li className={`${APP_META_TEXT} pt-1 text-[10px]`}>
             {t("moreTab.shortcutHint")}
           </li>
         </ul>
@@ -41,8 +42,8 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
               <span
                 className={
                   pendingApprovalsCount > 0
-                    ? "text-amber-400"
-                    : "text-neutral-200"
+                    ? "text-[var(--color-warning-yellow)]"
+                    : "text-[var(--color-polar-white)]"
                 }
               >
                 {pendingApprovalsCount}
@@ -56,8 +57,8 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
                 <span
                   className={
                     activePlanMode === "save" || activePlanMode === "ahorro"
-                      ? "text-emerald-400"
-                      : "text-neutral-300"
+                      ? "text-[var(--color-system-green)]"
+                      : "text-[var(--color-polar-white)]"
                   }
                 >
                   {translateGenericStatus(
@@ -71,7 +72,7 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
           <StatRow
             label={t("moreTab.lastEvent")}
             value={
-              <span className="text-neutral-200 truncate max-w-[180px] inline-block">
+              <span className="inline-block max-w-[180px] truncate text-[var(--color-polar-white)]">
                 {latestEvent
                   ? translateEventType(t, latestEvent.event_type)
                   : "—"}
@@ -106,10 +107,10 @@ export function RightPanelMoreTab({ visibleEventsCount, pendingApprovalsCount, a
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center justify-between text-xs font-mono text-neutral-400 hover:text-white transition-colors"
+              className="app-surface-soft flex items-center justify-between px-3 py-2 text-xs font-mono text-[var(--color-silver-text)]/78 transition-colors hover:text-[var(--color-polar-white)]"
             >
               <span>{label}</span>
-              <span className="text-neutral-600">↗</span>
+              <span className="app-muted-text">↗</span>
             </a>
           ))}
         </div>

@@ -9,6 +9,7 @@ import {
   formatLocalizedDateTime,
   translatePipelineStatus,
 } from "../i18n/formatters";
+import { APP_EMPTY_STATE, APP_META_TEXT } from "./ui/theme";
 
 export function PlanMetrics({ planId }: { planId: string | null }) {
   const { t, i18n } = useTranslation();
@@ -71,20 +72,20 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
   const pipelineStatus = metrics?.pipeline_status ?? "unknown";
   const statusBadgeClass =
     pipelineStatus === "approved"
-      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
+      ? "border-[var(--color-system-green)]/40 bg-[var(--color-system-green)]/14 text-[var(--color-system-green)]"
       : pipelineStatus === "qa_failed"
-        ? "bg-red-500/15 text-red-400 border-red-500/40"
+        ? "border-[var(--color-danger-red)]/40 bg-[var(--color-danger-red)]/14 text-[var(--color-danger-red)]"
         : pipelineStatus === "security_blocked"
-          ? "bg-amber-500/15 text-amber-400 border-amber-500/40"
+          ? "border-[var(--color-warning-yellow)]/40 bg-[var(--color-warning-yellow)]/14 text-[var(--color-warning-yellow)]"
           : pipelineStatus === "in_progress"
-            ? "bg-neutral-500/20 text-neutral-300 border-neutral-500/40"
-            : "bg-neutral-500/15 text-neutral-400 border-neutral-600";
+            ? "border-[var(--color-neon-violet)]/34 bg-[var(--color-neon-violet)]/12 text-[var(--color-faded-rose)]"
+            : "border-[var(--color-slate-border)] bg-[rgba(40,42,54,0.42)] text-[var(--color-silver-text)]/70";
 
   if (!planId) {
     return (
       <Card>
         <SectionHeader>{t("planMetrics.title")}</SectionHeader>
-        <p className="text-neutral-500 text-xs font-mono">
+        <p className={APP_EMPTY_STATE}>
           {t("planMetrics.empty")}
         </p>
       </Card>
@@ -94,19 +95,19 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
   return (
     <Card>
       <SectionHeader>{t("planMetrics.title")}</SectionHeader>
-      <p className="text-neutral-500 text-xs font-mono truncate mb-2" title={planId}>
+      <p className={`${APP_META_TEXT} mb-2 truncate`} title={planId}>
         plan_id: {planId.slice(0, 8)}…
       </p>
       {loading && (
-        <p className="text-neutral-500 text-xs font-mono">{t("planMetrics.loading")}</p>
+        <p className={APP_META_TEXT}>{t("planMetrics.loading")}</p>
       )}
       {error && (
-        <p className="text-amber-400 text-xs font-mono">{error}</p>
+        <p className="app-surface-soft border-amber-500/30 px-3 py-2 text-xs font-mono text-amber-300">{error}</p>
       )}
       {!loading && !error && metrics && (
         <dl className="space-y-2">
-          <div className="flex items-center justify-between pt-0 pb-1 border-b border-neutral-800">
-            <dt className="text-neutral-500 text-xs font-mono">
+          <div className="app-divider flex items-center justify-between border-b pb-1 pt-0">
+            <dt className={APP_META_TEXT}>
               {t("planMetrics.pipeline")}
             </dt>
             <dd>
@@ -127,7 +128,7 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
             label={t("planMetrics.completion")}
             value={metrics.total_completion_tokens.toLocaleString(locale)}
           />
-          <div className="pt-1 border-t border-neutral-800 mt-1">
+          <div className="app-divider mt-1 border-t pt-1">
             <StatRow
               label={t("planMetrics.duration")}
               value={formatDuration(metrics.duration_seconds)}
@@ -144,8 +145,8 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
               <span
                 className={`${
                   (metrics.qa_failed_count ?? 0) > 0
-                    ? "text-red-400"
-                    : "text-neutral-200"
+                    ? "text-[var(--color-danger-red)]"
+                    : "text-[var(--color-polar-white)]"
                 }`}
               >
                 {metrics.qa_failed_count ?? 0}
@@ -159,8 +160,8 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
               <span
                 className={`${
                   (metrics.security_blocked_count ?? 0) > 0
-                    ? "text-amber-400"
-                    : "text-neutral-200"
+                    ? "text-[var(--color-warning-yellow)]"
+                    : "text-[var(--color-polar-white)]"
                 }`}
               >
                 {metrics.security_blocked_count ?? 0}
@@ -175,7 +176,7 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
                 {metrics.replan_suggestions_count ?? 0}
                 {typeof metrics.replan_confirmed_count === "number" &&
                   metrics.replan_confirmed_count > 0 && (
-                    <span className="text-neutral-500">
+                    <span className="app-meta-text">
                       {" "}
                       ({t("planMetrics.confirmed", {
                         count: metrics.replan_confirmed_count,
@@ -188,11 +189,11 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
           />
           {(metrics.first_event_at || metrics.last_event_at) && (
             <>
-              <div className="pt-1 border-t border-neutral-800">
+              <div className="app-divider border-t pt-1">
                 <StatRow
                   label={t("planMetrics.firstEvent")}
                   value={
-                    <span className="text-neutral-400 truncate max-w-[140px] inline-block">
+                    <span className="inline-block max-w-[140px] truncate text-[var(--color-silver-text)]/78">
                       {metrics.first_event_at
                         ? formatLocalizedDateTime(
                             metrics.first_event_at,
@@ -211,7 +212,7 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
               <StatRow
                 label={t("planMetrics.lastEvent")}
                 value={
-                  <span className="text-neutral-400 truncate max-w-[140px] inline-block">
+                  <span className="inline-block max-w-[140px] truncate text-[var(--color-silver-text)]/78">
                     {metrics.last_event_at
                       ? formatLocalizedDateTime(
                           metrics.last_event_at,
@@ -231,7 +232,7 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
           {typeof metrics.estimated_cost_total_usd === "number" &&
             metrics.estimated_cost_total_usd > 0 && (
               <>
-                <div className="pt-1 border-t border-neutral-800 mt-1">
+                <div className="app-divider mt-1 border-t pt-1">
                   <StatRow
                     label={t("planMetrics.estimatedCost")}
                     value={formatUsd(metrics.estimated_cost_total_usd)}
@@ -250,26 +251,26 @@ export function PlanMetrics({ planId }: { planId: string | null }) {
               </>
             )}
           {metrics.by_service.length > 0 && (
-            <div className="pt-2 border-t border-neutral-800">
-              <dt className="text-neutral-500 text-xs font-mono mb-1.5">
+            <div className="app-divider border-t pt-2">
+              <dt className="app-section-title mb-1.5 text-[10px]">
                 {t("planMetrics.byService")}
               </dt>
               <dd className="space-y-1">
                 {metrics.by_service.map((s: PlanMetricsByService) => (
                   <div
                     key={s.service}
-                    className="flex justify-between text-xs font-mono"
+                    className="app-surface-soft flex justify-between gap-3 px-3 py-2 text-xs font-mono"
                   >
-                    <span className="text-neutral-400 truncate max-w-[140px]">
+                    <span className="max-w-[140px] truncate text-[var(--color-silver-text)]/78">
                       {s.service}
                     </span>
-                    <span className="text-neutral-300 text-right">
+                    <span className="text-right text-[var(--color-polar-white)]">
                       {(s.total_tokens ??
                         s.prompt_tokens + s.completion_tokens
                       ).toLocaleString(locale)}
                       {typeof s.estimated_cost_total_usd === "number" &&
                         s.estimated_cost_total_usd > 0 && (
-                          <span className="block text-[10px] text-neutral-500">
+                          <span className="app-meta-text block text-[10px]">
                             {formatUsd(s.estimated_cost_total_usd)}
                           </span>
                         )}
