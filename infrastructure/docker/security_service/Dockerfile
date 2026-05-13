@@ -21,6 +21,7 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 COPY shared/ ./shared/
 COPY services/__init__.py ./services/__init__.py
 COPY services/security_service/ ./services/security_service/
+COPY services/qa_service/ ./services/qa_service/
 
 ENV PYTHONPATH=/app
 EXPOSE 8000

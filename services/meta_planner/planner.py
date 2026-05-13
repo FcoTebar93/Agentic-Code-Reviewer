@@ -192,6 +192,8 @@ async def decompose_tasks(
         llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct)
 
     reasoning, tasks, json_ok = _parse_response(response.content)
+    if json_ok and not _tasks_cover_request_shape(user_prompt, tasks):
+        json_ok = False
     if not json_ok:
         repair = f"{prompt}\n\n{_PLANNER_PARSE_REPAIR}"
         response2: LLMResponse = await llm.generate_text(repair)
@@ -203,6 +205,10 @@ async def decompose_tasks(
             llm_tokens.labels(service=SERVICE_NAME, direction="prompt").inc(pt2)
             llm_tokens.labels(service=SERVICE_NAME, direction="completion").inc(ct2)
         reasoning, tasks, _ = _parse_response(response2.content)
+        if not _tasks_cover_request_shape(user_prompt, tasks):
+            logger.warning(
+                "Planner repair produced weak decomposition for request; returning best-effort tasks"
+            )
     logger.info(
         "Decomposed prompt into %d tasks. Reasoning: %s",
         len(tasks),
@@ -342,8 +348,20 @@ async def decompose_tasks_with_tool_loop(
             continue
 
         reasoning, tasks, json_ok = _parse_response(resp.content or "")
+        if json_ok and not _tasks_cover_request_shape(user_prompt, tasks):
+            json_ok = False
         if not json_ok:
-            messages.append({"role": "user", "content": _PLANNER_PARSE_REPAIR})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        _PLANNER_PARSE_REPAIR
+                        + " The decomposition is too weak for the request. "
+                        + "Provide enough concrete tasks, use relevant multiple file paths when needed, "
+                        + "and include tests for non-trivial feature requests."
+                    ),
+                }
+            )
             continue
         agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
         agent_tool_loop_outcomes_total.labels(
@@ -414,3 +432,28 @@ def _parse_response(raw: str) -> tuple[str, list[TaskSpec], bool]:
         ],
         False,
     )
+
+
+def _looks_like_python_crud_request(user_prompt: str) -> bool:
+    p = (user_prompt or "").strip().lower()
+    if not p:
+        return False
+    mentions_crud = "crud" in p or "create read update delete" in p
+    mentions_python = "python" in p or "fastapi" in p or "flask" in p or "django" in p
+    return mentions_crud and mentions_python
+
+
+def _tasks_cover_request_shape(user_prompt: str, tasks: list[TaskSpec]) -> bool:
+    """Basic quality gate so plan structure matches request complexity."""
+    if not tasks:
+        return False
+    if not _looks_like_python_crud_request(user_prompt):
+        return True
+    if len(tasks) < 3:
+        return False
+
+    file_paths = {t.file_path.strip().lower() for t in tasks if (t.file_path or "").strip()}
+    if len(file_paths) < 2:
+        return False
+    has_tests = any("/test" in p or p.startswith("test") or "tests/" in p for p in file_paths)
+    return has_tests

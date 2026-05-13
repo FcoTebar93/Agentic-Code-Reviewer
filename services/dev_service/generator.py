@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -66,6 +67,10 @@ _CODEGEN_REPAIR = (
 
 _READ_ONLY_TOOLS = ("read_file", "list_project_files", "search_in_repo")
 _CI_TOOLS = ("run_tests", "run_lints")
+_PIPELINE_LABEL_RE = re.compile(
+    r"^\s*(?:#|//|/\*+|\*|\-\-)?\s*(REASONING|VERDICT|ISSUES|REQUIRED_CHANGES|OPTIONAL_IMPROVEMENTS|CODE)\s*:\s*",
+    re.IGNORECASE,
+)
 
 
 def _tool_loop_tool_names(
@@ -143,8 +148,26 @@ def _tool_message_payload(result: ToolExecutionResult) -> str:
     return json.dumps({"success": False, "error": result.error or "unknown"})
 
 
+def _contains_pipeline_labels(code: str) -> bool:
+    return any(_PIPELINE_LABEL_RE.match(line) for line in (code or "").splitlines())
+
+
+def _sanitize_generated_code(code: str) -> str:
+    cleaned_lines: list[str] = []
+    for line in (code or "").splitlines():
+        if _PIPELINE_LABEL_RE.match(line):
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
+
 def _codegen_parse_ok(result: CodeResult, _raw: str) -> bool:
-    return bool((result.code or "").strip())
+    code = (result.code or "").strip()
+    if not code:
+        return False
+    if _contains_pipeline_labels(code):
+        return False
+    return True
 
 
 async def generate_code(
@@ -178,6 +201,7 @@ async def generate_code(
         max_attempts=2,
     )
 
+    result.code = _sanitize_generated_code(result.code)
     logger.info(
         "Generated %d chars of %s code for %s. Reasoning: %s",
         len(result.code), task.language, task.file_path, result.reasoning[:80],
@@ -390,6 +414,7 @@ async def generate_code_with_tool_loop(
                 }
             )
             continue
+        result.code = _sanitize_generated_code(result.code)
         agent_tool_loop_llm_rounds.labels(service=SERVICE_NAME).observe(float(llm_rounds))
         agent_tool_loop_outcomes_total.labels(
             service=SERVICE_NAME, outcome="completed"

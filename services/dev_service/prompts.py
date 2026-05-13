@@ -16,6 +16,8 @@ OUTPUT_DISCIPLINE = """
 Patch and response shape (strict):
 - CODE must contain exactly one compilation unit: the full contents for the single target file path given above — not multiple files, not concatenated modules, no markdown code fences inside CODE.
 - Prefer minimal, surgical edits: preserve existing structure, imports, and code you are not asked to change; do not rewrite large unrelated regions for style unless the task explicitly asks for a full-file replacement.
+- Do not include narrative/plain-text protocol artifacts inside CODE (for example REASONING:, VERDICT:, ISSUES:, REQUIRED_CHANGES:, OPTIONAL_IMPROVEMENTS:).
+- Avoid adding comments unless they are explicitly requested or strictly necessary for correctness.
 - Do not pad REASONING with long quotes of the task or spec; stay within the sentence budget stated below.
 - When SHORT-TERM MEMORY includes REPO STYLE & LINTER CONFIG, align naming, quoting, and layout with those hints.
 - Follow RESPONSE LANGUAGE for REASONING prose; keep identifiers and public API names consistent with the surrounding repo (often English) even if REASONING is in another language.

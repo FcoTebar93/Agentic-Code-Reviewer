@@ -133,7 +133,7 @@ export function PlanForm() {
           </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-2">
           <div>
             <label className="block text-neutral-500 text-xs font-mono mb-1">
               Replanner aggressiveness

@@ -10,7 +10,7 @@ import httpx
 from shared.correlation import correlation_http_headers
 
 
-def _inject_correlation_request_header(request: httpx.Request) -> None:
+async def _inject_correlation_request_header(request: httpx.Request) -> None:
     for name, value in correlation_http_headers().items():
         if name not in request.headers:
             request.headers[name] = value

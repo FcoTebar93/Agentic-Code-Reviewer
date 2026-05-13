@@ -158,8 +158,13 @@ def _heuristic_suspicious_snippets(code: str, *, user_locale: str = "en") -> lis
     if any(m in lowered for m in fs_markers):
         findings.append(qa_heuristic_fs_warning(user_locale))
 
-    secrets_markers = ("os.environ", "process.env", "secret", "api_key", "password")
-    if any(m in lowered for m in secrets_markers):
+    # Avoid false positives from legitimate config reads (e.g. os.environ.get()).
+    # Flag only explicit hardcoded secret-like assignments or literals.
+    secret_assignment_patterns = (
+        r'(?i)\b(api[_-]?key|secret|password|token)\b\s*[:=]\s*["\'][^"\']{6,}["\']',
+        r'(?i)["\'](api[_-]?key|secret|password|token)["\']\s*:\s*["\'][^"\']{6,}["\']',
+    )
+    if any(re.search(p, code) for p in secret_assignment_patterns):
         findings.append(qa_heuristic_secrets_warning(user_locale))
 
     return findings

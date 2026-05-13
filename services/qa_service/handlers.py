@@ -282,25 +282,55 @@ async def handle_code_review(payload: CodeGeneratedPayload, deps: QADeps) -> Non
         if payload.qa_attempt < deps.cfg.max_qa_retries:
             await _retry_task(payload, result, deps)
         else:
-            deps.logger.error(
-                "QA exhausted retries for task %s -> marking qa.failed",
-                task_id[:8],
-            )
-            tasks_failed.labels(service="qa_service", reason="qa_exhausted_retries").inc()
-            fail_event = qa_failed("qa_service", qa_payload)
-            await deps.event_bus.publish(fail_event)
-            await store_event(
-                deps.http_client,
-                fail_event,
-                logger=deps.logger,
-                error_message="Failed to store event %s",
-            )
-            await _update_task_state(
-                deps.http_client,
-                task_id,
-                plan_id,
-                "qa_failed",
-            )
+            if _should_fail_open_after_exhaustion(
+                mode=mode,
+                static_issues=static_issues,
+            ):
+                deps.logger.warning(
+                    "QA exhausted retries for task %s with no static findings in normal mode -> fail-open qa.passed",
+                    task_id[:8],
+                )
+                qa_payload.passed = True
+                qa_payload.reasoning = (
+                    (qa_payload.reasoning or "").strip()
+                    + "\n\n[QA fail-open] No static lint/security findings after retries; "
+                    "allowing pipeline to continue in normal mode."
+                ).strip()
+                qa_event = qa_passed("qa_service", qa_payload)
+                await deps.event_bus.publish(qa_event)
+                await store_event(
+                    deps.http_client,
+                    qa_event,
+                    logger=deps.logger,
+                    error_message="Failed to store event %s",
+                )
+                await _update_task_state(
+                    deps.http_client,
+                    task_id,
+                    plan_id,
+                    "qa_passed",
+                )
+                await _check_plan_ready_for_pr(plan_id, deps)
+            else:
+                deps.logger.error(
+                    "QA exhausted retries for task %s -> marking qa.failed",
+                    task_id[:8],
+                )
+                tasks_failed.labels(service="qa_service", reason="qa_exhausted_retries").inc()
+                fail_event = qa_failed("qa_service", qa_payload)
+                await deps.event_bus.publish(fail_event)
+                await store_event(
+                    deps.http_client,
+                    fail_event,
+                    logger=deps.logger,
+                    error_message="Failed to store event %s",
+                )
+                await _update_task_state(
+                    deps.http_client,
+                    task_id,
+                    plan_id,
+                    "qa_failed",
+                )
 
 
 _QA_RETRY_DOC_MAX = 7200
@@ -830,6 +860,18 @@ def _summarise_static_report(issues: list[str], max_examples: int = 8) -> str:
 def _has_severe_static_issues(issues: list[str]) -> bool:
     severe_keywords = ("HIGH", "CRITICAL", "BLOCKER", "ERROR")
     return any(any(kw in issue.upper() for kw in severe_keywords) for issue in issues)
+
+
+def _should_fail_open_after_exhaustion(
+    *,
+    mode: str,
+    static_issues: list[str],
+) -> bool:
+    """Allow pipeline progress only when QA fail appears LLM-only and low-confidence."""
+    normalized_mode = (mode or "normal").strip().lower()
+    if normalized_mode not in {"normal"}:
+        return False
+    return not _has_severe_static_issues(static_issues)
 
 
 def _infer_module_from_path(file_path: str) -> str:
